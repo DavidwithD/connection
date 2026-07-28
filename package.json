@@ -1,0 +1,35 @@
+{
+  "name": "connection",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DynamoDB-backed service (name provisional — see docs/decisions/0001-product-name.md)",
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "ddb:install": "./scripts/dynamodb-local.sh install",
+    "ddb:start": "./scripts/dynamodb-local.sh start",
+    "ddb:stop": "./scripts/dynamodb-local.sh stop",
+    "ddb:restart": "./scripts/dynamodb-local.sh restart",
+    "ddb:status": "./scripts/dynamodb-local.sh status",
+    "ddb:reset": "./scripts/dynamodb-local.sh reset",
+    "ddb:migrate": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/db/migrate.ts",
+    "ddb:smoke": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/db/smoke.ts",
+    "dev:db": "npm run ddb:start && npm run ddb:migrate",
+    "test": "npm run typecheck && npm run ddb:smoke"
+  },
+  "keywords": [],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1096.0",
+    "@aws-sdk/lib-dynamodb": "^3.1096.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  }
+}

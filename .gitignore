@@ -1,0 +1,15 @@
+node_modules/
+dist/
+
+# DynamoDB Local: the vendored runtime (~57MB — a 5MB jar plus its native libs)
+# and its on-disk database. Re-fetch with `npm run ddb:install`.
+vendor/
+.dynamodb-data/
+
+# Local environment overrides. `.env.example` IS tracked.
+.env
+.env.local
+
+.DS_Store
+*.log
+__pycache__/
