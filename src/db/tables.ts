@@ -4,9 +4,9 @@
  * This is a single-table design: one physical table holds every entity type,
  * distinguished by prefixed key values (`user#123` / `profile`) rather than by
  * separate tables. That is the idiomatic DynamoDB shape and it is also the only
- * honest choice right now — the product itself is still undefined (see
- * docs/decisions/0001-product-name.md), so declaring entity-specific tables
- * would be inventing a domain model we do not have yet.
+ * honest choice available — the product itself is still undefined, so declaring
+ * entity-specific tables would be inventing a domain model we do not have yet.
+ * See docs/decisions/0002-single-table-layout.md.
  *
  * DynamoDB only requires *key* attributes to be declared. Everything else is
  * per-item and needs no migration, so this definition should stay stable even

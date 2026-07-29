@@ -1,6 +1,9 @@
 # connection
 
-> The name is a placeholder — see [ADR 0001](docs/decisions/0001-product-name.md).
+> **`connection` is a working placeholder, not a chosen name.** It collides with the
+> ordinary noun in prose ("the connection layer") and with plenty of existing products.
+> Settling it later means touching the repo directory, the package name, and any
+> published domain — so it gets more expensive after the first published artifact.
 
 A DynamoDB-backed service. TypeScript on Node, AWS SDK v3.
 
@@ -9,7 +12,7 @@ A DynamoDB-backed service. TypeScript on Node, AWS SDK v3.
 | | Why |
 |---|---|
 | **Node ≥ 20.6** | Runtime |
-| **Java (JRE) 11+** | DynamoDB Local runs as a JAR — there is no Docker requirement. See [ADR 0002](docs/decisions/0002-dynamodb-as-datastore.md) |
+| **Java (JRE) 11+** | DynamoDB Local runs as a JAR — there is no Docker requirement. See [ADR 0002](docs/decisions/0002-single-table-layout.md) |
 
 No AWS account or credentials are needed for local development.
 
@@ -110,7 +113,7 @@ await db.send(new PutCommand({
 
 The key design is deliberately generic and should be treated as **provisional** — the
 domain is not defined yet, and DynamoDB normally wants access patterns known up front.
-[ADR 0002](docs/decisions/0002-dynamodb-as-datastore.md) records that trade-off.
+[ADR 0002](docs/decisions/0002-single-table-layout.md) records that trade-off.
 
 ## Docs
 

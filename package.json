@@ -2,7 +2,7 @@
   "name": "connection",
   "version": "0.1.0",
   "private": true,
-  "description": "DynamoDB-backed service (name provisional — see docs/decisions/0001-product-name.md)",
+  "description": "DynamoDB-backed service (name provisional)",
   "type": "module",
   "engines": {
     "node": ">=20.6"
@@ -10,6 +10,8 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: ADR gate installed'",
+    "adr": "scripts/adr-gate.py",
     "ddb:install": "./scripts/dynamodb-local.sh install",
     "ddb:start": "./scripts/dynamodb-local.sh start",
     "ddb:stop": "./scripts/dynamodb-local.sh stop",

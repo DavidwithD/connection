@@ -1,102 +1,144 @@
 # Decision gate
 
-What a record must clear before it lands. Run it:
+What a record must clear before it lands.
 
 ```
 scripts/adr-gate.py            # all records + the index
-scripts/adr-gate.py --stats    # add the metrics table
+scripts/adr-gate.py --stats    # metrics table
 scripts/adr-gate.py --strict   # warnings fail too
+scripts/adr-gate.py --json     # for a hook or CI
 ```
 
-**Errors block. Warnings need a reason.** If a warning is wrong for a record, say so in
-the change that keeps it — an unexplained warning is a warning nobody will ever clear.
+Errors block. Warnings need a reason — if a warning is wrong for a record, say why in
+the change that keeps it. An unexplained warning is one nobody will ever clear.
 
-## The five things we're checking for
+`npm run hooks:install` symlinks `scripts/hooks/pre-commit` into `.git/hooks`, which runs
+the gate on every commit. It checks the **staged** tree, not the working tree: a partial
+`git add -p` stages one version while the file on disk says another, and the commit is
+what has to be correct. Errors block, warnings print and pass; `ADR_GATE_STRICT=1` makes
+warnings block too and `--no-verify` skips the hook. `.git/hooks` is not versioned, so a
+fresh clone is unguarded until someone runs the install — and git skips a hook it cannot
+execute without saying so, which is the one failure mode this cannot warn you about.
 
-| Perspective | The failure it prevents |
-|-------------|-------------------------|
-| **Structure** | Every record reads the same way, so a reader knows where to look. |
-| **Concision** | Length is a tax on every future reader. Budgets force the edit. |
-| **Accuracy** | A record states what was true, when, and on what evidence. |
-| **Non-duplication** | One home per fact. Restating a doc creates two things to update. |
-| **Maintainability** | The record survives contact with time: no rot, no dead links. |
+## What we're actually protecting
+
+Everything else in the repo records what is true *now*: code is the what, tests are the
+invariants, docs are the how, git is the delta. A decision record's monopoly is **what
+we didn't know at the time** — the uncertainty, the things we bet on. That is also the
+most perishable information in the project: out of everyone's head in six weeks, and
+unrecoverable after that.
+
+So the job is narrow. A record exists to let a future person answer **"is this still the
+right call?"** without redoing the analysis. Anything that doesn't serve that is padding.
+
+Value lands at exactly two moments, and neither is browsing this directory:
+
+- **Write time.** Articulating the alternatives sometimes changes the decision. That
+  means a record written *after* the fact has already forfeited most of its value —
+  retro-written records are rationalisations, and they reliably omit the uncertainty.
+  Open the record while the answer is still Proposed.
+- **Collision time.** Someone hits the constraint in the code and asks why it is like
+  this. They do not open the index. Findability is **inbound**: the code and the specs
+  must point *at* the record (`M010`).
+
+And the thing that kills a corpus is trust, not prose. The first time a reader finds an
+Accepted record that is quietly dead, they stop believing all of them, and the whole
+directory goes net negative. A terse, ugly, current record beats a beautiful stale one,
+so the supersede discipline outranks every writing rule below.
 
 ## Required shape
 
 ```
-# NNNN — Title                       one decision, ≤60 chars, em dash
+# NNNN — Title                        one decision, ≤60 chars, em dash
 **Status:** <emoji> <Proposed|Accepted|Rejected|Superseded>
-**Date:** YYYY-MM-DD                 when this was true
+**Date:** YYYY-MM-DD                  when this was true
+**Deciders:** names, not roles         who to ask
 
-## Context                           forces, constraints — links, not restatement
-## Decision                          the choice, active voice, no hedging
-## Alternatives considered            what lost and why, or "None — <why>"
-## Consequences                       including what this costs us
+## Context                            forces — links, not restatement
+## Decision                           the choice, active voice, no hedging
+## Alternatives considered             what lost and why, or "None — <why>"
+## Consequences                        including what this costs, and who pays it
+## Assumptions and unknowns            what it rests on; what we chose not to find out
+## Revisit when                        observable conditions that reopen this
 ```
 
 Optional after those: `TODO`, `Follow-ups`, `Open questions`, `References`, `Notes`.
+
+The last two sections carry most of the value. **Assumptions and unknowns** is the only
+place the record can say *we knew this might be wrong* — which is the line between a bad
+decision and bad luck, and the only way judgement gets calibrated instead of relitigated.
+**Revisit when** is what makes staleness detectable at all; without it a record can never
+be shown to be out of date, only suspected of it.
 
 ## Budgets
 
 | Metric | Budget | Fails at |
 |--------|--------|----------|
 | Prose words, whole record | 500 | 800 |
-| Context / Decision / Alternatives / Consequences | 220 / 250 / 200 / 180 | 1.6× budget |
-| Sentence length | 35 words | 55 words |
+| Context / Decision / Alternatives / Consequences | 220 / 250 / 200 / 180 | 1.6× |
+| Assumptions and unknowns / Revisit when | 120 / 100 | 1.6× |
+| Sentence | 35 words | 55 words |
 | Paragraph | 100 words or 7 lines | — |
-| Line length | 100 chars | — |
+| Line | 100 chars | — |
 | Bullets per section | 8 | — |
 | Rows in the Decision table | 6 | — |
 | Code block | 15 lines | — |
 | Heading depth | h3 | — |
-| Phrases shared with another doc | 0 (7-word runs) | verbatim from `template.md` |
+| Days a record may sit Proposed | 90 | — |
+| Phrases shared with another record | 0 (7-word runs) | verbatim from `template.md` |
 
-Numbers are a forcing function, not a target. A 120-word record that says the thing is
-better than a 480-word one that says it slowly.
+Ceilings, not targets. A 120-word record that says the thing beats a 480-word one that
+says it slowly.
 
-## Rules the script enforces
+## Rules
 
-**Structure** — `S001` filename `NNNN-kebab-title.md` · `S002` H1 number matches the
-filename · `S004` status is one of the four, with its legend emoji · `S005` the four
-sections, once each, in order · `S006` no invented sections · `S007` no heading past h3
-· `S008` title is short and names one decision · `S011` alternatives are listed or
-explicitly waived · `S012` consequences name a cost · `S013` decision table stays small
-· `S014` ISO date · `S015` no hedging inside Decision · `S016` Context links something.
+**Shape** — `S001` filename `NNNN-kebab-title.md` · `S002` H1 number matches the filename
+· `S004` status is one of the four with its legend emoji · `S005` the six sections, once
+each, in order · `S006` no invented sections · `S007` nothing past h3 · `S008` title is
+short and names one decision · `S013` decision table stays small · `S014` ISO date ·
+`S017` deciders are named people.
+
+**Substance** — `S011` alternatives listed or explicitly waived · `S012` consequences
+name a cost · `S015` no hedging inside Decision · `S016` Context links something ·
+`S018` every revisit trigger is a condition, not a mood ("as needed" is rejected) ·
+`S019` at least one assumption or unknown, and "none" is challenged.
 
 **Concision** — `C001` total words · `C002` per-section words · `C003` sentence length ·
-`C004` paragraph size · `C005` line length · `C006` filler ("very", "in order to", "it
-should be noted") · `C007` buzzwords ("leverage", "robust", "seamless") · `C008` bullet
-sprawl · `C009` code in a record · `C010` "it was decided" — name who decided.
+`C004` paragraph size · `C005` line length · `C008` bullet sprawl · `C009` code in a
+record · `C010` "it was decided" — name who decided.
 
-**Accuracy** — `A001` no `TBD`/`FIXME`/open checkboxes in a settled record · `A002` no
-unfilled `<placeholder>` · `A004` a Superseded record links forward to its replacement ·
-`A005` every quantity has a link to where it came from.
+There is deliberately no filler or buzzword rule. That is a copy-editor's job, and every
+cheap rule raises the price of writing the contested record we most need to exist.
 
-**Duplication** — `D001` 7-word runs shared with another doc, reported with the file and
-the shared text · `D002` a sentence repeated inside one record · `D003` template prose
-left in place · `D004` the index inlining a copy of the template.
+**Accuracy** — `A001` no `TBD`/`FIXME`/open boxes in a settled record, reported with the
+record's age once it's over 90 days · `A002` no unfilled `<placeholder>` · `A004` a
+Superseded record links forward to its replacement · `A005` every quantity links to where
+the number came from.
 
-**Maintainability** — `M001` time-relative words ("currently", "soon", "today") that go
-stale · `M002` broken relative links · `M003` links to records that don't exist ·
-`M004`/`M005` index row exists and its status matches the record · `M006` no
-machine-local paths · `M007` https · `M008` no `TODO` hiding outside the TODO section ·
-`M009` whitespace and newline hygiene.
+**Duplication** — `D001` 7-word runs shared with another record · `D002` a sentence
+repeated inside one record · `D003` template prose left in place · `D004` the index
+inlining a copy of the template · `D005` 25+ words verbatim from a non-record doc.
+Quoting a spec is fine; copying it means two things to update.
 
-## What the script can't check
+**Time** — `M001` time-relative words ("currently", "soon") that go stale · `M010` nothing
+outside the index points at this record · `M012` still Proposed after 90 days — decide it,
+reject it, or admit it isn't live.
 
-Read for these before approving. They are the reason a gate isn't just a linter.
+**Wiring** — `M002` broken relative links · `M003` links to records that don't exist ·
+`M004`/`M005` index row exists and its status matches · `M006` no machine-local paths ·
+`M007` https · `M008` no `TODO` hiding outside the TODO section · `M009` whitespace.
 
-- **Is it a decision?** A real fork, with a road not taken. If nothing was rejected,
-  it's a note — put it somewhere else.
+## What no script can check
+
+- **Is it a decision?** A real fork, with a road not taken. If nothing was rejected, it's
+  a note — put it somewhere else.
 - **Is the Context true?** Check the claims against the code and the docs it cites.
   Constraints invented to justify the choice are the most expensive kind of wrong.
-- **Would the loser recognise their argument?** Alternatives written to lose are worse
-  than no alternatives section.
-- **Is the cost real?** "Slightly more complex" is not a trade-off. Name what breaks,
-  what we can't do now, and what it would take to reverse.
-- **Does it belong here?** If it restates a spec, link the spec. If it's how-to, it's a
-  guide. A record explains *why*, once.
-- **Could you tell in a year whether it held?** State the choice so that reality can
-  contradict it.
-- **Is it still the reason?** When a record stops being true, supersede it — never edit
-  history quietly.
+- **Would the losing option's advocate recognise their own argument?** Alternatives
+  written to lose are worse than no alternatives section.
+- **Is the cost real, and does someone feel it?** If nobody pays, it wasn't a decision,
+  it was a preference.
+- **Is it one reversible commitment?** Irreversible things are history. Uncommitted
+  things are noise. The useful band constrains future work *and* could be revisited.
+- **Did the record change what anyone did?** The only test that matters. A record nobody
+  acts on cost more than it returned.

@@ -5,24 +5,23 @@ and the reasoning, so the "why" survives even after the code changes.
 
 | # | Decision | Status |
 |---|----------|--------|
-| [0001](0001-product-name.md) | Product name | 🔵 Proposed (open) |
-| [0002](0002-dynamodb-as-datastore.md) | DynamoDB as the data store | ✅ Accepted |
+| [0002](0002-single-table-layout.md) | Single-table layout for an undefined domain | ✅ Accepted |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
 ## How to add one
 
-1. Take the next free number (zero-padded to 4 digits).
-2. Copy [template.md](template.md) to `NNNN-<kebab-case-title>.md`.
+1. Take the next unused number (zero-padded to 4 digits). Numbers are spent once and
+   never reused, so records start at 0002 — 0001 was withdrawn before it was decided.
+2. Copy [template.md](template.md) to `NNNN-<kebab-case-title>.md` — that file is the
+   one copy of the shape, so it does not get restated here.
 3. Add a row to the table above **in the same change** — the index is the map.
-4. Never renumber or delete an ADR. A reversed decision gets a *new* ADR, and the
-   old one flips to ♻️ Superseded with a link forward.
+4. Link the record from the code or spec that carries the constraint. A record nothing
+   points at is unreachable at the moment it was needed.
+5. Never renumber or delete a *decided* ADR. A reversal gets a *new* ADR, and the old
+   one flips to ♻️ Superseded with a link forward. A record whose Decision was never
+   made is a note, not a decision, and may be withdrawn — its number stays spent.
 
-## Template
-```
-# NNNN — <title>
-Status: Proposed | Accepted | Rejected | Superseded
-Context: what forces are at play
-Decision: what we chose
-Consequences: trade-offs, what this enables/precludes
-```
+Run `scripts/adr-gate.py` before it lands — or `npm run hooks:install` once, and the
+pre-commit hook runs it for you. [GATE.md](GATE.md) documents the required shape, the
+budgets, and the checks a reader still has to make themselves.

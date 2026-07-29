@@ -21,6 +21,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 # ---------------------------------------------------------------- configuration
@@ -90,6 +91,12 @@ SKIP_DIRS = {
 }
 MAX_SCAN_BYTES = 512_000
 
+VACUOUS_TRIGGERS = [
+    "as needed", "as necessary", "when necessary", "if necessary", "later",
+    "in the future", "periodically", "regularly", "from time to time",
+    "if problems arise", "if issues arise", "when convenient", "someday",
+    "if it becomes a problem", "revisit later",
+]
 HEDGES = [
     "perhaps", "maybe", "probably", "possibly", "arguably", "hopefully",
     "it seems", "we think", "sort of", "kind of", "we might want to",
@@ -102,10 +109,12 @@ TIME_RELATIVE = [
     "in the near future",
 ]
 PASSIVE_DECIDER = ["it was decided", "it has been decided", "was decided that"]
+# Stems, matched as substrings, so "precluded" counts as well as "precludes".
 DOWNSIDE_WORDS = [
-    "trade-off", "tradeoff", "precludes", "cost", "risk", "downside", "lose",
-    "harder", "slower", "accept", "give up", "gives up", "constrain", "limits",
-    "we forgo", "expensive",
+    "trade-off", "tradeoff", "preclud", "cost", "risk", "downside", "lose", "lost",
+    "harder", "slower", "accept", "give up", "gives up", "constrain", "limit",
+    "forgo", "expensive", "lock-in", "burden", "by hand", "manual", "sacrific",
+    "penalt", "cannot", "can't", "no longer", "gave up",
 ]
 PLACEHOLDERS = ["tbd", "tk", "xxx", "fixme", "lorem ipsum", "todo:"]
 
@@ -166,6 +175,11 @@ STATUS_RE = re.compile(r"^(\S+)\s+(Proposed|Accepted|Rejected|Superseded)\b(.*)$
 LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ADR_LINK_RE = re.compile(r"\((\d{4})-[a-z0-9-]+\.md")
+TRIGGER_CUE_RE = re.compile(
+    r"\b(when|if|once|after|until|unless|exceeds?|above|below|beyond|reach(?:es)?|"
+    r"break|breaks|stops?|starts?|fails?|drops?|grows?|doubles?|needs?|requires?|"
+    r"hits?|lands?|ships?|arrives?|more than|less than|by \d)\b"
+)
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])[\s]+")
 
 
@@ -456,6 +470,46 @@ def check_structure(doc: Doc, out: list[Finding]) -> None:
             out.append(Finding("S011", "warn", rel, alts.heading_line,
                                "list the alternatives, or state 'None — <why>'"))
 
+    revisit = doc.section("Revisit when")
+    if revisit:
+        items = [(n, to_prose(l)) for n, l in revisit.lines
+                 if re.match(r"^\s*(?:[-*+]|\d+\.)\s", l) and not doc.code_mask[n - 1]]
+        if not items:
+            out.append(Finding("S018", "error", rel, revisit.heading_line,
+                               "no trigger listed — without one, nobody can ever tell "
+                               "whether this record still holds"))
+        conditional = False
+        for lineno, item in items:
+            low = item.lower()
+            if any(v in low for v in VACUOUS_TRIGGERS):
+                out.append(Finding("S018", "warn", rel, lineno,
+                                   "vacuous trigger — name the observable event, "
+                                   "threshold, or date that reopens this"))
+            elif TRIGGER_CUE_RE.search(low):
+                conditional = True
+        # Section-wide, not per bullet: a good trigger is often a bare noun phrase,
+        # and policing every line's grammar is the kind of cheap rule that just
+        # teaches people to ignore the gate.
+        if items and not conditional:
+            out.append(Finding("S018", "warn", rel, revisit.heading_line,
+                               "no trigger reads as a condition — at least one should "
+                               "be something that either has happened or has not"))
+
+    assumptions = doc.section("Assumptions and unknowns")
+    if assumptions:
+        items = [l for n, l in assumptions.lines
+                 if re.match(r"^\s*(?:[-*+]|\d+\.)\s", l) and not doc.code_mask[n - 1]]
+        text = " ".join(p for _, p in section_prose(assumptions, doc.code_mask)).lower()
+        if not items:
+            out.append(Finding("S019", "error", rel, assumptions.heading_line,
+                               "list what this rests on and what we don't know — this "
+                               "is the only thing the record can hold that nothing "
+                               "else in the repo can"))
+        elif re.match(r"^\s*none\b", text):
+            out.append(Finding("S019", "warn", rel, assumptions.heading_line,
+                               "a decision with nothing uncertain in it is either "
+                               "trivial or not being honest"))
+
     cons = doc.section("Consequences")
     if cons:
         text = " ".join(p for _, p in section_prose(cons, doc.code_mask)).lower()
@@ -557,24 +611,81 @@ def check_concision(doc: Doc, out: list[Finding], stats: dict) -> None:
                                "review in a diff"))
     stats["longest_line"] = longest
 
+    # No filler/buzzword rules on purpose: that is a copy-editor's job, and every
+    # cheap rule raises the price of writing the awkward record we most need.
     lowered = " ".join(
         to_prose(l).lower()
         for i, l in enumerate(doc.lines, start=1)
         if not doc.code_mask[i - 1]
     )
-    for bucket, code, note in (
-        (FILLER, "C006", "filler"),
-        (BUZZWORDS, "C007", "buzzword"),
-    ):
-        hits = sorted({w for w in bucket if re.search(rf"\b{re.escape(w)}\b", lowered)})
-        if hits:
-            out.append(Finding(code, "warn", rel, 1,
-                               f"{note}: {', '.join(hits)} — cut or replace with the "
-                               "specific thing"))
     for phrase in PASSIVE_DECIDER:
         if phrase in lowered:
             out.append(Finding("C010", "warn", rel, 1,
                                f"'{phrase}' — name who decided, in the active voice"))
+
+
+def age_days(doc: Doc, today: date) -> int | None:
+    raw = doc.fields.get("date", (1, ""))[1]
+    if not DATE_RE.match(raw):
+        return None
+    return (today - date.fromisoformat(raw)).days
+
+
+def check_drift(doc: Doc, out: list[Finding], today: date) -> None:
+    """An undecided record rotting in place is worse than a decided one."""
+    age = age_days(doc, today)
+    if age is None or age < DRIFT_DAYS or doc.status != "Proposed":
+        return
+    out.append(Finding("M012", "warn", str(doc.path), doc.fields["date"][0],
+                       f"still Proposed {age} days on — decide it, reject it, or admit "
+                       "it is not a live decision"))
+
+
+def check_inbound(root: Path, docs: list[Doc], skip: set[Path],
+                  out: list[Finding]) -> dict[str, int]:
+    """Count references pointing *at* each record.
+
+    Findability is inbound. A reader hits a constraint in the code and asks why it is
+    like this — they do not browse the index. A record nothing points at is unreachable
+    at the only moment it was needed.
+    """
+    targets: list[tuple[Doc, str, re.Pattern]] = []
+    for doc in docs:
+        m = FNAME_RE.match(doc.path.name)
+        if not m:
+            continue
+        num = m.group(1)
+        targets.append((doc, num, re.compile(
+            rf"(?:{num}-[a-z0-9-]+\.md|ADR[-\s]?{num}\b|decisions/{num}\b)", re.I)))
+
+    counts = {str(d.path): 0 for d, _, _ in targets}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in SCAN_EXTS:
+            continue
+        if any(part in SKIP_DIRS for part in path.parts):
+            continue
+        resolved = path.resolve()
+        if resolved in skip:
+            continue
+        try:
+            if path.stat().st_size > MAX_SCAN_BYTES:
+                continue
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for doc, _, pattern in targets:
+            if resolved == doc.path.resolve():
+                continue
+            if pattern.search(text):
+                counts[str(doc.path)] += 1
+
+    for doc, num, _ in targets:
+        if counts[str(doc.path)] == 0:
+            out.append(Finding("M010", "warn", str(doc.path), 1,
+                               "nothing outside the index points at this record — link "
+                               "it from the code or spec that carries the constraint, "
+                               "or it will not be read when it matters"))
+    return counts
 
 
 def check_maintainability(doc: Doc, out: list[Finding], known: set[str]) -> None:
@@ -629,7 +740,7 @@ def check_maintainability(doc: Doc, out: list[Finding], known: set[str]) -> None
                            "no newline at end of file"))
 
 
-def check_accuracy(doc: Doc, out: list[Finding]) -> None:
+def check_accuracy(doc: Doc, out: list[Finding], today: date) -> None:
     rel = str(doc.path)
     settled = doc.status in SETTLED
 
@@ -652,9 +763,12 @@ def check_accuracy(doc: Doc, out: list[Finding]) -> None:
                                "unfilled <placeholder> from the template"))
 
     if open_boxes:
+        age = age_days(doc, today)
+        stale = f", {age} days ago" if age is not None and age >= DRIFT_DAYS else ""
         out.append(Finding("A001", "warn", rel, open_boxes[0],
                            f"{len(open_boxes)} unchecked box(es) in a record marked "
-                           f"{doc.status} — track open work where work is tracked"))
+                           f"{doc.status}{stale} — the record and reality have "
+                           "separated; track open work where work is tracked"))
 
     for sec in doc.sections:
         for block in paragraphs(sec, doc.code_mask):
@@ -801,13 +915,22 @@ def check_duplication(docs: list[Doc], corpus: list[Path], template: Path,
             if path == doc.path:
                 continue
             shared = mine & set(pool)
-            if len(shared) >= SHARED_SHINGLES:
-                n, text = longest_run(toks, pool)
+            if not shared:
+                continue
+            n, text = longest_run(toks, pool)
+            sibling = path.parent == doc.path.parent  # another record
+            if sibling and len(shared) >= SHARED_SHINGLES:
                 worst = max(worst, len(shared))
                 out.append(Finding("D001", "warn", rel, 1,
-                                   f"{len(shared)} phrase(s) also in {path}"
-                                   f" — longest shared run ({n} words): “{text[:70]}…”"
-                                   " — link it, do not restate it"))
+                                   f"{len(shared)} phrase(s) also in {path} — longest "
+                                   f"shared run ({n} words): “{text[:70]}…” — one of "
+                                   "these should link the other"))
+            elif not sibling and n >= VERBATIM_RUN:
+                worst = max(worst, len(shared))
+                out.append(Finding("D005", "warn", rel, 1,
+                                   f"{n} words verbatim from {path}: “{text[:70]}…” — "
+                                   "quoting a spec is fine; copying it means two "
+                                   "things to update"))
         dup_counts[rel] = worst
 
         seen: dict[str, list[int]] = {}
@@ -830,24 +953,35 @@ def check_duplication(docs: list[Doc], corpus: list[Path], template: Path,
 # -------------------------------------------------------------------- reporting
 
 
+COLUMNS = [
+    ("ctx", "Context"),
+    ("dec", "Decision"),
+    ("alt", "Alternatives considered"),
+    ("con", "Consequences"),
+    ("asm", "Assumptions and unknowns"),
+    ("rev", "Revisit when"),
+]
+
+
 def stats_table(rows: list[tuple[str, dict]]) -> str:
-    header = f"{'record':<34}{'words':>7}{'ctx':>6}{'dec':>6}{'alt':>6}{'con':>6}{'col':>6}{'dup':>6}"
-    lines = [header, "-" * len(header)]
+    head = f"{'record':<30}{'words':>6}" + "".join(f"{c:>5}" for c, _ in COLUMNS)
+    head += f"{'col':>5}{'dup':>5}{'in':>5}"
+    lines = [head, "-" * len(head)]
     for name, st in rows:
         sec = st.get("sections", {})
-        lines.append(
-            f"{name:<34}{st.get('words', 0):>7}"
-            f"{sec.get('Context', 0):>6}{sec.get('Decision', 0):>6}"
-            f"{sec.get('Alternatives considered', 0):>6}"
-            f"{sec.get('Consequences', 0):>6}"
-            f"{st.get('longest_line', 0):>6}{st.get('dup', 0):>6}"
-        )
-    lines.append("")
-    lines.append(f"budgets: words≤{WORDS_TOTAL_WARN} ctx≤{SECTION_BUDGET['Context']} "
-                 f"dec≤{SECTION_BUDGET['Decision']} "
-                 f"alt≤{SECTION_BUDGET['Alternatives considered']} "
-                 f"con≤{SECTION_BUDGET['Consequences']} col≤{LINE_LENGTH} "
-                 f"dup=shared 7-word phrases")
+        row = f"{name[:29]:<30}{st.get('words', 0):>6}"
+        row += "".join(f"{sec.get(full, 0):>5}" for _, full in COLUMNS)
+        row += (f"{st.get('longest_line', 0):>5}{st.get('dup', 0):>5}"
+                f"{st.get('in', 0):>5}")
+        lines.append(row)
+    budgets = " ".join(
+        f"{c}≤{SECTION_BUDGET[full]}" for c, full in COLUMNS if full in SECTION_BUDGET
+    )
+    lines += [
+        "",
+        f"budgets: words≤{WORDS_TOTAL_WARN} {budgets} col≤{LINE_LENGTH}",
+        "dup = 7-word phrases shared with another record   in = inbound references",
+    ]
     return "\n".join(lines)
 
 
@@ -859,7 +993,16 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--stats", action="store_true", help="print the metrics table")
     ap.add_argument("--json", action="store_true", help="emit findings as JSON")
     ap.add_argument("--no-index", action="store_true", help="skip index checks")
+    ap.add_argument("--root", default=".",
+                    help="tree to scan for inbound references (default: cwd)")
+    ap.add_argument("--today", help="override today's date (YYYY-MM-DD) for drift")
     args = ap.parse_args(argv)
+
+    try:
+        today = date.fromisoformat(args.today) if args.today else date.today()
+    except ValueError:
+        print("adr-gate: --today must be YYYY-MM-DD", file=sys.stderr)
+        return 2
 
     root = Path(args.dir)
     if not root.is_dir():
@@ -889,7 +1032,8 @@ def main(argv: list[str]) -> int:
         check_structure(doc, findings)
         check_concision(doc, findings, st)
         check_maintainability(doc, findings, known)
-        check_accuracy(doc, findings)
+        check_accuracy(doc, findings, today)
+        check_drift(doc, findings, today)
         stats_rows.append((doc.path.name, st))
 
     corpus = [
@@ -897,8 +1041,16 @@ def main(argv: list[str]) -> int:
         if p.name.lower() not in {"readme.md", "template.md", "gate.md"}
     ]
     dups = check_duplication(docs, corpus, root / "template.md", findings)
+
+    # The index, the template, the rubric, and this script all name records without
+    # being places a reader would arrive from. They prove nothing about findability.
+    scan_skip = {
+        (root / n).resolve() for n in ("README.md", "template.md", "GATE.md")
+    } | {Path(__file__).resolve()}
+    inbound = check_inbound(Path(args.root), docs, scan_skip, findings)
     for name, st in stats_rows:
         st["dup"] = dups.get(str(root / name), 0)
+        st["in"] = inbound.get(str(root / name), 0)
 
     if not args.no_index and not args.paths:
         check_index(root / "README.md", docs, findings)

@@ -1,0 +1,67 @@
+#!/bin/sh
+# ADR quality gate, run against the staged tree.
+#
+# Checks what is being committed, not what is sitting in the working tree. A
+# partial `git add -p` stages one version of a record while the file on disk
+# says something else, and the commit is the thing that has to be correct. So
+# the staged tree is materialised into a temp directory and the gate runs there.
+#
+# The staged copy of the gate is the one that runs, which is deliberate: a
+# commit that changes the rules gets checked by its own new rules.
+#
+# Versioned here and symlinked into .git/hooks, so there is one copy to edit.
+# Install with `npm run hooks:install`.
+#
+# Errors block. Warnings print but pass, matching docs/decisions/GATE.md. Set
+# ADR_GATE_STRICT=1 to make warnings block too. Bypass with --no-verify.
+
+set -eu
+
+GATE="scripts/adr-gate.py"
+DECISIONS="docs/decisions"
+
+# If the gate is not part of the commit, there is nothing to enforce with.
+if ! git ls-files --error-unmatch "$GATE" >/dev/null 2>&1; then
+	echo "pre-commit: $GATE is not tracked — skipping the ADR gate." >&2
+	exit 0
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+	echo "pre-commit: python3 not found, cannot run the ADR gate." >&2
+	echo "            Install python3, or commit with --no-verify." >&2
+	exit 1
+fi
+
+staged=$(mktemp -d)
+output=$(mktemp)
+trap 'rm -rf "$staged" "$output"' EXIT INT TERM
+
+# Honours GIT_INDEX_FILE, so `git commit -a` gets its temporary index too.
+git checkout-index -a --prefix="$staged/"
+
+if [ ! -d "$staged/$DECISIONS" ]; then
+	echo "pre-commit: no $DECISIONS in the commit — skipping the ADR gate." >&2
+	exit 0
+fi
+
+strict=""
+if [ -n "${ADR_GATE_STRICT:-}" ]; then
+	strict="--strict"
+fi
+
+status=0
+python3 "$staged/$GATE" \
+	--dir "$staged/$DECISIONS" \
+	--root "$staged" \
+	$strict >"$output" 2>&1 || status=$?
+
+# Report repo-relative paths; the temp prefix is noise nobody can click.
+sed "s#$staged/##g" "$output" >&2
+
+if [ "$status" -ne 0 ]; then
+	echo >&2
+	echo "pre-commit: the ADR gate rejected this commit. See $DECISIONS/GATE.md." >&2
+	echo "            Fix the errors above, or commit with --no-verify." >&2
+fi
+
+exit "$status"
