@@ -44,10 +44,10 @@ npm run ddb:smoke       # verify it all works
 | `npm run build` | Compile to `dist/` |
 | `npm test` | `typecheck` + `ddb:smoke` |
 | `npm run graph:seed` | Generate a small-world graph and write it to the table |
-| `npm run demo` | Graph API + dev server together — the demo page |
+| `npm run demo` | Graph API + dev server together — both demo pages |
 | `npm run api` | Just the graph API, on `:8787` |
 | `npm run web` | Just the Vite dev server, on `:5173` |
-| `npm run build:web` | Bundle the demo page to `dist/web/` |
+| `npm run build:web` | Bundle both demo pages to `dist/web/` |
 
 Use a different port with `DYNAMODB_LOCAL_PORT=8001`.
 
@@ -94,13 +94,21 @@ src/graph/
   repo.ts       the reads: adjacency Query + metas BatchGet
 src/server/
   index.ts      the graph API (Hono)
-web/src/
+web/
+  index.html    the map
+  orbit.html    one node at a time
+web/src/            the map, and the client both pages read the API through
+  api.ts        the wire shape; the only code the two pages share
   placement.ts  seating geometry + spatial index — pure, no renderer
   world.ts      the store: frozen positions, adjacency, degrees
   map-view.ts   Cytoscape render; additive only, no layout engine
   explore.ts    what to fetch when the camera settles
   palette.ts    validated colour tokens, light and dark
   main.ts       wiring, accent tracking, the HUD
+web/src/orbit/      one node at a time
+  rings.ts      ring geometry — pure, no DOM
+  orbit-view.ts the SVG drawing, and the hop
+  main.ts       wiring: fetch, hop, cancel
 scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
 .dynamodb-data/        local database files + server log (gitignored)
@@ -134,19 +142,25 @@ The key design is deliberately generic and should be treated as **provisional** 
 domain is not defined yet, and DynamoDB normally wants access patterns known up front.
 [ADR 0002](docs/decisions/0002-single-table-layout.md) records that trade-off.
 
-## Graph demo
+## Graph demos
 
-Pan around an undirected cyclic graph like a map. More of it loads as you go.
+Two pages, one API, opposite ideas about what exploring a graph is. Both come up under
+`npm run demo`.
 
 ```bash
 npm run dev:db          # local DynamoDB + tables
 npm run graph:seed      # 600 nodes / 1800 edges by default
-npm run demo            # http://localhost:5173
+npm run demo            # the map at :5173, one node at a time at :5173/orbit.html
 ```
 
-Size it with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`. Re-seeding clears the
-previous graph first. The API adds an artificial `GRAPH_API_DELAY_MS` (default 120)
-because a local read returns too fast to ever see a loading state.
+Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`. Re-seeding clears
+the previous graph first. The API adds an artificial `GRAPH_API_DELAY_MS` (default 120)
+because a local read returns too fast to ever see a loading state. Both pages read the
+same seed through the same two routes.
+
+### The map — `/`
+
+Pan around an undirected cyclic graph like a map. More of it loads as you go.
 
 | Gesture | Does |
 |---|---|
@@ -166,6 +180,28 @@ How that is put together, and what has to stay true, is in [design](docs/design/
 [ADR 0003](docs/decisions/0003-graph-exploration-demo-stack.md) and
 [ADR 0004](docs/decisions/0004-the-centre-and-its-neighbourhood.md) hold the reasoning, and
 what each choice cost.
+
+### One node at a time — `/orbit.html`
+
+The same graph with no world kept. One node sits in the middle, its whole ring around it,
+and a hop recomputes every position and forgets the last neighbourhood.
+
+| Gesture | Does |
+|---|---|
+| click a neighbour | It travels to the middle and its own ring resolves around it |
+| hover | Names a node, once there are too many to label them all |
+
+Neighbours sit on concentric rings — one ring for a handful, more as the count grows,
+each filled in proportion to what it holds. Size is `degree`: how much graph is behind a
+node. Anything that is a neighbour on both sides of a hop keeps its element and slides;
+only nodes that genuinely leave fade out, which is what stops the node you came from
+blinking as it reappears in the new ring. The hop starts on the click rather than on the
+response, so the API's latency is spent moving instead of waiting.
+
+No Cytoscape here, no store, no shared code but [api.ts](web/src/api.ts) — the page is
+SVG and CSS transitions, and it bundles to about 7 kB against the map's 450.
+[ADR 0005](docs/decisions/0005-a-second-view-that-keeps-no-world.md) records why this is a
+second page rather than a mode on the map, and what keeping no world costs.
 
 ## Docs
 

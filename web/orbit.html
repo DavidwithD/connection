@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>connection — one node at a time</title>
+    <style>
+      /* Tokens from web/src/palette.ts, same values as index.html. This page styles only
+         SVG and DOM, so it reads them from CSS and imports nothing. */
+      :root {
+        color-scheme: light;
+        --surface: #fcfcfb;
+        --plane: #f9f9f7;
+        --ink: #0b0b0b;
+        --ink-2: #52514e;
+        --ink-muted: #898781;
+        --hairline: rgba(11, 11, 11, 0.1);
+        --accent: #eb6834;
+        --panel: rgba(252, 252, 251, 0.86);
+        --node: #2a78d6;
+        --edge: #c3c2b7;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:where(:not([data-theme="light"])) {
+          color-scheme: dark;
+          --surface: #1a1a19;
+          --plane: #0d0d0d;
+          --ink: #ffffff;
+          --ink-2: #c3c2b7;
+          --hairline: rgba(255, 255, 255, 0.1);
+          --accent: #d95926;
+          --panel: rgba(26, 26, 25, 0.86);
+          --node: #3987e5;
+          --edge: #383835;
+        }
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --surface: #1a1a19;
+        --plane: #0d0d0d;
+        --ink: #ffffff;
+        --ink-2: #c3c2b7;
+        --hairline: rgba(255, 255, 255, 0.1);
+        --accent: #d95926;
+        --panel: rgba(26, 26, 25, 0.86);
+        --node: #3987e5;
+        --edge: #383835;
+      }
+
+      /* One duration for anything that moves, one for anything that appears or goes. */
+      :root {
+        --move: 420ms;
+        --fade: 260ms;
+        --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--surface);
+        color: var(--ink);
+        font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+
+      #stage { position: fixed; inset: 0; }
+      #stage svg { display: block; width: 100%; height: 100%; }
+
+      /* Without this, a CSS transform on an SVG element is measured from the middle of
+         the viewBox instead of the origin, and every rotation swings around the wrong
+         point. Setting it once here is what lets the geometry below be plain trig. */
+      #stage svg g,
+      #stage svg line {
+        transform-box: view-box;
+        transform-origin: 0 0;
+      }
+
+      /* A node is a spoke: turn to its bearing, then run out to its radius. The centre is
+         the same thing at radius zero, which is why the node you click keeps its elements
+         the whole way in and the node you leave keeps its the whole way out. Arms and
+         nodes are separate layers — every arm meets at the origin, so one group per spoke
+         would paint arms across the centre mark. */
+      .arm,
+      .node {
+        transition: transform var(--move) var(--ease), opacity var(--fade) linear;
+      }
+      .dot { transition: r var(--move) var(--ease), fill var(--move) linear; }
+
+      .node { cursor: pointer; }
+      .arm { stroke: var(--edge); stroke-width: 1.25; }
+      .dot { fill: var(--node); stroke: var(--surface); stroke-width: 1.5; }
+      .hit { fill: transparent; }
+      .label {
+        fill: var(--ink-2);
+        font-size: 11px;
+        text-anchor: middle;
+        pointer-events: none;
+        transition: opacity 140ms linear;
+      }
+
+      .node:hover .dot { stroke: var(--accent); stroke-width: 2.5; }
+      .node:hover .label { fill: var(--ink); }
+
+      .node.is-centre { cursor: default; }
+      .node.is-centre .dot { fill: var(--accent); }
+      .node.is-centre .label { fill: var(--ink); font-size: 13px; font-weight: 600; }
+      .node.is-centre:hover .dot { stroke: var(--surface); stroke-width: 1.5; }
+      .arm.is-centre { opacity: 0; }
+
+      .is-entering, .is-leaving { opacity: 0; }
+      .is-leaving { pointer-events: none; }
+
+      /* Mid-hop the ring is stale — it belongs to the node being left. Dimming says so
+         without clearing it, which would leave an empty screen for the length of a fetch. */
+      .is-hopping .node:not(.is-centre),
+      .is-hopping .arm:not(.is-centre) { opacity: 0.3; }
+
+      /* Past this many neighbours the labels overlap into noise, so they wait for a hover. */
+      .dense .label { opacity: 0; }
+      .dense .node:hover .label,
+      .dense .node.is-centre .label { opacity: 1; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .arm, .node, .dot { transition-duration: 1ms !important; }
+      }
+
+      .panel {
+        position: fixed;
+        z-index: 2;
+        background: var(--panel);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--hairline);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+
+      #hud { top: 16px; left: 16px; min-width: 224px; }
+      #hud h1 {
+        margin: 0 0 2px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      #hud .sub { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; }
+
+      dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+      dt { color: var(--ink-2); font-size: 11px; }
+      dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #status {
+        margin: 10px 0 0;
+        padding-top: 9px;
+        border-top: 1px solid var(--hairline);
+        font-size: 11px;
+        color: var(--ink-2);
+      }
+      #status[data-tone="busy"] { color: var(--accent); }
+      #status[data-tone="error"] { color: var(--accent); font-weight: 500; }
+
+      #legend { bottom: 16px; left: 16px; display: grid; gap: 7px; }
+      #legend .row { display: flex; align-items: center; gap: 8px; }
+      #legend .label-text { color: var(--ink-2); font-size: 11px; }
+      .key { display: inline-block; border-radius: 50%; flex: none; }
+      .key.centre { width: 15px; height: 15px; background: var(--accent); }
+      .key.small { width: 7px; height: 7px; background: var(--node); }
+      .key.large { width: 14px; height: 14px; background: var(--node); }
+      #legend .pair { display: flex; align-items: center; gap: 5px; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <section class="panel" id="hud">
+      <h1>One node at a time</h1>
+      <p class="sub">its ring, and nothing else — click a neighbour to travel</p>
+      <dl>
+        <dt>here</dt>
+        <dd id="stat-centre">—</dd>
+        <dt>neighbours</dt>
+        <dd id="stat-ring">0</dd>
+        <dt>hops</dt>
+        <dd id="stat-hops">0</dd>
+        <dt>in store</dt>
+        <dd id="stat-total">—</dd>
+      </dl>
+      <p id="status" data-tone="idle">starting…</p>
+    </section>
+
+    <section class="panel" id="legend">
+      <div class="row">
+        <span class="key centre"></span>
+        <span class="label-text">where you are</span>
+      </div>
+      <div class="row">
+        <span class="pair"><span class="key small"></span><span class="key large"></span></span>
+        <span class="label-text">a neighbour · bigger means more graph behind it</span>
+      </div>
+    </section>
+
+    <script type="module" src="/src/orbit/main.ts"></script>
+  </body>
+</html>
