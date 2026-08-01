@@ -40,9 +40,14 @@ npm run ddb:smoke       # verify it all works
 | `npm run ddb:migrate` | Create any missing table — idempotent, never drops or alters |
 | `npm run ddb:smoke` | Round-trip test against the current target |
 | `npm run dev:db` | `ddb:start` + `ddb:migrate` |
-| `npm run typecheck` | `tsc --noEmit` |
+| `npm run typecheck` | `tsc --noEmit` over `src/` and `web/` |
 | `npm run build` | Compile to `dist/` |
 | `npm test` | `typecheck` + `ddb:smoke` |
+| `npm run graph:seed` | Generate a small-world graph and write it to the table |
+| `npm run demo` | Graph API + dev server together — the demo page |
+| `npm run api` | Just the graph API, on `:8787` |
+| `npm run web` | Just the Vite dev server, on `:5173` |
+| `npm run build:web` | Bundle the demo page to `dist/web/` |
 
 Use a different port with `DYNAMODB_LOCAL_PORT=8001`.
 
@@ -82,6 +87,20 @@ src/db/
   tables.ts     table + index definitions
   migrate.ts    creates missing tables (idempotent)
   smoke.ts      end-to-end check, doubles as a usage example
+src/graph/
+  keys.ts       key layout for nodes and edges
+  generate.ts   Watts–Strogatz generator (pure, deterministic)
+  seed.ts       clears the old graph, writes a new one
+  repo.ts       the reads: adjacency Query + metas BatchGet
+src/server/
+  index.ts      the graph API (Hono)
+web/src/
+  placement.ts  seating geometry + spatial index — pure, no renderer
+  world.ts      the store: frozen positions, adjacency, degrees
+  map-view.ts   Cytoscape render; additive only, no layout engine
+  explore.ts    what to fetch when the camera settles
+  palette.ts    validated colour tokens, light and dark
+  main.ts       wiring, accent tracking, the HUD
 scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
 .dynamodb-data/        local database files + server log (gitignored)
@@ -115,6 +134,43 @@ The key design is deliberately generic and should be treated as **provisional** 
 domain is not defined yet, and DynamoDB normally wants access patterns known up front.
 [ADR 0002](docs/decisions/0002-single-table-layout.md) records that trade-off.
 
+## Graph demo
+
+Pan around an undirected cyclic graph like a map. More of it loads as you go.
+
+```bash
+npm run dev:db          # local DynamoDB + tables
+npm run graph:seed      # 600 nodes / 1800 edges by default
+npm run demo            # http://localhost:5173
+```
+
+Size it with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`. Re-seeding clears the
+previous graph first. The API adds an artificial `GRAPH_API_DELAY_MS` (default 120)
+because a local read returns too fast to ever see a loading state.
+
+| Gesture | Does |
+|---|---|
+| drag | Pan |
+| wheel | Zoom toward the cursor |
+| click a node | Glide it to the middle |
+| click a ghost | Fly to the node it stands in for |
+| `↑↓←→` | Nudge the view |
+
+The node nearest the middle of the screen is the **centre**, which is what gliding a node
+to the middle is for. Panning itself does no work: there is no simulation and no layout,
+every node is seated once and never moved, and fetching waits for the camera to go still.
+
+How that is put together, and what has to stay true, is in [design](docs/design/) —
+[architecture.md](docs/design/architecture.md) for the layers and the invariants, and
+[the-centre.md](docs/design/the-centre.md) for what the map draws around the centre.
+[ADR 0003](docs/decisions/0003-graph-exploration-demo-stack.md) and
+[ADR 0004](docs/decisions/0004-the-centre-and-its-neighbourhood.md) hold the reasoning, and
+what each choice cost.
+
 ## Docs
 
+- [docs/](docs/) — the map: which document answers which question, and which ones get
+  edited rather than appended to
+- [Requirements](docs/requirements/) — no product scope yet, and what the demo has to do
+- [Design](docs/design/) — layers, boundaries, and the invariants the code protects
 - [Architecture decisions](docs/decisions/) — the "why" behind these choices

@@ -9,7 +9,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "build:web": "vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
     "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: ADR gate installed'",
     "adr": "scripts/adr-gate.py",
     "ddb:install": "./scripts/dynamodb-local.sh install",
@@ -21,17 +22,25 @@
     "ddb:migrate": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/db/migrate.ts",
     "ddb:smoke": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/db/smoke.ts",
     "dev:db": "npm run ddb:start && npm run ddb:migrate",
+    "graph:seed": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/seed.ts",
+    "api": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/server/index.ts",
+    "web": "vite",
+    "demo": "trap 'kill 0' EXIT; npm run api & npm run web",
     "test": "npm run typecheck && npm run ddb:smoke"
   },
   "keywords": [],
   "license": "UNLICENSED",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1096.0",
-    "@aws-sdk/lib-dynamodb": "^3.1096.0"
+    "@aws-sdk/lib-dynamodb": "^3.1096.0",
+    "@hono/node-server": "^2.0.12",
+    "cytoscape": "^3.34.0",
+    "hono": "^4.12.32"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
     "tsx": "^4.23.1",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5"
   }
 }

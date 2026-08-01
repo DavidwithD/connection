@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>connection — graph exploration demo</title>
+    <style>
+      /* Tokens from web/src/palette.ts. Both modes are chosen, not flipped: the dark
+         column is the same hues re-stepped for the dark surface. */
+      :root {
+        color-scheme: light;
+        --surface: #fcfcfb;
+        --plane: #f9f9f7;
+        --ink: #0b0b0b;
+        --ink-2: #52514e;
+        --ink-muted: #898781;
+        --hairline: rgba(11, 11, 11, 0.1);
+        --accent: #eb6834;
+        --panel: rgba(252, 252, 251, 0.86);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:where(:not([data-theme="light"])) {
+          color-scheme: dark;
+          --surface: #1a1a19;
+          --plane: #0d0d0d;
+          --ink: #ffffff;
+          --ink-2: #c3c2b7;
+          --hairline: rgba(255, 255, 255, 0.1);
+          --accent: #d95926;
+          --panel: rgba(26, 26, 25, 0.86);
+        }
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --surface: #1a1a19;
+        --plane: #0d0d0d;
+        --ink: #ffffff;
+        --ink-2: #c3c2b7;
+        --hairline: rgba(255, 255, 255, 0.1);
+        --accent: #d95926;
+        --panel: rgba(26, 26, 25, 0.86);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--surface);
+        color: var(--ink);
+        font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+
+      /* The stage owns the wheel and drag: nothing here scrolls or pans. */
+      #stage {
+        position: fixed;
+        inset: 0;
+        background: var(--surface);
+        touch-action: none;
+        cursor: grab;
+      }
+      #stage:active { cursor: grabbing; }
+
+      .panel {
+        position: fixed;
+        z-index: 2;
+        background: var(--panel);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--hairline);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+
+      #hud { top: 16px; left: 16px; min-width: 232px; }
+      #hud h1 {
+        margin: 0 0 2px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      #hud .sub { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; }
+
+      dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+      dt { color: var(--ink-2); font-size: 11px; }
+      dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+
+      #status {
+        margin: 10px 0 0;
+        padding-top: 9px;
+        border-top: 1px solid var(--hairline);
+        font-size: 11px;
+        color: var(--ink-2);
+      }
+      #status[data-tone="busy"] { color: var(--accent); }
+      #status[data-tone="error"] { color: var(--accent); font-weight: 500; }
+
+      #legend { bottom: 16px; left: 16px; }
+      #legend .row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+      #legend .row:first-of-type { margin-top: 0; }
+      #legend .label { color: var(--ink-2); font-size: 11px; }
+      #ramp { display: flex; align-items: center; gap: 5px; }
+      .dot { display: inline-block; border-radius: 50%; }
+      .dot.accent { width: 15px; height: 15px; background: var(--accent); }
+      .dot.dashed {
+        width: 13px;
+        height: 13px;
+        background: transparent;
+        border: 2px dashed var(--ink-2);
+      }
+      /* Matches the on-map stub: a dashed lead ending in a small muted dot. */
+      .stub-key {
+        display: inline-flex;
+        align-items: center;
+        width: 15px;
+        height: 13px;
+      }
+      .stub-key::before {
+        content: "";
+        flex: 1;
+        border-top: 1.5px dashed var(--ink-muted);
+      }
+      .stub-key::after {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--ink-muted);
+      }
+
+      #controls { top: 16px; right: 16px; display: flex; gap: 6px; padding: 8px; }
+      button {
+        font: inherit;
+        font-size: 11px;
+        color: var(--ink);
+        background: transparent;
+        border: 1px solid var(--hairline);
+        border-radius: 7px;
+        padding: 5px 10px;
+        cursor: pointer;
+        min-width: 28px;
+      }
+      button:hover { background: var(--plane); }
+
+      kbd {
+        font: inherit;
+        font-size: 10px;
+        color: var(--ink-2);
+        background: var(--plane);
+        border: 1px solid var(--hairline);
+        border-radius: 4px;
+        padding: 1px 4px;
+      }
+      #keys { bottom: 16px; right: 16px; display: grid; gap: 4px; font-size: 11px; }
+      #keys span { color: var(--ink-2); }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <section class="panel" id="hud">
+      <h1>Graph exploration</h1>
+      <p class="sub">one map, panned freely — the middle is where you are</p>
+      <dl>
+        <dt>at centre</dt>
+        <dd id="stat-centre">—</dd>
+        <dt>its degree</dt>
+        <dd id="stat-degree">0</dd>
+        <dt>nodes placed</dt>
+        <dd id="stat-nodes">0</dd>
+        <dt>edges drawn</dt>
+        <dd id="stat-edges">0</dd>
+        <dt>loading</dt>
+        <dd id="stat-pending">0</dd>
+        <dt>in store</dt>
+        <dd id="stat-total">—</dd>
+      </dl>
+      <p id="status" data-tone="idle">starting…</p>
+    </section>
+
+    <div class="panel" id="controls">
+      <button id="zoom-out" type="button" title="Zoom out">−</button>
+      <button id="zoom-in" type="button" title="Zoom in">+</button>
+      <button id="home" type="button">Recentre</button>
+    </div>
+
+    <section class="panel" id="legend">
+      <div class="row">
+        <span class="dot accent"></span>
+        <span class="label">nearest the middle</span>
+      </div>
+      <div class="row">
+        <div id="ramp"></div>
+        <span class="label">its neighbours · the rest</span>
+      </div>
+      <div class="row">
+        <span class="dot dashed"></span>
+        <span class="label">more graph behind it</span>
+      </div>
+      <div class="row">
+        <span class="stub-key"></span>
+        <span class="label">edge to somewhere off-map</span>
+      </div>
+    </section>
+
+    <div class="panel" id="keys">
+      <span><kbd>drag</kbd> pan &nbsp; <kbd>wheel</kbd> zoom</span>
+      <span><kbd>click</kbd> glide it to the middle</span>
+      <span><kbd>↑↓←→</kbd> nudge the view</span>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
