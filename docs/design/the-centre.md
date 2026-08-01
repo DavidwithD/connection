@@ -46,7 +46,9 @@ position regardless if there are none, since crowding is what put the neighbour 
 to begin with.
 
 A ghost replaces the *centre's own end* of that long edge. The tether at the far end stays;
-it belongs to the other node. Raised on a settled camera, not on every centre change.
+it belongs to the other node. Raised on a settled camera, not on every centre change — and
+once at boot, because the first frame is the root's ring and has nothing else to stand in
+for a neighbour seated out of range.
 
 ## The flight
 

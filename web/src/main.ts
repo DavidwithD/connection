@@ -11,6 +11,10 @@
  * over — because a bare nearest-wins test flickers between two nodes when the midpoint
  * passes between them.
  *
+ * Whichever node holds the accent once the camera stops is the only one read. Boot seats
+ * the root and the ring around it, and every node after that arrives because somebody
+ * walked to its neighbour — see docs/decisions/0006-only-the-centre-reads.md.
+ *
  * See docs/decisions/0003-graph-exploration-demo-stack.md.
  */
 import { fetchIndex, fetchNeighbourhood } from "./api.js"
@@ -66,9 +70,8 @@ function render(): void {
   statPending.textContent = String(explorer.pending)
 
   if (status.dataset["tone"] === "error") return
-  const gate = explorer.gate()
   if (explorer.pending > 0) setStatus(`loading ${explorer.pending}…`, "busy")
-  else setStatus(gate || "drag to pan · wheel to zoom · click to centre", "idle")
+  else setStatus("drag to pan · wheel to zoom · click to centre", "idle")
 }
 
 /** Whatever is nearest the middle becomes the accent, with a bias toward the incumbent. */
@@ -98,8 +101,16 @@ const trackAccent = perFrame(() => {
   }
 })
 
-const sweep = debounce(() => {
-  explorer.sweep()
+/**
+ * Everything that waits for the camera to stop.
+ *
+ * Cytoscape emits `viewport` on every frame of an animated pan, and it emits it whether or
+ * not the pan moved — so a Recentre with the centre already centred still arrives here.
+ * That is harmless precisely because the only read this schedules is the centre's, and the
+ * centre asks once: a second settle over the same node finds it already claimed.
+ */
+const settle = debounce(() => {
+  explorer.loadCentre()
   // Ghosts wait for a settled camera. Tiers are data writes and cheap to redo mid-pan;
   // elements arriving and leaving on every accent change would strobe.
   view.showGhosts()
@@ -108,7 +119,7 @@ const sweep = debounce(() => {
 
 view.cy.on("viewport", () => {
   trackAccent()
-  sweep()
+  settle()
 })
 
 view.cy.on("tap", "node", (event) => {
@@ -159,7 +170,7 @@ onThemeChange((palette) => view.restyle(palette))
 window.addEventListener("resize", () => {
   view.resize()
   trackAccent()
-  sweep()
+  settle()
 })
 
 // The legend's swatches are built from the same tokens the map draws with.
@@ -198,8 +209,11 @@ async function boot(): Promise<void> {
   view.focus(root.node.id, false)
   view.setAccent(root.node.id)
 
-  // One extra ring so the first frame has somewhere to go. After this the camera drives.
-  await Promise.all(absorbed.nodes.slice(0, 4).map((node) => explorer.expand(node.id)))
+  // The root and its ring, and that is the whole first frame. Nothing beyond it is read
+  // until somebody walks there. Ghosts are raised here rather than left to the first
+  // settle, because a neighbour seated too far to draw is still one of these neighbours,
+  // and the first frame is the one place with nothing else on screen to stand in for it.
+  view.showGhosts()
   render()
 }
 

@@ -24,7 +24,7 @@ import cytoscape, {
   type NodeSingular,
   type StylesheetJson,
 } from "cytoscape"
-import { LONG_EDGE, NODE_SIZE, seat, type Point } from "./placement.js"
+import { LONG_EDGE, NODE_SIZE, type Point } from "./placement.js"
 import { currentPalette, type Palette } from "./palette.js"
 import type { World, WorldNode } from "./world.js"
 
@@ -265,22 +265,6 @@ export class MapView {
   reach(): number {
     const box = this.cy.extent()
     return Math.max(box.w, box.h)
-  }
-
-  /** Nodes whose position falls inside the viewport, grown by a margin. */
-  visible(margin: number): WorldNode[] {
-    const box = this.cy.extent()
-    return this.world.incompleteNodes().filter(
-      (node) =>
-        node.x >= box.x1 - margin &&
-        node.x <= box.x2 + margin &&
-        node.y >= box.y1 - margin &&
-        node.y <= box.y2 + margin,
-    )
-  }
-
-  zoom(): number {
-    return this.cy.zoom()
   }
 
   /** Only ever additive: existing elements are never touched. */

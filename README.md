@@ -102,7 +102,7 @@ web/src/            the map, and the client both pages read the API through
   placement.ts  seating geometry + spatial index — pure, no renderer
   world.ts      the store: frozen positions, adjacency, degrees
   map-view.ts   Cytoscape render; additive only, no layout engine
-  explore.ts    what to fetch when the camera settles
+  explore.ts    what the centre reads once the camera settles
   palette.ts    validated colour tokens, light and dark
   main.ts       wiring, accent tracking, the HUD
 web/src/orbit/      one node at a time
@@ -160,7 +160,7 @@ same seed through the same two routes.
 
 ### The map — `/`
 
-Pan around an undirected cyclic graph like a map. More of it loads as you go.
+Pan around an undirected cyclic graph like a map. Whatever you stop on is what loads.
 
 | Gesture | Does |
 |---|---|
@@ -171,15 +171,18 @@ Pan around an undirected cyclic graph like a map. More of it loads as you go.
 | `↑↓←→` | Nudge the view |
 
 The node nearest the middle of the screen is the **centre**, which is what gliding a node
-to the middle is for. Panning itself does no work: there is no simulation and no layout,
-every node is seated once and never moved, and fetching waits for the camera to go still.
+to the middle is for. It is also the only node that reads: the map holds the route you
+walked, and nothing is loaded ahead of you except the far end of a ghost you clicked.
+Panning itself does no work — no simulation, no layout, every node seated once and never
+moved, and no read until the camera goes still.
 
 How that is put together, and what has to stay true, is in [design](docs/design/) —
 [architecture.md](docs/design/architecture.md) for the layers and the invariants, and
 [the-centre.md](docs/design/the-centre.md) for what the map draws around the centre.
-[ADR 0003](docs/decisions/0003-graph-exploration-demo-stack.md) and
-[ADR 0004](docs/decisions/0004-the-centre-and-its-neighbourhood.md) hold the reasoning, and
-what each choice cost.
+[ADR 0003](docs/decisions/0003-graph-exploration-demo-stack.md),
+[ADR 0004](docs/decisions/0004-the-centre-and-its-neighbourhood.md) and
+[ADR 0006](docs/decisions/0006-only-the-centre-reads.md) hold the reasoning, and what each
+choice cost.
 
 ### One node at a time — `/orbit.html`
 

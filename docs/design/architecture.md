@@ -37,12 +37,14 @@ Break one of these and the map lies, rather than merely looking wrong.
 rests on that absence and not on the renderer declining. Drawing is additive only, which is
 why a reply landing mid-gesture cannot disturb what is on screen.
 
-**Fetching follows a settled camera.** Movement triggers nothing, so panning never waits on
-the network. [explore.ts](../../web/src/explore.ts) bounds the rest: three requests
-outstanding at most, two nodes expanded per settle, and nothing below the zoom gate except a
-node asked for by name.
+**Only the centre reads, and only once the camera settles.** Movement triggers nothing, so
+panning never waits on the network, and a gesture crossing six nodes reads the one it stops
+on. [explore.ts](../../web/src/explore.ts) holds the whole rule; the one node it will read
+without being the centre is a flight's destination, asked for by name.
 
-**A node is claimed before its request leaves.** Two sweeps cannot double-fetch it.
+**A node is claimed before its request leaves**, so two settles cannot double-read it — and
+the claim comes back if that request is cancelled or fails, because a node marked as read
+while short of its own neighbours is a map that lies.
 
 **Degree comes from the node's own item**, never counted from the edge items that were read.
 [repo.ts](../../src/graph/repo.ts) truncates a hub past 120 edges instead of paginating, so a
@@ -58,6 +60,7 @@ lets a `Limit` drop edges but never the node.
 | [0002](../decisions/0002-single-table-layout.md) | One table, `pk`/`sk`, one sparse GSI |
 | [0003](../decisions/0003-graph-exploration-demo-stack.md) | Frozen positions, a camera, fetch on settle |
 | [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | The centre draws every neighbour; ghosts move, nothing else does |
+| [0006](../decisions/0006-only-the-centre-reads.md) | The centre is the only node that reads; the map is the route walked |
 
-0003 and 0004 are Proposed, so their constraints are live but unsettled — 0004 already
-reverses one line of 0003.
+0003, 0004 and 0006 are Proposed, so their constraints are live but unsettled — each of the
+later two reverses one line of 0003.
