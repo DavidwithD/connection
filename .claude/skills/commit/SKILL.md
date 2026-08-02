@@ -83,7 +83,11 @@ deleted or renamed file still referenced by code, docs, or a link.
 **Record** — `W018` this change *is* a decision — a fork with a road not taken, a
 constraint future work must obey — and no ADR is open. The value is at write time, so the
 record goes in this change, not after (`docs/decisions/GATE.md`) · `W019` behaviour
-changed and `README.md` now contradicts the code.
+changed and `README.md` now contradicts the code · `W020` a sentence landed in the wrong
+document — reasoning in `design/`, a component or table named in `requirements/`, a number
+copied instead of cited once, a fact true only this week written into a living doc
+(`docs/README.md`). The content is right, the file is wrong, and this is the last moment
+moving it is free.
 
 ### Notes
 
@@ -103,6 +107,9 @@ Ask these yourself, on the hunks:
   anything fail before a user found it?
 - **What did the author decide?** If a real alternative was rejected, that belongs in a
   record, not in a commit body nobody greps.
+- **Does each file still hold only what it monopolises?** Not "is this true" — `W019` asks
+  that. Ask whether the code, the design doc, the record, and this commit message are each
+  carrying only the part no other one can.
 
 ## 4. Message
 
