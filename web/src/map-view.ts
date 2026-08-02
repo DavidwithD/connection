@@ -10,8 +10,9 @@
  * a pan rather than a move, which both matches a map and protects the frozen positions.
  *
  * Importance is four discrete tiers — accent, its graph neighbours, everything else, and
- * the backdrop it crowds — recomputed only when the accent changes, which is O(degree)
- * rather than per frame. A continuous falloff would mean restyling every node per frame.
+ * the backdrop it crowds — recomputed when the accent changes and again when a reply lands
+ * on it, which is O(degree) rather than per frame. A continuous falloff would mean
+ * restyling every node per frame.
  *
  * Ghosts are the one exception to all of the above, and the exception is deliberate. See
  * docs/decisions/0004-the-centre-and-its-neighbourhood.md, and
