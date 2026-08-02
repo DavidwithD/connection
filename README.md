@@ -159,10 +159,9 @@ npm run demo            # the map at :5173, one node at a time at :5173/orbit.ht
 
 Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, and how many of its
 nodes are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K` — the defaults, and what each one costs,
-are in [seed.ts](src/graph/seed.ts). Re-seeding clears the previous graph first. The API
-adds an artificial delay (`GRAPH_API_DELAY_MS`, [index.ts](src/server/index.ts)) because a
-local read returns too fast to ever see a loading state. Both pages read the same seed
-through the same two routes.
+are in [seed.ts](src/graph/seed.ts). Re-seeding clears the previous graph first.
+`GRAPH_API_DELAY_MS` sets the API's artificial latency floor
+([index.ts](src/server/index.ts)).
 
 ### The map — `/`
 
