@@ -332,7 +332,15 @@ export class MapView {
         }
       }
       // Edges that arrive at the centre are the centre's edges, and read as such.
-      if (accent) this.cy.$id(accent).connectedEdges().data("accent", 1)
+      if (accent) {
+        this.cy.$id(accent).connectedEdges().data("accent", 1)
+        // A node already seated when this reply landed was tiered for a neighbourhood it
+        // was not yet known to be in — a sibling close enough to be backdrop is exactly
+        // the node the centre turns out to be joined to. Only `setAccent` re-tiers, and
+        // it will not fire until the accent moves, so the promotion has to happen here.
+        // O(degree + backdrop), once per reply rather than per frame.
+        this.setTiers(accent, true)
+      }
     })
   }
 
