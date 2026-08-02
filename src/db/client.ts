@@ -21,6 +21,13 @@ export const region = process.env.AWS_REGION?.trim() || "us-east-1"
 /** Table name, overridable per environment (dev / staging / prod). */
 export const TABLE_NAME = process.env.DYNAMODB_TABLE?.trim() || "connection"
 
+/**
+ * The graph's table. Separate from the one above because nothing reads across the two —
+ * see docs/decisions/0007-a-table-for-the-graph.md.
+ */
+export const GRAPH_TABLE_NAME =
+  process.env.DYNAMODB_GRAPH_TABLE?.trim() || "connection-graph"
+
 const rawClient = new DynamoDBClient({
   region,
   ...(endpoint ? { endpoint } : {}),
@@ -53,8 +60,9 @@ export const db = DynamoDBDocumentClient.from(rawClient, {
 /** Escape hatch for the few control-plane calls the document client lacks. */
 export { rawClient }
 
-export function describeTarget(): string {
+/** Where a command is about to write, and to which table — callers name their own. */
+export function describeTarget(table: string = TABLE_NAME): string {
   return isLocal
-    ? `DynamoDB Local at ${endpoint} (table: ${TABLE_NAME})`
-    : `AWS DynamoDB in ${region} (table: ${TABLE_NAME})`
+    ? `DynamoDB Local at ${endpoint} (table: ${table})`
+    : `AWS DynamoDB in ${region} (table: ${table})`
 }

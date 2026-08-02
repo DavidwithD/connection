@@ -22,7 +22,8 @@
  *
  * See docs/decisions/0003-graph-exploration-demo-stack.md.
  */
-import { fetchIndex, fetchNeighbourhood } from "./api.js"
+import { Cancelled, fetchIndex, fetchNeighbourhood, searchLabels } from "./api.js"
+import type { NodeMeta } from "./api.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
@@ -56,6 +57,15 @@ const ACCENT_HYSTERESIS = 0.78
 /** Keyboard pan step, in screen pixels. */
 const NUDGE = 120
 
+/**
+ * How long the search box waits before asking.
+ *
+ * Shorter than either settle: nothing is being drawn and no seat is at stake, so the only
+ * cost of being early is a request, and the only cost of being late is a box that feels
+ * slow. Roughly the gap between keystrokes at a normal typing speed.
+ */
+const SEARCH_DEBOUNCE_MS = 140
+
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id)
   if (!found) throw new Error(`missing element: #${id}`)
@@ -63,6 +73,8 @@ const el = <T extends HTMLElement>(id: string): T => {
 }
 
 const stage = el<HTMLDivElement>("stage")
+const searchInput = el<HTMLInputElement>("search-input")
+const results = el<HTMLUListElement>("results")
 const statCentre = el<HTMLSpanElement>("stat-centre")
 const statDegree = el<HTMLSpanElement>("stat-degree")
 const statNodes = el<HTMLSpanElement>("stat-nodes")
@@ -177,7 +189,100 @@ view.cy.on("tap", "node", (event) => {
   view.focus(id)
 })
 
+/**
+ * Arriving somewhere by name.
+ *
+ * Every other node on the map got here because somebody walked to its neighbour, and its
+ * seat came from the node it neighbours. A searched node has neither: it is joined to
+ * nothing on screen, and the only thing its position can answer to is where the camera
+ * happens to be. That is the cost of the box, and it is paid once — from the moment it
+ * lands it is an ordinary node, and what draws around it is its own neighbourhood, read on
+ * the settle at the end of the flight like anywhere else. The centre still draws; this only
+ * changes how a node becomes the centre.
+ */
+function goTo(node: NodeMeta): void {
+  results.replaceChildren()
+  searchInput.value = ""
+  searchInput.blur()
+
+  if (!world.has(node.id)) {
+    view.add([world.place(node, world.landing(view.centre(), node.id))], [])
+    view.setAccent(node.id)
+  }
+  // From here on this is the click path: name a destination, read it now rather than on
+  // the settle at the far end, and glide.
+  explorer.prefetch(node.id)
+  view.focus(node.id)
+  render()
+}
+
+function showResults(nodes: NodeMeta[], query: string): void {
+  results.replaceChildren()
+  if (!query) return
+
+  if (!nodes.length) {
+    const empty = document.createElement("li")
+    empty.className = "empty"
+    empty.textContent = `nothing starts with “${query}”`
+    results.append(empty)
+    return
+  }
+
+  for (const node of nodes) {
+    const name = document.createElement("span")
+    name.textContent = node.label
+    const degree = document.createElement("span")
+    degree.className = "degree"
+    degree.textContent = String(node.degree)
+    // Says which of these is already on the map, so picking one is a known quantity.
+    degree.title = world.has(node.id) ? "already placed" : `${String(node.degree)} edges`
+
+    const button = document.createElement("button")
+    button.type = "button"
+    button.append(name, degree)
+    button.addEventListener("click", () => goTo(node))
+
+    const row = document.createElement("li")
+    row.append(button)
+    results.append(row)
+  }
+}
+
+/** The query in the air, so a slower earlier reply cannot overwrite a later one. */
+let searching: AbortController | null = null
+
+const runSearch = debounce(() => {
+  const query = searchInput.value.trim()
+  searching?.abort()
+  if (!query) {
+    showResults([], "")
+    return
+  }
+
+  const control = new AbortController()
+  searching = control
+  searchLabels(query, control.signal)
+    .then((found) => {
+      if (!control.signal.aborted) showResults(found, query)
+    })
+    .catch((err: unknown) => {
+      if (err instanceof Cancelled) return
+      setStatus(`⚠ ${err instanceof Error ? err.message : String(err)}`, "error")
+    })
+}, SEARCH_DEBOUNCE_MS)
+
+searchInput.addEventListener("input", () => runSearch())
+searchInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return
+  searchInput.value = ""
+  results.replaceChildren()
+  searchInput.blur()
+})
+
 window.addEventListener("keydown", (event) => {
+  // The arrows below pan the camera. Inside the search box they belong to the text.
+  if (event.target instanceof HTMLInputElement) return
+
   const pan: Record<string, [number, number]> = {
     ArrowLeft: [NUDGE, 0],
     ArrowRight: [-NUDGE, 0],

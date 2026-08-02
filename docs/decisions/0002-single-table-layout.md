@@ -1,6 +1,6 @@
 # 0002 — Single-table layout for an undefined domain
 
-**Status:** ✅ Accepted
+**Status:** ♻️ Superseded by [0007](0007-a-table-for-the-graph.md)
 **Date:** 2026-07-28
 **Deciders:** David HL
 

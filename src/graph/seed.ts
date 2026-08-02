@@ -1,27 +1,52 @@
 /**
- * Generate a small-world graph and write it to the table.
+ * Generate a small-world graph and write it to the graph table.
  *
  *   npm run graph:seed              # default size
  *   GRAPH_N=2000 GRAPH_K=8 npm run graph:seed
  *   GRAPH_HUB_K=25 npm run graph:seed   # a longer tail of well-connected nodes
  *
- * The previous graph is deleted first, partition by partition. Overwriting without
- * deleting looked idempotent and was not: node metas were replaced but stale *edge*
- * items survived, so a node's stored `degree` stopped matching the edges in its
- * partition and reads returned more neighbours than the node claimed to have.
+ * The previous graph goes by dropping the table and creating it again. Overwriting without
+ * clearing looked idempotent and was not: node metas were replaced but stale *edge* items
+ * survived, so a node's stored `degree` stopped matching the edges in its partition and
+ * reads returned more neighbours than the node claimed to have. Deleting item by item fixed
+ * that and left its own gap — a run interrupted before the index landed orphaned whatever
+ * it had already written. Nothing outlives the table it lived in, so dropping closes both.
+ *
+ * That only works because the table is the graph's alone
+ * (docs/decisions/0007-a-table-for-the-graph.md), and it is the one destructive thing here:
+ * outside DynamoDB Local it refuses to run without GRAPH_SEED_DROP=1.
  */
-import { BatchWriteCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
-import { db, TABLE_NAME, describeTarget } from "../db/client.js"
-import { KEYS } from "../db/tables.js"
-import { INDEX_PK, META_SK, edgeSk, nodePk } from "./keys.js"
+import {
+  CreateTableCommand,
+  DeleteTableCommand,
+  ResourceNotFoundException,
+  waitUntilTableExists,
+  waitUntilTableNotExists,
+} from "@aws-sdk/client-dynamodb"
+import { BatchWriteCommand, PutCommand } from "@aws-sdk/lib-dynamodb"
+import {
+  db,
+  rawClient,
+  GRAPH_TABLE_NAME,
+  describeTarget,
+  isLocal,
+} from "../db/client.js"
+import { GRAPH_KEYS as KEYS, graphTableDefinition } from "./table.js"
+import {
+  INDEX_PK,
+  LABEL_OWNER_SK,
+  META_SK,
+  edgeSk,
+  labelBucket,
+  labelPk,
+  labelSort,
+  normaliseLabel,
+  nodePk,
+} from "./keys.js"
 import { degrees, generate } from "./generate.js"
-import { readIndex } from "./repo.js"
 
 /** DynamoDB's hard cap on a single BatchWriteItem request. */
 const BATCH_MAX = 25
-
-/** Partitions probed concurrently while clearing. */
-const CLEAR_CONCURRENCY = 40
 
 const num = (name: string, fallback: number): number => {
   const raw = process.env[name]?.trim()
@@ -29,22 +54,17 @@ const num = (name: string, fallback: number): number => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-const nodeIdAt = (i: number): string => `n${String(i).padStart(4, "0")}`
-
 type Item = Record<string, unknown>
-type Key = Record<string, unknown>
 
-async function submit(
-  requests: ({ PutRequest: { Item: Item } } | { DeleteRequest: { Key: Key } })[],
-): Promise<void> {
+async function submit(requests: { PutRequest: { Item: Item } }[]): Promise<void> {
   let pending = requests
   // BatchWrite can decline part of a batch under throttling and hands the rest back
   // rather than failing. Local never does this; real DynamoDB does.
   for (let attempt = 0; pending.length > 0 && attempt < 8; attempt++) {
     const res = await db.send(
-      new BatchWriteCommand({ RequestItems: { [TABLE_NAME]: pending } }),
+      new BatchWriteCommand({ RequestItems: { [GRAPH_TABLE_NAME]: pending } }),
     )
-    pending = (res.UnprocessedItems?.[TABLE_NAME] ?? []) as typeof pending
+    pending = (res.UnprocessedItems?.[GRAPH_TABLE_NAME] ?? []) as typeof pending
     if (pending.length > 0) await new Promise((r) => setTimeout(r, 50 * 2 ** attempt))
   }
   if (pending.length > 0) throw new Error("BatchWrite kept declining items")
@@ -61,51 +81,31 @@ async function writeAll(items: Item[], label: string): Promise<void> {
   process.stdout.write("\n")
 }
 
-/** Every key in one node's partition. */
-async function keysFor(id: string): Promise<Key[]> {
-  const res = await db.send(
-    new QueryCommand({
-      TableName: TABLE_NAME,
-      KeyConditionExpression: "#pk = :pk",
-      ExpressionAttributeNames: { "#pk": KEYS.pk, "#sk": KEYS.sk },
-      ExpressionAttributeValues: { ":pk": nodePk(id) },
-      ProjectionExpression: "#pk, #sk",
-    }),
-  )
-  return (res.Items ?? []).map((item) => ({
-    [KEYS.pk]: item[KEYS.pk],
-    [KEYS.sk]: item[KEYS.sk],
-  }))
-}
-
 /**
- * Delete the previous graph. Node ids are positional, so the old node count from the
- * index is enough to find every partition without a Scan. A run interrupted before the
- * index was written can leave orphans; `npm run ddb:reset` is the cure for that.
+ * Drop the graph table and build it again from the same definition `ddb:migrate` uses.
+ *
+ * Both waiters are load-bearing against real DynamoDB, where the two calls are asynchronous
+ * and creating a table still being deleted fails. Local completes them near-instantly.
  */
-async function clearGraph(previousCount: number, nextCount: number): Promise<void> {
-  const total = Math.max(previousCount, nextCount)
-  if (total === 0) return
-
-  const keys: Key[] = []
-  for (let i = 0; i < total; i += CLEAR_CONCURRENCY) {
-    const batch = Array.from(
-      { length: Math.min(CLEAR_CONCURRENCY, total - i) },
-      (_, j) => nodeIdAt(i + j),
+async function recreateTable(): Promise<void> {
+  try {
+    await rawClient.send(new DeleteTableCommand({ TableName: GRAPH_TABLE_NAME }))
+    await waitUntilTableNotExists(
+      { client: rawClient, maxWaitTime: 300 },
+      { TableName: GRAPH_TABLE_NAME },
     )
-    const found = await Promise.all(batch.map(keysFor))
-    for (const list of found) keys.push(...list)
+    console.log(`  dropped ${GRAPH_TABLE_NAME}`)
+  } catch (err) {
+    // Nothing to drop on a first run, which is not a failure.
+    if (!(err instanceof ResourceNotFoundException)) throw err
   }
-  keys.push({ [KEYS.pk]: INDEX_PK, [KEYS.sk]: META_SK })
 
-  for (let i = 0; i < keys.length; i += BATCH_MAX) {
-    await submit(keys.slice(i, i + BATCH_MAX).map((Key) => ({ DeleteRequest: { Key } })))
-    const done = Math.min(i + BATCH_MAX, keys.length)
-    if (done % 1000 === 0 || done === keys.length) {
-      process.stdout.write(`\r  cleared ${done}/${keys.length} items`)
-    }
-  }
-  process.stdout.write("\n")
+  await rawClient.send(new CreateTableCommand(graphTableDefinition))
+  await waitUntilTableExists(
+    { client: rawClient, maxWaitTime: 300 },
+    { TableName: GRAPH_TABLE_NAME },
+  )
+  console.log(`  created ${GRAPH_TABLE_NAME}`)
 }
 
 async function main(): Promise<void> {
@@ -120,7 +120,16 @@ async function main(): Promise<void> {
   const hubs = num("GRAPH_HUBS", Math.max(1, Math.round(n / 5)))
   const hubK = num("GRAPH_HUB_K", 20)
 
-  console.log(`→ ${describeTarget()}`)
+  // Dropping a table is not deleting rows, and the command that does it reads the same
+  // either way. Somewhere with real data has to say so out loud.
+  if (!isLocal && process.env["GRAPH_SEED_DROP"] !== "1") {
+    throw new Error(
+      `refusing to drop ${GRAPH_TABLE_NAME} outside DynamoDB Local — ` +
+        "set GRAPH_SEED_DROP=1 if that is really what you want",
+    )
+  }
+
+  console.log(`→ ${describeTarget(GRAPH_TABLE_NAME)}`)
   console.log(
     `  generating n=${n} k=${k} p=${p} seed=${seed} hubs=${hubs} hubK=${hubK}`,
   )
@@ -128,24 +137,47 @@ async function main(): Promise<void> {
   const graph = generate({ n, k, p, seed, hubs, hubK })
   const degree = degrees(graph)
 
-  const previous = await readIndex()
-  if (previous) {
-    console.log(`  clearing previous graph (${previous.nodeCount} nodes)`)
-    await clearGraph(previous.nodeCount, n)
-  }
+  // Every label claims a partition, so two nodes sharing one would leave a claim pointing
+  // at whichever was written last and the other unreachable by name. BatchWrite cannot
+  // carry the condition that would catch it, and one conditional put per node is one round
+  // trip per node — so the check happens here, before anything is written.
+  const items: Item[] = []
+  const claimed = new Map<string, string>()
+  for (const node of graph.nodes) {
+    const taken = claimed.get(normaliseLabel(node.label))
+    if (taken) {
+      throw new Error(
+        `two nodes share the label "${node.label}": ${taken} and ${node.id}`,
+      )
+    }
+    claimed.set(normaliseLabel(node.label), node.id)
 
-  const items: Item[] = graph.nodes.map((node) => ({
-    [KEYS.pk]: nodePk(node.id),
-    [KEYS.sk]: META_SK,
-    label: node.label,
-    degree: degree.get(node.id) ?? 0,
-  }))
+    items.push({
+      [KEYS.pk]: nodePk(node.id),
+      [KEYS.sk]: META_SK,
+      label: node.label,
+      degree: degree.get(node.id) ?? 0,
+      // Only the meta items carry these, which is the whole of what keeps the label
+      // index to one entry per node.
+      [KEYS.labelBucket]: labelBucket(node.label),
+      [KEYS.labelSort]: labelSort(node.label, node.id),
+    })
+    items.push({
+      [KEYS.pk]: labelPk(node.label),
+      [KEYS.sk]: LABEL_OWNER_SK,
+      nodeId: node.id,
+      label: node.label,
+    })
+  }
 
   // Both directions, so a walk arriving from either end reads one partition.
   for (const [a, b] of graph.edges) {
     items.push({ [KEYS.pk]: nodePk(a), [KEYS.sk]: edgeSk(b) })
     items.push({ [KEYS.pk]: nodePk(b), [KEYS.sk]: edgeSk(a) })
   }
+
+  if (!isLocal) console.log("  recreating the table (tens of seconds against AWS)…")
+  await recreateTable()
 
   console.log(`  ${graph.nodes.length} nodes, ${graph.edges.length} edges`)
   await writeAll(items, "wrote")
@@ -159,7 +191,7 @@ async function main(): Promise<void> {
 
   await db.send(
     new PutCommand({
-      TableName: TABLE_NAME,
+      TableName: GRAPH_TABLE_NAME,
       Item: {
         [KEYS.pk]: INDEX_PK,
         [KEYS.sk]: META_SK,
@@ -174,6 +206,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error("✗ seed failed:", err)
+  console.error("✗ seed failed:", err instanceof Error ? err.message : err)
   process.exit(1)
 })

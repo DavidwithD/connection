@@ -23,6 +23,7 @@
     "ddb:smoke": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/db/smoke.ts",
     "dev:db": "npm run ddb:start && npm run ddb:migrate",
     "graph:seed": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/seed.ts",
+    "graph:edge": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/edge.ts",
     "api": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/server/index.ts",
     "web": "vite",
     "demo": "trap 'kill 0' EXIT; npm run api & npm run web",

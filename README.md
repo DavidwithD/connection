@@ -75,7 +75,8 @@ Copy [.env.example](.env.example) to `.env` to set defaults for your machine.
 |---|---|---|
 | `DYNAMODB_ENDPOINT` | *(unset → real AWS)* | Set to target DynamoDB Local |
 | `AWS_REGION` | `us-east-1` | Region |
-| `DYNAMODB_TABLE` | `connection` | Table name, per environment |
+| `DYNAMODB_TABLE` | `connection` | The general table, per environment |
+| `DYNAMODB_GRAPH_TABLE` | `connection-graph` | The graph's table, per environment |
 | `DYNAMODB_LOCAL_PORT` | `8000` | Local server port |
 
 Against DynamoDB Local the client supplies dummy credentials automatically — the
@@ -86,14 +87,17 @@ server ignores them, but the SDK will not sign a request without them.
 ```
 src/db/
   client.ts     the shared document client; the local-vs-AWS switch lives here
-  tables.ts     table + index definitions
+  tables.ts     the general table, and the registry migrate reads
   migrate.ts    creates missing tables (idempotent)
   smoke.ts      end-to-end check, doubles as a usage example
 src/graph/
-  keys.ts       key layout for nodes and edges
+  table.ts      the graph's table and its label index
+  keys.ts       key layout for nodes, edges, and labels
   generate.ts   Watts–Strogatz generator (pure, deterministic)
-  seed.ts       clears the old graph, writes a new one
+  seed.ts       drops the table, writes a new graph
   repo.ts       the reads: adjacency Query + metas BatchGet
+  labels.ts     name -> node, exact and by prefix
+  edge.ts       joins two nodes, in one transaction
 src/server/
   index.ts      the graph API (Hono)
 web/
@@ -121,16 +125,19 @@ vendor/                the DynamoDB Local JAR (gitignored)
 
 ## Data model
 
-A **single-table design**: one table holds every entity type, distinguished by prefixed
-key values rather than by separate tables.
+Two tables. `connection-graph` holds the graph and nothing else; `connection` is an
+overloaded table waiting for entities the product has not named, keyed by prefixed values
+rather than by type. [ADR 0007](docs/decisions/0007-a-table-for-the-graph.md) is why they
+are apart.
 
 | | Partition key | Sort key |
 |---|---|---|
-| Table | `pk` | `sk` |
-| GSI `gsi1` | `gsi1pk` | `gsi1sk` |
+| Both tables | `pk` | `sk` |
+| `connection-graph`, index `label` | `labelBucket` | `labelSort` |
+| `connection`, index `gsi1` | `gsi1pk` | `gsi1sk` |
 
-Only key attributes are declared; every other field is per-item and needs no migration.
-Items that omit `gsi1pk` stay out of the index, which keeps it sparse.
+Only key attributes are declared; every other field is per-item and needs no migration. An
+item that omits an index's keys stays out of it, which is what keeps both indexes sparse.
 
 ```ts
 import { PutCommand } from "@aws-sdk/lib-dynamodb"
@@ -142,9 +149,11 @@ await db.send(new PutCommand({
 }))
 ```
 
-The key design is deliberately generic and should be treated as **provisional** — the
-domain is not defined yet, and DynamoDB normally wants access patterns known up front.
-[ADR 0002](docs/decisions/0002-single-table-layout.md) records that trade-off.
+The graph's keys are in [keys.ts](src/graph/keys.ts): a node and its whole adjacency share
+one partition, and a label owns another so a name resolves in one read
+([ADR 0008](docs/decisions/0008-finding-a-node-by-name.md)). The general table's keys are
+still **provisional** — the domain is not defined, and DynamoDB wants access patterns known
+up front.
 
 ## Graph demos
 
@@ -159,9 +168,17 @@ npm run demo            # the map at :5173, one node at a time at :5173/orbit.ht
 
 Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, and how many of its
 nodes are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K` — the defaults, and what each one costs,
-are in [seed.ts](src/graph/seed.ts). Re-seeding clears the previous graph first.
-`GRAPH_API_DELAY_MS` sets the API's artificial latency floor
+are in [seed.ts](src/graph/seed.ts). Re-seeding drops the graph table and builds it again,
+so it refuses to run against anything but the local emulator unless `GRAPH_SEED_DROP=1`
+says otherwise. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor
 ([index.ts](src/server/index.ts)).
+
+Join two nodes by name, which is the one thing here that writes outside the seed
+([ADR 0009](docs/decisions/0009-the-first-write-outside-the-seed.md)):
+
+```bash
+npm run graph:edge -- "Kavara" "Miselin"
+```
 
 ### The map — `/`
 

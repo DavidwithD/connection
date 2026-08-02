@@ -1,0 +1,83 @@
+/**
+ * Finding a node by its name rather than its id.
+ *
+ *   GetItem  label#<normalised>/#owner   -> the one node that holds this exact name
+ *   Query    label index, begins_with    -> everything starting with what has been typed
+ *
+ * Two calls because they answer to different rules. Resolving an exact name feeds a write,
+ * so it reads the base table and is strongly consistent: a claim made a moment ago is
+ * visible. Prefix search feeds a search box, where the index's eventual consistency costs
+ * nothing worse than a just-renamed node appearing a beat late.
+ *
+ * See docs/decisions/0008-finding-a-node-by-name.md.
+ */
+import { GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
+import { db, GRAPH_TABLE_NAME } from "../db/client.js"
+import { GRAPH_KEYS as KEYS, LABEL_INDEX } from "./table.js"
+import {
+  LABEL_OWNER_SK,
+  labelBucket,
+  labelPk,
+  nodeId,
+  normaliseLabel,
+  type NodeMeta,
+} from "./keys.js"
+import { readMetas } from "./repo.js"
+
+/** Most results a prefix query returns. A search box shows a list, not a page. */
+export const SEARCH_LIMIT = 20
+
+/**
+ * The node holding this exact name, or null.
+ *
+ * The claim item names the node but carries no degree, so the meta item is read after it.
+ * Two round trips, on a path where being right matters more than being quick.
+ */
+export async function resolveLabel(label: string): Promise<NodeMeta | null> {
+  if (!normaliseLabel(label)) return null
+
+  const res = await db.send(
+    new GetCommand({
+      TableName: GRAPH_TABLE_NAME,
+      Key: { [KEYS.pk]: labelPk(label), [KEYS.sk]: LABEL_OWNER_SK },
+      ConsistentRead: true,
+    }),
+  )
+
+  const id = String(res.Item?.["nodeId"] ?? "")
+  if (!id) return null
+
+  // A claim outliving its node would be a bug rather than a miss, but the caller can only
+  // act on what exists either way.
+  return (await readMetas([id])).get(id) ?? null
+}
+
+/** Every node whose name starts with `prefix`, nearest the front of the alphabet first. */
+export async function searchLabels(
+  prefix: string,
+  limit: number = SEARCH_LIMIT,
+): Promise<NodeMeta[]> {
+  const normalised = normaliseLabel(prefix)
+  if (!normalised) return []
+
+  const res = await db.send(
+    new QueryCommand({
+      TableName: GRAPH_TABLE_NAME,
+      IndexName: LABEL_INDEX,
+      KeyConditionExpression: "#bucket = :bucket AND begins_with(#sort, :prefix)",
+      ExpressionAttributeNames: { "#bucket": KEYS.labelBucket, "#sort": KEYS.labelSort },
+      ExpressionAttributeValues: {
+        ":bucket": labelBucket(prefix),
+        ":prefix": normalised,
+      },
+      Limit: limit,
+    }),
+  )
+
+  // The index projects everything, so a hit is already a whole node.
+  return (res.Items ?? []).map((item) => ({
+    id: nodeId(String(item[KEYS.pk] ?? "")),
+    label: String(item["label"] ?? ""),
+    degree: Number(item["degree"] ?? 0),
+  }))
+}

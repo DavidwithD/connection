@@ -54,3 +54,9 @@ export const fetchNeighbourhood = (
   signal?: AbortSignal,
 ): Promise<Neighbourhood> =>
   get<Neighbourhood>(`/api/nodes/${encodeURIComponent(id)}`, signal)
+
+/** Nodes whose name starts with `q`. Empty for a blank query, without asking the server. */
+export const searchLabels = (q: string, signal?: AbortSignal): Promise<NodeMeta[]> =>
+  q.trim()
+    ? get<NodeMeta[]>(`/api/search?q=${encodeURIComponent(q.trim())}`, signal)
+    : Promise.resolve([])

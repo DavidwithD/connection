@@ -1,8 +1,10 @@
 /**
- * The graph API the demo page talks to. Two routes, both read-only.
+ * The graph API the demo page talks to. Three routes, all read-only — edges are added from
+ * the terminal (src/graph/edge.ts), not from the browser.
  *
  *   GET /api/graph            where to start, and how big the graph is
  *   GET /api/nodes/:id        one node and its neighbours, with their true degrees
+ *   GET /api/search?q=        nodes whose name starts with q
  *
  * The client seats new nodes itself, so the server only ever answers "who is next to
  * this?" — one Query plus one BatchGet. Vite proxies /api here in development, so there
@@ -12,7 +14,8 @@
  */
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
-import { describeTarget } from "../db/client.js"
+import { GRAPH_TABLE_NAME, describeTarget } from "../db/client.js"
+import { searchLabels } from "../graph/labels.js"
 import { readIndex, readNeighbourhood } from "../graph/repo.js"
 
 const app = new Hono()
@@ -38,6 +41,15 @@ app.get("/api/nodes/:id", async (c) => {
   return c.json(result)
 })
 
+app.get("/api/search", async (c) => {
+  const q = c.req.query("q")?.trim() ?? ""
+  if (!q) return c.json({ error: "q is required" }, 400)
+
+  // No artificial delay here. The floor above exists to make a loading state visible; a
+  // box that answers as you type wants the opposite.
+  return c.json(await searchLabels(q))
+})
+
 app.onError((err, c) => {
   console.error("✗ request failed:", err)
   return c.json({ error: "internal error" }, 500)
@@ -46,6 +58,6 @@ app.onError((err, c) => {
 const port = Number(process.env["PORT"] ?? 8787)
 
 serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`→ ${describeTarget()}`)
+  console.log(`→ ${describeTarget(GRAPH_TABLE_NAME)}`)
   console.log(`✓ graph API on http://localhost:${info.port}`)
 })

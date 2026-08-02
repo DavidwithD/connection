@@ -12,8 +12,8 @@
  * The reasoning is docs/decisions/0003-graph-exploration-demo-stack.md.
  */
 import { BatchGetCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
-import { db, TABLE_NAME } from "../db/client.js"
-import { KEYS } from "../db/tables.js"
+import { db, GRAPH_TABLE_NAME } from "../db/client.js"
+import { GRAPH_KEYS as KEYS } from "./table.js"
 import {
   EDGE_PREFIX,
   INDEX_PK,
@@ -45,7 +45,7 @@ export interface Adjacency {
 export async function readIndex(): Promise<GraphIndex | null> {
   const res = await db.send(
     new GetCommand({
-      TableName: TABLE_NAME,
+      TableName: GRAPH_TABLE_NAME,
       Key: { [KEYS.pk]: INDEX_PK, [KEYS.sk]: META_SK },
     }),
   )
@@ -70,9 +70,9 @@ export async function readMetas(ids: string[]): Promise<Map<string, NodeMeta>> {
 
     for (let attempt = 0; keys.length > 0 && attempt < 8; attempt++) {
       const res = await db.send(
-        new BatchGetCommand({ RequestItems: { [TABLE_NAME]: { Keys: keys } } }),
+        new BatchGetCommand({ RequestItems: { [GRAPH_TABLE_NAME]: { Keys: keys } } }),
       )
-      for (const item of res.Responses?.[TABLE_NAME] ?? []) {
+      for (const item of res.Responses?.[GRAPH_TABLE_NAME] ?? []) {
         const id = nodeId(String(item[KEYS.pk] ?? ""))
         if (!id) continue
         out.set(id, {
@@ -81,7 +81,7 @@ export async function readMetas(ids: string[]): Promise<Map<string, NodeMeta>> {
           degree: Number(item["degree"] ?? 0),
         })
       }
-      keys = (res.UnprocessedKeys?.[TABLE_NAME]?.Keys ?? []) as typeof keys
+      keys = (res.UnprocessedKeys?.[GRAPH_TABLE_NAME]?.Keys ?? []) as typeof keys
       if (keys.length > 0) await new Promise((r) => setTimeout(r, 50 * 2 ** attempt))
     }
   }
@@ -117,7 +117,7 @@ export async function readNeighbourhood(id: string): Promise<Neighbourhood | nul
 export async function readAdjacency(id: string): Promise<Adjacency | null> {
   const res = await db.send(
     new QueryCommand({
-      TableName: TABLE_NAME,
+      TableName: GRAPH_TABLE_NAME,
       KeyConditionExpression: "#pk = :pk",
       ExpressionAttributeNames: { "#pk": KEYS.pk },
       ExpressionAttributeValues: { ":pk": nodePk(id) },

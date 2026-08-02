@@ -58,7 +58,8 @@ while short of its own neighbours is a map that lies.
 count taken from edges would silently understate it. `#meta` sorting ahead of `edge#` is what
 lets a `Limit` drop edges but never the node.
 
-**The API is read-only.** Both routes are `GET`; writes arrive through the seed script.
+**The API is read-only.** Every route is a `GET`; writes arrive through the seed script, or
+through [edge.ts](../../src/graph/edge.ts) when two nodes are joined by hand.
 
 ## Where each record landed
 
@@ -67,11 +68,15 @@ summary here is a second copy, and it is the copy that goes stale.
 
 | Record | Carried by |
 |---|---|
-| [0002](../decisions/0002-single-table-layout.md) | [tables.ts](../../src/db/tables.ts), [keys.ts](../../src/graph/keys.ts) |
+| [0002](../decisions/0002-single-table-layout.md) | Superseded — see 0007 |
 | [0003](../decisions/0003-graph-exploration-demo-stack.md) | [placement.ts](../../web/src/placement.ts), [world.ts](../../web/src/world.ts), [repo.ts](../../src/graph/repo.ts) |
 | [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | [map-view.ts](../../web/src/map-view.ts), drawn out in [the-centre.md](the-centre.md) |
 | [0005](../decisions/0005-a-second-view-that-keeps-no-world.md) | [web/src/orbit/](../../web/src/orbit/), drawn out in [one-node-at-a-time.md](one-node-at-a-time.md) |
 | [0006](../decisions/0006-only-the-centre-reads.md) | [explore.ts](../../web/src/explore.ts), [main.ts](../../web/src/main.ts) |
+| [0007](../decisions/0007-a-table-for-the-graph.md) | [table.ts](../../src/graph/table.ts), [tables.ts](../../src/db/tables.ts), [client.ts](../../src/db/client.ts) |
+| [0008](../decisions/0008-finding-a-node-by-name.md) | [keys.ts](../../src/graph/keys.ts), [labels.ts](../../src/graph/labels.ts), [main.ts](../../web/src/main.ts) |
+| [0009](../decisions/0009-the-first-write-outside-the-seed.md) | [edge.ts](../../src/graph/edge.ts) |
 
-0003 through 0006 are Proposed, so their constraints are live but unsettled — 0004 and 0006
-each reverse one line of 0003, and 0005 exists to find out how much of it was needed.
+0003 through 0009 are Proposed, so their constraints are live but unsettled — 0004 and 0006
+each reverse one line of 0003, 0005 exists to find out how much of it was needed, and 0007
+is the first time the store's layout was argued rather than assumed.

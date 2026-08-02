@@ -137,6 +137,19 @@ export class World {
     return [...gaps, ...ringSlots(node, count - gaps.length, seed, gaps)]
   }
 
+  /**
+   * Somewhere clear to put a node that arrived by name instead of by walking.
+   *
+   * Everything else on the map got its spot from the node it neighbours. A searched node
+   * neighbours nothing here yet, so the only thing its position can answer to is the
+   * camera — and the one rule that still holds is that it cannot land on top of anything
+   * already placed. `seat` is what enforces that, so this asks it for a single spot around
+   * the point rather than around a parent.
+   */
+  landing(near: Point, seed: string): Point {
+    return seat(near, 1, this.occupancy, seed, SEAT_SEP)[0] ?? near
+  }
+
   /** Placed nodes inside a radius. Answers "what is the centre crowded by?". */
   nodesWithin(point: Point, radius: number): WorldNode[] {
     const out: WorldNode[] = []

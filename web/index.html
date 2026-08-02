@@ -127,6 +127,38 @@
         background: var(--ink-muted);
       }
 
+      /* Top centre, between the HUD and the controls, and narrow enough not to meet
+         either at the width the demo is looked at. */
+      #search { top: 16px; left: 50%; transform: translateX(-50%); width: 260px; padding: 8px; }
+      #search input {
+        font: inherit;
+        width: 100%;
+        color: var(--ink);
+        background: transparent;
+        border: 1px solid var(--hairline);
+        border-radius: 7px;
+        padding: 5px 9px;
+      }
+      #search input::placeholder { color: var(--ink-muted); }
+      #search input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+      /* Grows downward out of the panel. Capped, because the server caps the query. */
+      #results { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+      #results:not(:empty) { margin-top: 7px; }
+      #results button {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        width: 100%;
+        border: 0;
+        border-radius: 6px;
+        padding: 4px 8px;
+        text-align: left;
+      }
+      #results button:hover, #results button:focus-visible { background: var(--plane); }
+      #results .degree { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+      #results .empty { padding: 4px 8px; color: var(--ink-muted); font-size: 11px; }
+
       #controls { top: 16px; right: 16px; display: flex; gap: 6px; padding: 8px; }
       button {
         font: inherit;
@@ -177,6 +209,17 @@
         <dd id="stat-total">—</dd>
       </dl>
       <p id="status" data-tone="idle">starting…</p>
+    </section>
+
+    <section class="panel" id="search">
+      <input
+        id="search-input"
+        type="search"
+        autocomplete="off"
+        placeholder="find a node by name…"
+        aria-label="Find a node by name"
+      />
+      <ul id="results"></ul>
     </section>
 
     <div class="panel" id="controls">

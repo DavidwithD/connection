@@ -1,12 +1,10 @@
 /**
- * Table definition.
+ * The general table, for a domain that does not exist yet.
  *
- * This is a single-table design: one physical table holds every entity type,
- * distinguished by prefixed key values (`user#123` / `profile`) rather than by
- * separate tables. That is the idiomatic DynamoDB shape and it is also the only
- * honest choice available — the product itself is still undefined, so declaring
- * entity-specific tables would be inventing a domain model we do not have yet.
- * See docs/decisions/0002-single-table-layout.md.
+ * Prefixed key values (`user#123` / `profile`) and one overloaded GSI, so entity types can
+ * be added without declaring a domain model nobody can describe. That reasoning holds only
+ * while the entities are unknown: the graph *is* known, so it has its own table next door.
+ * See docs/decisions/0007-a-table-for-the-graph.md.
  *
  * DynamoDB only requires *key* attributes to be declared. Everything else is
  * per-item and needs no migration, so this definition should stay stable even
@@ -14,6 +12,7 @@
  * adding a GSI here, not reshaping the table.
  */
 import type { CreateTableCommandInput } from "@aws-sdk/client-dynamodb"
+import { graphTableDefinition } from "../graph/table.js"
 import { TABLE_NAME } from "./client.js"
 
 /** Attribute names, centralised so queries never hardcode string literals. */
@@ -62,4 +61,4 @@ export const tableDefinition: CreateTableCommandInput = {
 }
 
 /** Every table this project owns. Add new tables here so migrate picks them up. */
-export const allTables: CreateTableCommandInput[] = [tableDefinition]
+export const allTables: CreateTableCommandInput[] = [tableDefinition, graphTableDefinition]

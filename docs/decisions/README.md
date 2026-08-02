@@ -5,11 +5,14 @@ and the reasoning, so the "why" survives even after the code changes.
 
 | # | Decision | Status |
 |---|----------|--------|
-| [0002](0002-single-table-layout.md) | Single-table layout for an undefined domain | ✅ Accepted |
+| [0002](0002-single-table-layout.md) | Single-table layout for an undefined domain | ♻️ Superseded |
 | [0003](0003-graph-exploration-demo-stack.md) | Rendering stack for the graph demo | 🔵 Proposed |
 | [0004](0004-the-centre-and-its-neighbourhood.md) | Showing the centre all of its neighbours | 🔵 Proposed |
 | [0005](0005-a-second-view-that-keeps-no-world.md) | A second view that keeps no world | 🔵 Proposed |
 | [0006](0006-only-the-centre-reads.md) | Read ahead of what is drawn | 🔵 Proposed |
+| [0007](0007-a-table-for-the-graph.md) | A table for the graph | 🔵 Proposed |
+| [0008](0008-finding-a-node-by-name.md) | Finding a node by name | 🔵 Proposed |
+| [0009](0009-the-first-write-outside-the-seed.md) | The first write outside the seed | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
