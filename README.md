@@ -196,15 +196,12 @@ and a hop recomputes every position and forgets the last neighbourhood.
 | click a neighbour | It travels to the middle and its own ring resolves around it |
 | hover | Names a node, once there are too many to label them all |
 
-Neighbours sit on concentric rings — one ring for a handful, more as the count grows,
-each filled in proportion to what it holds. Size is `degree`: how much graph is behind a
-node. Anything that is a neighbour on both sides of a hop keeps its element and slides;
-only nodes that genuinely leave fade out, which is what stops the node you came from
-blinking as it reappears in the new ring. The hop starts on the click rather than on the
-response, so the API's latency is spent moving instead of waiting.
+Neighbours sit on concentric rings and size is `degree` — how much graph is behind a node.
+No Cytoscape here, no store, no shared code but [api.ts](web/src/api.ts): the page is SVG
+and CSS transitions.
 
-No Cytoscape here, no store, no shared code but [api.ts](web/src/api.ts) — the page is
-SVG and CSS transitions, and it bundles to about 7 kB against the map's 450.
+How the spokes, the rings and the hop are built is in
+[one-node-at-a-time.md](docs/design/one-node-at-a-time.md).
 [ADR 0005](docs/decisions/0005-a-second-view-that-keeps-no-world.md) records why this is a
 second page rather than a mode on the map, and what keeping no world costs.
 
