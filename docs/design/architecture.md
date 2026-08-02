@@ -15,7 +15,7 @@ web/src  ──HTTP──>  src/server  ──>  src/graph  ──>  src/db  ─
 |---|---|---|
 | `src/db` | Client, table and index definitions, the local-vs-AWS switch | Know about graphs |
 | `src/graph` | Key layout, the generator, the reads | Speak HTTP |
-| `src/server` | Two read-only routes, and the latency floor | Hold graph logic |
+| `src/server` | Routing, status codes, and the latency floor | Hold graph logic |
 | `web/src` | The map: seating, camera, renderer, palette | Reach the database |
 | `web/src/orbit` | The second page: rings, spokes, one neighbourhood | Import anything of the map's but `api.ts` |
 
@@ -58,8 +58,21 @@ while short of its own neighbours is a map that lies.
 count taken from edges would silently understate it. `#meta` sorting ahead of `edge#` is what
 lets a `Limit` drop edges but never the node.
 
-**The API is read-only.** Every route is a `GET`; writes arrive through the seed script, or
-through [edge.ts](../../src/graph/edge.ts) when two nodes are joined by hand.
+**A write is one transaction, and the routes add nothing to it.** `POST /api/nodes` and
+`POST /api/edges` call [node.ts](../../src/graph/node.ts) and
+[edge.ts](../../src/graph/edge.ts), the same functions the terminal runs, and every rule
+that matters is a condition inside the transaction rather than a check in the route. Reads
+stay `GET` and stay free of all this.
+
+**A drawn edge raises both degrees, and a parted one lowers them.** `missing` is degree
+minus the edges loaded, so linking without [`bumpDegree`](../../web/src/world.ts) on both
+ends makes a node with more graph behind it report that it is finished, and unlinking
+without `lowerDegree` makes a finished one claim graph that is gone. Neither is ever called
+alone.
+
+**A node leaves only once nothing is joined to it.** `World.forget` and the store's delete
+both refuse otherwise, for the same reason: each edge is stored twice, so removing a node
+with edges strands the other half in a partition nothing can reach.
 
 ## Where each record landed
 
@@ -76,6 +89,8 @@ summary here is a second copy, and it is the copy that goes stale.
 | [0007](../decisions/0007-a-table-for-the-graph.md) | [table.ts](../../src/graph/table.ts), [tables.ts](../../src/db/tables.ts), [client.ts](../../src/db/client.ts) |
 | [0008](../decisions/0008-finding-a-node-by-name.md) | [keys.ts](../../src/graph/keys.ts), [labels.ts](../../src/graph/labels.ts), [main.ts](../../web/src/main.ts) |
 | [0009](../decisions/0009-the-first-write-outside-the-seed.md) | [edge.ts](../../src/graph/edge.ts) |
+| [0010](../decisions/0010-writing-to-the-graph-from-the-browser.md) | [node.ts](../../src/graph/node.ts), [server/index.ts](../../src/server/index.ts), [join.ts](../../web/src/join.ts), [world.ts](../../web/src/world.ts) |
+| [0011](../decisions/0011-taking-a-write-back.md) | [edge.ts](../../src/graph/edge.ts), [node.ts](../../src/graph/node.ts), [combobox.ts](../../web/src/combobox.ts), [map-view.ts](../../web/src/map-view.ts) |
 
 0003 through 0009 are Proposed, so their constraints are live but unsettled — 0004 and 0006
 each reverse one line of 0003, 0005 exists to find out how much of it was needed, and 0007

@@ -75,6 +75,24 @@ export class Occupancy {
     else this.cells.set(key, [placed])
   }
 
+  /**
+   * Give a spot back.
+   *
+   * Only for a node being taken off the map entirely — a write undone. A seat that stays
+   * claimed after its node has gone is ground nothing can ever be placed on again, and the
+   * grid is the only record of it. Emptied cells are dropped rather than kept, so undoing
+   * a run of creates leaves the grid the size it started.
+   */
+  remove(id: string): void {
+    for (const [key, bucket] of this.cells) {
+      const at = bucket.findIndex((placed) => placed.id === id)
+      if (at < 0) continue
+      bucket.splice(at, 1)
+      if (!bucket.length) this.cells.delete(key)
+      return
+    }
+  }
+
   /** Every placed node in the cells overlapping a square of `reach` around a point. */
   private near(x: number, y: number, reach: number): Placed[] {
     const span = Math.max(1, Math.ceil(reach / this.cell))

@@ -46,6 +46,8 @@ npm run ddb:smoke       # verify it all works
 | `npm run adr` | Run the decision gate over `docs/decisions/` |
 | `npm run hooks:install` | Install the pre-commit hook that runs the gate on the staged tree |
 | `npm run graph:seed` | Generate a small-world graph and write it to the table |
+| `npm run graph:node` | Create one node by name |
+| `npm run graph:edge` | Join two existing nodes by name |
 | `npm run demo` | Graph API + dev server together — both demo pages |
 | `npm run api` | Just the graph API, on `:8787` |
 | `npm run web` | Just the Vite dev server, on `:5173` |
@@ -173,12 +175,22 @@ so it refuses to run against anything but the local emulator unless `GRAPH_SEED_
 says otherwise. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor
 ([index.ts](src/server/index.ts)).
 
-Join two nodes by name, which is the one thing here that writes outside the seed
+Two commands write outside the seed. Each is one transaction, because `degree` and the
+edges it counts must never disagree
 ([ADR 0009](docs/decisions/0009-the-first-write-outside-the-seed.md)):
 
 ```bash
-npm run graph:edge -- "Kavara" "Miselin"
+npm run graph:node -- "Vessarin"              # a node with no edges yet
+npm run graph:edge -- "Vessarin" "Ashanlin"   # join two that exist
 ```
+
+Running either a second time is refused rather than repeated — a name is owned by one node,
+and a degree must not be raised twice for one edge. Both reverse, and the reversal is
+constrained from the other side: a degree must not be lowered for an edge that was not
+there, and a node with edges cannot be deleted at all, because each edge is stored twice and
+the other half would be left unreachable
+([ADR 0011](docs/decisions/0011-taking-a-write-back.md)). The map page does all of this from
+the browser; see **join** below.
 
 ### The map — `/`
 
@@ -199,7 +211,29 @@ it too and holds the reply, unspent and undrawn, until somebody walks there. Pan
 does no work — no simulation, no layout, every node seated once and never moved, and no
 read until the camera goes still.
 
-How that is put together, and what has to stay true, is in [design](docs/design/) —
+The box at the top does two things, and the tabs say which. **find** takes you somewhere:
+type a prefix, `↑↓` to choose, `↵` to fly there. **join** adds to the graph — pick a source
+once, then name targets at it, one `↵` each.
+
+| Key | In the box |
+|---|---|
+| `↑` `↓` | Move the highlight, wrapping at both ends |
+| `↵` | Take the highlighted row — in **join**, that writes the edge immediately |
+| `⇧↵` | Create exactly what is typed, whatever the list shows |
+| `Esc` | Close the list; again, empty the box |
+
+The two Enters are the shape of it. `↵` takes the best match, so a prefix and one key
+reaches a node that already exists. Creating is a different act with its own key, and never
+what a half-typed name falls into — `ash` is far more often the start of `Ashanlin` than a
+node somebody means to make. The one place they meet is a name matching nothing: there is
+no best match to take, so `↵` creates as well.
+
+**Every write can be taken back.** Each one leaves a receipt carrying `undo`, which parts
+the edge again and deletes the node if that write is what created it. It stays for thirty
+seconds. A node that something else has since been joined to is kept — the edge still
+parts. See [ADR 0011](docs/decisions/0011-taking-a-write-back.md).
+
+How the map is put together, and what has to stay true, is in [design](docs/design/) —
 [architecture.md](docs/design/architecture.md) for the layers and the invariants, and
 [the-centre.md](docs/design/the-centre.md) for what the map draws around the centre.
 [ADR 0003](docs/decisions/0003-graph-exploration-demo-stack.md),

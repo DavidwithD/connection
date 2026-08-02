@@ -13,6 +13,8 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0007](0007-a-table-for-the-graph.md) | A table for the graph | 🔵 Proposed |
 | [0008](0008-finding-a-node-by-name.md) | Finding a node by name | 🔵 Proposed |
 | [0009](0009-the-first-write-outside-the-seed.md) | The first write outside the seed | 🔵 Proposed |
+| [0010](0010-writing-to-the-graph-from-the-browser.md) | Writing to the graph from the browser | 🔵 Proposed |
+| [0011](0011-taking-a-write-back.md) | Taking a write back | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

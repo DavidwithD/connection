@@ -269,7 +269,54 @@ export class MapView {
     return Math.max(box.w, box.h)
   }
 
-  /** Only ever additive: existing elements are never touched. */
+  /**
+   * Take elements back off, for a write undone.
+   *
+   * The only subtraction on the map, and it has to undo whichever shape `add` chose. A
+   * short edge is one element under the pair key; a long one is two stubs and two leads,
+   * and removing a stub node takes its lead with it. Both are attempted, because which was
+   * drawn depended on a distance that may since have changed.
+   *
+   * Ghosts come down first when a node they stand for is leaving. A ghost holds a reference
+   * to a target, and one pointing at a node that no longer exists would survive every
+   * later `clearGhosts` looking for a stub that is not there either.
+   */
+  drop(nodeIds: readonly string[], edges: readonly [string, string][]): void {
+    if (nodeIds.some((id) => this.ghosts.some((g) => g.target === id || g.centre === id))) {
+      this.clearGhosts()
+    }
+
+    this.cy.batch(() => {
+      for (const [a, b] of edges) {
+        const key = pairKey(a, b)
+        const short = this.cy.$id(key)
+        if (short.nonempty()) short.remove()
+        for (const owner of [a, b]) {
+          const stub = this.cy.$id(`s:${key}:${owner}`)
+          if (stub.nonempty()) {
+            stub.remove()
+            // Counted once per long edge by `add`, so undone once per long edge here.
+            if (owner === a) this.stubbed = Math.max(0, this.stubbed - 1)
+          }
+        }
+      }
+      // Cytoscape takes a node's own edges with it, so anything still attached goes now.
+      for (const id of nodeIds) this.cy.$id(id).remove()
+      // An accent pointing at a node that no longer exists would keep the HUD naming it
+      // until the camera next moved. Cleared here; the caller re-picks.
+      if (this.accentId && nodeIds.includes(this.accentId)) this.accentId = null
+
+      // Whatever is left of each pair may have become incomplete again.
+      for (const [a, b] of edges) {
+        for (const id of [a, b]) {
+          if (nodeIds.includes(id)) continue
+          this.cy.$id(id).data("more", this.world.missing(id) > 0)
+        }
+      }
+    })
+  }
+
+  /** Additive: existing elements are never touched. Removal is `drop`, and only for undo. */
   add(nodes: readonly WorldNode[], edges: readonly [string, string][]): void {
     const elements: ElementDefinition[] = []
     // An arrival is a node that turns up while its parent is already the centre. It has

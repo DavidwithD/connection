@@ -254,6 +254,76 @@ export class World {
     return this.nodes.has(a) && this.nodes.has(b) && this.link(a, b)
   }
 
+  /**
+   * Record that the stored graph gained an edge here.
+   *
+   * The only mutation of a node this class allows, and it exists because of `missing`: that
+   * is `degree - adjacency.size`, and it is the whole of how the map tells "fully drawn"
+   * from "there is more here". An edge written to the store raises both sides of that
+   * subtraction. Linking it locally without this raises only the second, so the difference
+   * falls by one and a node with graph still behind it starts claiming to be finished — the
+   * same drift docs/decisions/0009-the-first-write-outside-the-seed.md is about, arriving
+   * from the client instead of the store.
+   *
+   * So it is never called alone. Link and bump, together, or not at all.
+   */
+  bumpDegree(id: string): void {
+    const node = this.nodes.get(id)
+    if (node) node.degree += 1
+  }
+
+  /** The same, for a join taken back. Never below zero, whatever the caller thinks. */
+  lowerDegree(id: string): void {
+    const node = this.nodes.get(id)
+    if (node) node.degree = Math.max(0, node.degree - 1)
+  }
+
+  /**
+   * Take an edge back off the map.
+   *
+   * Paired with `lowerDegree` exactly as `link` is with `bumpDegree`, and for the mirror
+   * reason: dropping the edge alone would leave the degree counting it, and the node would
+   * report graph behind it that nobody can read.
+   */
+  unlink(a: string, b: string): boolean {
+    const key = pairKey(a, b)
+    if (!this.pairs.has(key)) return false
+    this.pairs.delete(key)
+    this.adjacency.get(a)?.delete(b)
+    this.adjacency.get(b)?.delete(a)
+    return true
+  }
+
+  /**
+   * Take a node off the map, seat and all.
+   *
+   * The one hole in "a position, once assigned, is never reassigned". The rule exists so
+   * that nothing already drawn moves under the reader, and this does not move anything: the
+   * node leaves, and the ground it held goes back into the grid for whoever comes next.
+   * What would break the rule is *reusing* the id later at a different spot, so the node
+   * has to be genuinely gone from the store too — which is why only an undone create calls
+   * this, and only while it still has no edges.
+   *
+   * Refuses a node with edges. Removing one would leave adjacency in its neighbours
+   * pointing at nothing, and `pairs` counting an edge with one end missing.
+   */
+  forget(id: string): boolean {
+    if (!this.nodes.has(id)) return false
+    if (this.adjacency.get(id)?.size) return false
+
+    this.nodes.delete(id)
+    this.adjacency.delete(id)
+    this.occupancy.remove(id)
+    this.expanded.delete(id)
+    this.pending.delete(id)
+    // Anything still waiting for a seat beside this node is waiting on nothing.
+    for (const [parent, waiting] of this.pending) {
+      const left = waiting.filter((meta) => meta.id !== id)
+      if (left.length !== waiting.length) this.remember(parent, left)
+    }
+    return true
+  }
+
   span(a: string, b: string): number {
     const from = this.nodes.get(a)
     const to = this.nodes.get(b)

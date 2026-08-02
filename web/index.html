@@ -127,9 +127,9 @@
         background: var(--ink-muted);
       }
 
-      /* Top centre, between the HUD and the controls, and narrow enough not to meet
-         either at the width the demo is looked at. */
-      #search { top: 16px; left: 50%; transform: translateX(-50%); width: 260px; padding: 8px; }
+      /* Top centre, between the HUD and the controls, and wide enough for the join
+         panel's two boxes without meeting either at the width the demo is looked at. */
+      #search { top: 16px; left: 50%; transform: translateX(-50%); width: 320px; padding: 8px; }
       #search input {
         font: inherit;
         width: 100%;
@@ -141,11 +141,59 @@
       }
       #search input::placeholder { color: var(--ink-muted); }
       #search input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+      #search input:disabled { color: var(--ink-2); background: var(--plane); cursor: not-allowed; }
+
+      /* Which half of the panel is showing. One input each, never both. */
+      #modes { display: flex; gap: 4px; margin-bottom: 8px; }
+      #modes button {
+        flex: 1;
+        font-size: 11px;
+        color: var(--ink-2);
+        border-color: transparent;
+        padding: 3px 0;
+      }
+      #modes button[aria-selected="true"] {
+        color: var(--ink);
+        background: var(--plane);
+        border-color: var(--hairline);
+      }
+      [hidden] { display: none !important; }
+
+      .field + .field { margin-top: 8px; }
+      .field > label {
+        display: block;
+        margin: 0 0 2px 2px;
+        color: var(--ink-2);
+        font-size: 11px;
+      }
+      /* Only the input, so the clear sits against it and not against an open list. */
+      .box { position: relative; }
+      /* A source picked but not yet written reads as chosen and says it is not there yet. */
+      .box input[data-state="new"] { color: var(--accent); border-style: dashed; }
+      .box .clear {
+        position: absolute;
+        right: 4px;
+        top: 50%;
+        transform: translateY(-50%);
+        min-width: 0;
+        font-size: 11px;
+        line-height: 1;
+        color: var(--ink-muted);
+        border-color: transparent;
+        padding: 3px 6px;
+      }
+      .box .clear:hover { color: var(--ink); }
 
       /* Grows downward out of the panel. Capped, because the server caps the query. */
-      #results { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
-      #results:not(:empty) { margin-top: 7px; }
-      #results button {
+      #search ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 260px;
+        overflow-y: auto;
+      }
+      #search ul:not(:empty) { margin-top: 7px; }
+      #search ul button {
         display: flex;
         justify-content: space-between;
         gap: 10px;
@@ -155,9 +203,53 @@
         padding: 4px 8px;
         text-align: left;
       }
-      #results button:hover, #results button:focus-visible { background: var(--plane); }
-      #results .degree { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-      #results .empty { padding: 4px 8px; color: var(--ink-muted); font-size: 11px; }
+      /* data-on is the keyboard highlight; hover is the mouse's. They look the same on
+         purpose — there is one selected row, however it got selected. */
+      #search ul button:hover,
+      #search ul button:focus-visible,
+      #search ul button[data-on="true"] { background: var(--plane); }
+      #search .degree { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+      #search .create { color: var(--accent); }
+      #search .empty { padding: 4px 8px; color: var(--ink-muted); font-size: 11px; }
+
+      /* What has been written, how it went, and the way back. Not a queue: these have
+         already landed, and `undo` is a second write rather than a cancellation. */
+      #join-receipts { display: flex; flex-wrap: wrap; gap: 5px; }
+      #join-receipts:not(:empty) { margin-top: 8px; }
+      .receipt {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        background: var(--plane);
+        border: 1px solid var(--hairline);
+        border-radius: 20px;
+        padding: 2px 4px 2px 9px;
+      }
+      .receipt:not(:has(.undo)) { padding-right: 9px; }
+      .receipt[data-new="true"] { border-style: dashed; }
+      .receipt[data-state="waiting"], .receipt[data-state="busy"] { color: var(--ink-muted); }
+      .receipt[data-state="busy"]::before { content: "·"; }
+      .receipt[data-state="ok"] { border-color: var(--accent); }
+      .receipt[data-state="ok"]::before { content: "✓"; }
+      .receipt[data-state="warn"] { color: var(--accent); border-color: var(--accent); }
+      .receipt[data-state="warn"]::before { content: "⚠"; }
+      /* Undone reads as spent rather than failed: it is a thing that happened, not a
+         thing that went wrong. */
+      .receipt[data-state="undone"] { color: var(--ink-muted); opacity: 0.6; }
+      .receipt[data-state="undone"]::before { content: "↩"; }
+      .receipt[data-state="undone"] > span { text-decoration: line-through; }
+      .receipt .undo {
+        min-width: 0;
+        font-size: 10px;
+        line-height: 1;
+        color: var(--ink-2);
+        background: var(--surface);
+        border-color: var(--hairline);
+        border-radius: 20px;
+        padding: 2px 7px;
+      }
+      .receipt .undo:hover { color: var(--accent); border-color: var(--accent); }
 
       #controls { top: 16px; right: 16px; display: flex; gap: 6px; padding: 8px; }
       button {
@@ -212,14 +304,42 @@
     </section>
 
     <section class="panel" id="search">
-      <input
-        id="search-input"
-        type="search"
-        autocomplete="off"
-        placeholder="find a node by name…"
-        aria-label="Find a node by name"
-      />
-      <ul id="results"></ul>
+      <div id="modes" role="tablist">
+        <button id="mode-find" role="tab" aria-selected="true" type="button">find</button>
+        <button id="mode-join" role="tab" aria-selected="false" type="button">join</button>
+      </div>
+
+      <div id="find-pane">
+        <input
+          id="search-input"
+          type="search"
+          autocomplete="off"
+          placeholder="find a node by name…"
+          aria-label="Find a node by name"
+        />
+        <ul id="results"></ul>
+      </div>
+
+      <div id="join-pane" hidden>
+        <div class="field">
+          <label for="join-from">from</label>
+          <div class="box">
+            <input id="join-from" autocomplete="off" placeholder="name a node…" />
+            <button class="clear" id="join-from-clear" type="button" title="clear" hidden>
+              ×
+            </button>
+          </div>
+          <ul id="join-from-list"></ul>
+        </div>
+        <div class="field">
+          <label for="join-to">to</label>
+          <div class="box">
+            <input id="join-to" autocomplete="off" placeholder="pick a source first" disabled />
+          </div>
+          <ul id="join-to-list"></ul>
+        </div>
+        <div id="join-receipts"></div>
+      </div>
     </section>
 
     <div class="panel" id="controls">

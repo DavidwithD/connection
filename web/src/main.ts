@@ -22,9 +22,11 @@
  *
  * See docs/decisions/0003-graph-exploration-demo-stack.md.
  */
-import { Cancelled, fetchIndex, fetchNeighbourhood, searchLabels } from "./api.js"
-import type { NodeMeta } from "./api.js"
+import { fetchIndex, fetchNeighbourhood } from "./api.js"
+import type { GraphIndex, NodeMeta } from "./api.js"
+import { Combobox } from "./combobox.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
+import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { distance } from "./placement.js"
@@ -57,14 +59,8 @@ const ACCENT_HYSTERESIS = 0.78
 /** Keyboard pan step, in screen pixels. */
 const NUDGE = 120
 
-/**
- * How long the search box waits before asking.
- *
- * Shorter than either settle: nothing is being drawn and no seat is at stake, so the only
- * cost of being early is a request, and the only cost of being late is a box that feels
- * slow. Roughly the gap between keystrokes at a normal typing speed.
- */
-const SEARCH_DEBOUNCE_MS = 140
+/** The two things the box at the top can be for: arriving somewhere, or adding to it. */
+type Mode = "find" | "join"
 
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id)
@@ -216,68 +212,100 @@ function goTo(node: NodeMeta): void {
   render()
 }
 
-function showResults(nodes: NodeMeta[], query: string): void {
-  results.replaceChildren()
-  if (!query) return
+/** Says which of these is already on the map, so picking one is a known quantity. */
+const note = (node: NodeMeta): string =>
+  world.has(node.id) ? "already placed" : `${String(node.degree)} edges`
 
-  if (!nodes.length) {
-    const empty = document.createElement("li")
-    empty.className = "empty"
-    empty.textContent = `nothing starts with “${query}”`
-    results.append(empty)
-    return
+const findBox = new Combobox(searchInput, results, {
+  note,
+  onError: (message) => setStatus(`⚠ ${message}`, "error"),
+  // Nothing is created from the find box: it exists to arrive somewhere, and a name that
+  // matches nothing is somewhere there is no arriving at.
+  onPick: (picked) => {
+    if (picked.kind === "node") goTo(picked.node)
+  },
+})
+
+/**
+ * What the two writes change on the map.
+ *
+ * A created node lands like a searched one: joined to nothing on screen yet, so the only
+ * thing its position can answer to is the camera. The edge that follows a moment later
+ * links it where it sits rather than re-seating it, which is the seated-once rule holding
+ * for a node that arrived by being made rather than by being walked to.
+ */
+const joinPanel = new JoinPanel(
+  {
+    from: el<HTMLInputElement>("join-from"),
+    fromList: el<HTMLUListElement>("join-from-list"),
+    fromClear: el<HTMLButtonElement>("join-from-clear"),
+    to: el<HTMLInputElement>("join-to"),
+    toList: el<HTMLUListElement>("join-to-list"),
+    receipts: el<HTMLDivElement>("join-receipts"),
+  },
+  {
+    note,
+    onStatus: setStatus,
+    onNode: (node) => {
+      // Counted here rather than only after the edge: a create that lands before a refused
+      // join is still a node in the store, and the HUD should say so.
+      void refreshTotals()
+      if (world.has(node.id)) return
+      view.add([world.place(node, world.landing(view.centre(), node.id))], [])
+      render()
+    },
+    onEdge: (a, b) => {
+      // Both, together. `missing` is degree minus the edges loaded, so linking without
+      // raising the degree would make a node with more graph behind it look finished —
+      // see World.bumpDegree.
+      world.bumpDegree(a.id)
+      world.bumpDegree(b.id)
+      const drawn = world.linkExisting(a.id, b.id)
+      if (drawn) view.add([], [[a.id, b.id]])
+      // The totals in the HUD came from one read at boot and are now a write out of date.
+      void refreshTotals()
+      render()
+    },
+    onUndone: (a, b, removed) => {
+      // Unlink before forgetting: a node is only allowed to leave once nothing is joined
+      // to it, which is the same rule the store's delete enforces.
+      world.unlink(a.id, b.id)
+      world.lowerDegree(a.id)
+      world.lowerDegree(b.id)
+      const gone = removed && world.forget(removed.id) ? [removed.id] : []
+      view.drop(gone, [[a.id, b.id]])
+      // A removed node may have been the one nearest the middle. Nothing else asks until
+      // the camera next moves, and until then the HUD would name something that is gone.
+      if (gone.length) trackAccent()
+      void refreshTotals()
+      render()
+    },
+  },
+)
+
+const panes: Record<Mode, { tab: HTMLButtonElement; pane: HTMLElement }> = {
+  find: { tab: el<HTMLButtonElement>("mode-find"), pane: el<HTMLDivElement>("find-pane") },
+  join: { tab: el<HTMLButtonElement>("mode-join"), pane: el<HTMLDivElement>("join-pane") },
+}
+
+function setMode(mode: Mode): void {
+  for (const [name, { tab, pane }] of Object.entries(panes)) {
+    const on = name === mode
+    tab.setAttribute("aria-selected", String(on))
+    pane.hidden = !on
   }
-
-  for (const node of nodes) {
-    const name = document.createElement("span")
-    name.textContent = node.label
-    const degree = document.createElement("span")
-    degree.className = "degree"
-    degree.textContent = String(node.degree)
-    // Says which of these is already on the map, so picking one is a known quantity.
-    degree.title = world.has(node.id) ? "already placed" : `${String(node.degree)} edges`
-
-    const button = document.createElement("button")
-    button.type = "button"
-    button.append(name, degree)
-    button.addEventListener("click", () => goTo(node))
-
-    const row = document.createElement("li")
-    row.append(button)
-    results.append(row)
+  // A half-typed query in the box you just left would search again the moment you came
+  // back to it, against a list that is no longer on screen.
+  if (mode === "find") findBox.focus()
+  else {
+    findBox.clear()
+    joinPanel.focus()
   }
 }
 
-/** The query in the air, so a slower earlier reply cannot overwrite a later one. */
-let searching: AbortController | null = null
-
-const runSearch = debounce(() => {
-  const query = searchInput.value.trim()
-  searching?.abort()
-  if (!query) {
-    showResults([], "")
-    return
-  }
-
-  const control = new AbortController()
-  searching = control
-  searchLabels(query, control.signal)
-    .then((found) => {
-      if (!control.signal.aborted) showResults(found, query)
-    })
-    .catch((err: unknown) => {
-      if (err instanceof Cancelled) return
-      setStatus(`⚠ ${err instanceof Error ? err.message : String(err)}`, "error")
-    })
-}, SEARCH_DEBOUNCE_MS)
-
-searchInput.addEventListener("input", () => runSearch())
-searchInput.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return
-  searchInput.value = ""
-  results.replaceChildren()
-  searchInput.blur()
-})
+for (const [name, { tab }] of Object.entries(panes)) {
+  tab.addEventListener("click", () => setMode(name as Mode))
+}
 
 window.addEventListener("keydown", (event) => {
   // The arrows below pan the camera. Inside the search box they belong to the text.
@@ -340,10 +368,29 @@ window.addEventListener("resize", () => {
   onThemeChange(paint)
 })()
 
+function showTotals(index: GraphIndex): void {
+  statTotal.textContent = `${String(index.nodeCount)} nodes · ${String(index.edgeCount)} edges`
+}
+
+/**
+ * Re-read how big the graph is.
+ *
+ * Only the totals: everything else on the map is what somebody walked to, and re-reading
+ * that would seat nodes nobody went to. A write is the one thing that can make this number
+ * wrong without the camera moving, so it is the only thing that asks again.
+ */
+async function refreshTotals(): Promise<void> {
+  try {
+    showTotals(await fetchIndex())
+  } catch {
+    // A stale count is not worth an error state over. The next write asks again.
+  }
+}
+
 async function boot(): Promise<void> {
   setStatus("loading graph…", "busy")
   const index = await fetchIndex()
-  statTotal.textContent = `${index.nodeCount} nodes · ${index.edgeCount} edges`
+  showTotals(index)
 
   const root = await fetchNeighbourhood(index.rootId)
   world.place(root.node, { x: 0, y: 0 })
