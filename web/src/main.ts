@@ -11,9 +11,10 @@
  * over — because a bare nearest-wins test flickers between two nodes when the midpoint
  * passes between them.
  *
- * Whichever node holds the accent once the camera stops is the only one read. Boot seats
- * the root and the ring around it, and every node after that arrives because somebody
- * walked to its neighbour — see docs/decisions/0006-only-the-centre-reads.md.
+ * Whichever node holds the accent once the camera stops is the only one drawn from, and
+ * every node arrives because somebody walked to its neighbour. The reading runs a hop
+ * further than that: the ring around the accent is read on arrival and held undrawn, so
+ * the next step is already paid for — see docs/decisions/0006-only-the-centre-reads.md.
  *
  * See docs/decisions/0003-graph-exploration-demo-stack.md.
  */
@@ -45,6 +46,7 @@ const statDegree = el<HTMLSpanElement>("stat-degree")
 const statNodes = el<HTMLSpanElement>("stat-nodes")
 const statEdges = el<HTMLSpanElement>("stat-edges")
 const statPending = el<HTMLSpanElement>("stat-pending")
+const statReady = el<HTMLSpanElement>("stat-ready")
 const statTotal = el<HTMLSpanElement>("stat-total")
 const status = el<HTMLParagraphElement>("status")
 
@@ -68,6 +70,9 @@ function render(): void {
   statNodes.textContent = String(world.size)
   statEdges.textContent = String(world.edgeCount)
   statPending.textContent = String(explorer.pending)
+  // Reported apart from `loading`: nothing on screen is waiting on these, and rolling them
+  // into the same count would make an idle map look busy for reads nobody asked for.
+  statReady.textContent = String(explorer.ready)
 
   if (status.dataset["tone"] === "error") return
   if (explorer.pending > 0) setStatus(`loading ${explorer.pending}…`, "busy")
@@ -209,10 +214,11 @@ async function boot(): Promise<void> {
   view.focus(root.node.id, false)
   view.setAccent(root.node.id)
 
-  // The root and its ring, and that is the whole first frame. Nothing beyond it is read
-  // until somebody walks there. Ghosts are raised here rather than left to the first
-  // settle, because a neighbour seated too far to draw is still one of these neighbours,
-  // and the first frame is the one place with nothing else on screen to stand in for it.
+  // The root and its ring, and that is the whole first frame. Nothing beyond it is drawn
+  // until somebody walks there; the first settle reads the ring without drawing any of
+  // what comes back. Ghosts are raised here rather than left to that settle, because a
+  // neighbour seated too far to draw is still one of these neighbours, and the first
+  // frame is the one place with nothing else on screen to stand in for it.
   view.showGhosts()
   render()
 }

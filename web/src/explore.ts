@@ -1,13 +1,20 @@
 /**
- * When to ask for more graph.
+ * When to ask for more graph, and when to draw it.
  *
- * One rule: the centre fetches, and nothing else does. A node reaches the map because the
- * centre it neighbours was read, and it sits there unexpanded — wearing the dashed border
- * that says there is more behind it — until someone puts it in the middle of the screen.
- * Walking is what loads the graph, so what is drawn is the route taken and nothing besides.
+ * Those are two questions now, and they have different answers. Only the centre is *drawn*:
+ * a node reaches the map because the centre it neighbours was read, and it sits there
+ * unexpanded — wearing the dashed border that says there is more behind it — until someone
+ * puts it in the middle of the screen. What is drawn is still the route taken, and nothing
+ * besides.
+ *
+ * Reading runs one hop ahead of that. Landing somewhere also reads the ring around it and
+ * keeps the replies unspent, so the next step lands on a neighbourhood already in hand
+ * instead of a round trip. Nothing arrives on the map from a read-ahead reply: `World`
+ * seats against the occupancy of the moment, and seating a node for a place nobody walked
+ * to would freeze it against a map that never existed.
  *
  * The trigger is a *settled* camera, never a moving one, so panning waits on nothing and a
- * gesture crossing six nodes reads only the one it stops on. Every reply is additive, so
+ * gesture crossing six nodes draws only the one it stops on. Every reply is additive, so
  * one landing mid-gesture cannot disturb what is on screen.
  *
  * A read whose node stopped being the centre before it landed is abandoned, and its claim
@@ -15,9 +22,19 @@
  *
  * See docs/decisions/0006-only-the-centre-reads.md.
  */
-import { Cancelled, fetchNeighbourhood } from "./api.js"
+import { Cancelled, fetchNeighbourhood, type Neighbourhood } from "./api.js"
 import type { MapView } from "./map-view.js"
 import type { World } from "./world.js"
+
+/**
+ * Ring nodes read on arrival. Mean degree is six, so a typical ring is covered whole and
+ * a hub's is truncated rather than paid for — the nearest of it is what gets drawn as
+ * somewhere to walk to anyway.
+ */
+const MAX_LOOKAHEAD = 8
+
+/** Unspent replies kept. Past this the oldest go, and are re-read if anyone walks there. */
+const MAX_HELD = 64
 
 export interface ExploreHooks {
   onChange: () => void
@@ -27,6 +44,13 @@ export interface ExploreHooks {
 export class Explorer {
   private readonly inflight = new Map<string, AbortController>()
   private readonly failed = new Set<string>()
+  /**
+   * Neighbourhoods read for nodes nobody has walked to. A promise rather than a value,
+   * because the case worth handling is arriving while the read is still in the air:
+   * whoever gets there waits on the same request instead of opening a second one.
+   */
+  private readonly held = new Map<string, Promise<Neighbourhood>>()
+  private reading = 0
 
   constructor(
     private readonly world: World,
@@ -34,8 +58,15 @@ export class Explorer {
     private readonly hooks: ExploreHooks,
   ) {}
 
+  /** Reads somebody on screen is waiting for. */
   get pending(): number {
     return this.inflight.size
+  }
+
+  /** Replies read ahead and not yet walked into. */
+  get ready(): number {
+    // An eviction can drop a read still in the air, so the two counters can cross.
+    return Math.max(0, this.held.size - this.reading)
   }
 
   /**
@@ -49,7 +80,7 @@ export class Explorer {
     void this.expand(id)
   }
 
-  /** The centre, and only the centre. Called on a settled camera. */
+  /** Draw the centre's neighbourhood, read the ring's. Called on a settled camera. */
   loadCentre(): void {
     const centre = this.view.accent
 
@@ -62,7 +93,12 @@ export class Explorer {
       }
     }
 
-    if (centre) void this.expand(centre)
+    if (!centre) return
+    // Boot seats the root's ring itself, and a centre walked to before is complete
+    // already. Neither goes through `expand`, so neither has ever asked for its ring —
+    // but arriving is still arriving, and the lookahead runs from here for both.
+    if (this.world.isIncomplete(centre)) void this.expand(centre)
+    else this.readAhead(centre)
   }
 
   private async expand(id: string): Promise<void> {
@@ -70,13 +106,22 @@ export class Explorer {
 
     // Claimed before the request goes out, so a second settle cannot double-read it.
     this.world.markExpanded(id)
+    // A reply read on the last arrival is spent here instead of asked for again. It has
+    // usually landed already, so the ring is drawn a microtask after the settle and the
+    // step costs no round trip at all.
+    const held = this.held.get(id)
     const control = new AbortController()
     this.inflight.set(id, control)
     this.view.loading(id, true)
     this.hooks.onChange()
 
     try {
-      const result = await fetchNeighbourhood(id, control.signal)
+      const result = await (held ?? fetchNeighbourhood(id, control.signal))
+      // A held reply belongs to nobody, so no abort reaches it. The centre can still have
+      // moved on while it was in the air, and drawing it then would be drawing a ring
+      // around a node that is no longer the middle of the screen.
+      if (control.signal.aborted) throw new Cancelled()
+
       const absorbed = this.world.absorb(id, result.neighbours)
       this.view.add(absorbed.nodes, absorbed.edges)
       // Whatever the first pass could not fit gets a tighter one straight away, rather
@@ -85,7 +130,9 @@ export class Explorer {
         const squeezed = this.world.seatPending(id)
         this.view.add(squeezed.nodes, squeezed.edges)
       }
+      this.held.delete(id)
       this.failed.delete(id)
+      this.readAhead(id)
     } catch (err) {
       // Neither a cancel nor an error is an answer, so the claim goes back: the node is
       // incomplete again, says so, and can be read properly on a later visit. `failed` is
@@ -100,6 +147,69 @@ export class Explorer {
       this.view.loading(id, false)
       this.hooks.onChange()
     }
+  }
+
+  /**
+   * Read the ring the arrival just drew, and draw none of it.
+   *
+   * Arriving is the strongest available signal about where the next step goes: one of the
+   * nodes now around the centre, chosen over a settle and a walk. That time is otherwise
+   * idle, and spending it on the ring's own neighbourhoods is what lets the step after
+   * this one land on something already in hand.
+   *
+   * Nearest first, so the cap keeps the neighbours drawn close enough to be walked to
+   * rather than the ones standing in as ghosts on the far side of the map.
+   */
+  private readAhead(centre: string): void {
+    this.world
+      .neighbours(centre)
+      .filter((id) => this.worthHolding(id))
+      .sort((a, b) => this.world.span(centre, a) - this.world.span(centre, b))
+      .slice(0, MAX_LOOKAHEAD)
+      .forEach((id) => this.hold(id))
+  }
+
+  private worthHolding(id: string): boolean {
+    return (
+      this.world.isIncomplete(id) &&
+      !this.held.has(id) &&
+      !this.inflight.has(id) &&
+      !this.failed.has(id)
+    )
+  }
+
+  /**
+   * Read a node for later. Nothing on screen is waiting on it, so it wears no loading
+   * mark, raises no error, and never enters `failed` — a read-ahead that does not arrive
+   * leaves the node exactly as it was, to be asked for properly by whoever walks there.
+   *
+   * Uncancellable on purpose. The read is already gated by a settled camera, so it is only
+   * ever about somewhere someone stopped, and abandoning it the moment the centre moves on
+   * would throw away the request in the one case it exists for: the next step.
+   */
+  private hold(id: string): void {
+    this.reading++
+    const done = fetchNeighbourhood(id)
+      .catch((err: unknown) => {
+        this.held.delete(id)
+        throw err
+      })
+      .finally(() => {
+        this.reading--
+        this.hooks.onChange()
+      })
+    // Nothing awaits an unspent reply, and a rejection nobody can act on is not an error.
+    // Claiming it here is what keeps it from surfacing as an unhandled one.
+    done.catch(() => {})
+
+    this.held.set(id, done)
+    // Insertion order, so the first out is the furthest back along the route.
+    while (this.held.size > MAX_HELD) {
+      const oldest = this.held.keys().next().value
+      if (oldest === undefined) break
+      this.held.delete(oldest)
+    }
+    this.hooks.onChange()
   }
 }
 
