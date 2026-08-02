@@ -20,7 +20,8 @@
  * A read whose node stopped being the centre before it landed is abandoned, and its claim
  * handed back so arriving there later asks again.
  *
- * See docs/decisions/0006-only-the-centre-reads.md.
+ * Stated as an invariant in docs/design/architecture.md. The reasoning, and what the
+ * read-ahead costs, is docs/decisions/0006-only-the-centre-reads.md.
  */
 import { Cancelled, fetchNeighbourhood, type Neighbourhood } from "./api.js"
 import type { MapView } from "./map-view.js"

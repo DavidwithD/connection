@@ -10,7 +10,8 @@
  * the whole difference from `placement.ts`, whose seats are frozen for the life of the
  * page and therefore need an occupancy grid to find room.
  *
- * See docs/decisions/0005-a-second-view-that-keeps-no-world.md.
+ * See docs/design/one-node-at-a-time.md for how this fits the rest of the page, and
+ * docs/decisions/0005-a-second-view-that-keeps-no-world.md for why the page exists.
  */
 
 const TAU = Math.PI * 2

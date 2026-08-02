@@ -8,7 +8,8 @@
  * Limit can only ever truncate edges. Degree is read from the meta item rather than
  * counted from the edge items, which keeps it exact even when a Query was truncated.
  *
- * See docs/decisions/0003-graph-exploration-demo-stack.md.
+ * That last sentence is an invariant the frontend leans on — see docs/design/architecture.md.
+ * The reasoning is docs/decisions/0003-graph-exploration-demo-stack.md.
  */
 import { BatchGetCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
 import { db, TABLE_NAME } from "../db/client.js"

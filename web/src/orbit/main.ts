@@ -7,7 +7,8 @@
  * stale ring dims, and the new ring resolves whenever the answer lands.
  *
  * There is no history and no store: the page holds one neighbourhood at a time and
- * forgets the last one. See docs/decisions/0005-a-second-view-that-keeps-no-world.md.
+ * forgets the last one. See docs/design/one-node-at-a-time.md for the page as a whole, and
+ * docs/decisions/0005-a-second-view-that-keeps-no-world.md for what keeping no world costs.
  */
 import { Cancelled, fetchIndex, fetchNeighbourhood, type Neighbourhood } from "../api.js"
 import { OrbitView } from "./orbit-view.js"

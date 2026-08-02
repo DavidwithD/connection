@@ -14,8 +14,9 @@
  * on it, which is O(degree) rather than per frame. A continuous falloff would mean
  * restyling every node per frame.
  *
- * Ghosts are the one exception to all of the above, and the exception is deliberate. See
- * docs/decisions/0004-the-centre-and-its-neighbourhood.md, and
+ * Ghosts are the one exception to all of the above, and the exception is deliberate.
+ * Tiers, ghosts and the flight are drawn out in docs/design/the-centre.md; the reasoning
+ * is docs/decisions/0004-the-centre-and-its-neighbourhood.md, and
  * docs/decisions/0003-graph-exploration-demo-stack.md for the world model underneath.
  */
 import cytoscape, {

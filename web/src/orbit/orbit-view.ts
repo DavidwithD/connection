@@ -16,7 +16,8 @@
  * every arm meets at the origin, so with a group each they would be painted across the
  * centre mark.
  *
- * See docs/decisions/0005-a-second-view-that-keeps-no-world.md.
+ * The spoke, and what it buys, is docs/design/one-node-at-a-time.md. Why the page exists
+ * at all is docs/decisions/0005-a-second-view-that-keeps-no-world.md.
  */
 import type { NodeMeta } from "../api.js"
 import { angleGap, layOut, unwrap, type Seat } from "./rings.js"

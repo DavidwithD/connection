@@ -4,6 +4,9 @@
  * One env var decides which backend you get: set `DYNAMODB_ENDPOINT` and every
  * call goes to DynamoDB Local; leave it unset and the SDK's default credential
  * chain points you at real AWS. No code changes between the two.
+ *
+ * This is the only file that differs between the two backends, which is what makes an
+ * environment a variable rather than a code path — see docs/design/architecture.md.
  */
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb"
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb"

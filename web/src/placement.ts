@@ -11,7 +11,8 @@
  * resting size. A node swells when it becomes the accent, and seating against the resting
  * size would let it grow into its neighbours as you pan past.
  *
- * See docs/decisions/0003-graph-exploration-demo-stack.md.
+ * These are the separations docs/design/the-centre.md points at rather than copies. See
+ * docs/decisions/0003-graph-exploration-demo-stack.md.
  */
 
 const TAU = Math.PI * 2
