@@ -43,6 +43,8 @@ npm run ddb:smoke       # verify it all works
 | `npm run typecheck` | `tsc --noEmit` over `src/` and `web/` |
 | `npm run build` | Compile to `dist/` |
 | `npm test` | `typecheck` + `ddb:smoke` |
+| `npm run adr` | Run the decision gate over `docs/decisions/` |
+| `npm run hooks:install` | Install the pre-commit hook that runs the gate on the staged tree |
 | `npm run graph:seed` | Generate a small-world graph and write it to the table |
 | `npm run demo` | Graph API + dev server together — both demo pages |
 | `npm run api` | Just the graph API, on `:8787` |
@@ -111,6 +113,8 @@ web/src/orbit/      one node at a time
   main.ts       wiring: fetch, hop, cancel
 scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
+  adr-gate.py          the decision gate — shape, budgets, wiring
+  hooks/pre-commit     runs the gate on the staged tree
 .dynamodb-data/        local database files + server log (gitignored)
 vendor/                the DynamoDB Local JAR (gitignored)
 ```
