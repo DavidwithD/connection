@@ -3,6 +3,7 @@
  *
  *   npm run graph:seed              # default size
  *   GRAPH_N=2000 GRAPH_K=8 npm run graph:seed
+ *   GRAPH_HUB_K=25 npm run graph:seed   # a longer tail of well-connected nodes
  *
  * The previous graph is deleted first, partition by partition. Overwriting without
  * deleting looked idempotent and was not: node metas were replaced but stale *edge*
@@ -109,14 +110,22 @@ async function clearGraph(previousCount: number, nextCount: number): Promise<voi
 
 async function main(): Promise<void> {
   const n = num("GRAPH_N", 600)
-  const k = num("GRAPH_K", 6)
+  const k = num("GRAPH_K", 10)
   const p = num("GRAPH_P", 0.08)
   const seed = num("GRAPH_SEED", 20260729)
+  // A fifth of the graph, scaled to n rather than fixed: a walk should meet a hub every
+  // few steps. At a fiftieth it met one and then wandered through nothing but the mean
+  // for the rest of the session, which made the root look like the only node worth
+  // seeing. Raising GRAPH_N must not bring that back.
+  const hubs = num("GRAPH_HUBS", Math.max(1, Math.round(n / 5)))
+  const hubK = num("GRAPH_HUB_K", 20)
 
   console.log(`→ ${describeTarget()}`)
-  console.log(`  generating n=${n} k=${k} p=${p} seed=${seed}`)
+  console.log(
+    `  generating n=${n} k=${k} p=${p} seed=${seed} hubs=${hubs} hubK=${hubK}`,
+  )
 
-  const graph = generate({ n, k, p, seed })
+  const graph = generate({ n, k, p, seed, hubs, hubK })
   const degree = degrees(graph)
 
   const previous = await readIndex()

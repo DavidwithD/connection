@@ -42,8 +42,9 @@ Reading runs a hop further and waits, undrawn, for somebody to arrive.
   only the seat is left to pay — and `World` never hands one back.
 
 ## Consequences
-An arrival costs up to eight reads where it cost one, falling to between none and three per
-step once what is held overlaps the frontier. Somebody pays for walks nobody takes.
+An arrival costs up to a ring of reads where it cost one, falling to between none and
+three per step once what is held overlaps the frontier. Somebody pays for walks nobody
+takes.
 
 Reads stopped being visible as waiting. The HUD needed a second counter, because folding
 them into `loading` made an idle map read as busy.
@@ -53,7 +54,7 @@ one hop before it is drawn from. A mark almost everything wears says less.
 
 ## Assumptions and unknowns
 - Assumed a walk is slower than a read. Measured against DynamoDB Local and nothing else.
-- Unknown whether eight speculative reads per arrival is a cost anyone objects to.
+- Unknown whether a ring of speculative reads per arrival is a cost anyone objects to.
 - The bet: drawing, not reading, is what makes a map feel unchosen. Untested beyond the
   author.
 - Unknown whether 110ms reads as instant after a key nudge.

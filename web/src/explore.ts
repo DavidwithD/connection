@@ -27,11 +27,15 @@ import type { MapView } from "./map-view.js"
 import type { World } from "./world.js"
 
 /**
- * Ring nodes read on arrival. Mean degree is six, so a typical ring is covered whole and
+ * Ring nodes read on arrival. Mean degree is ten, so a typical ring is covered whole and
  * a hub's is truncated rather than paid for — the nearest of it is what gets drawn as
  * somewhere to walk to anyway.
+ *
+ * Tracks the mean the graph is seeded at, a little above it. Left at eight once the mean
+ * moved to ten, a fifth of every ordinary ring went unread and the step after an arrival
+ * started showing a loading state that read-ahead exists to prevent.
  */
-const MAX_LOOKAHEAD = 8
+const MAX_LOOKAHEAD = 12
 
 /** Unspent replies kept. Past this the oldest go, and are re-read if anyone walks there. */
 const MAX_HELD = 64
