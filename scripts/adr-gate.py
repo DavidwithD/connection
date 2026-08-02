@@ -250,6 +250,11 @@ def is_separator_row(line: str) -> bool:
     return bool(re.match(r"^\s*\|[\s:|-]+\|\s*$", line))
 
 
+def is_meta_line(line: str) -> bool:
+    """The Status / Date / Deciders header. Fixed shape, so it is not prose."""
+    return bool(re.match(r"^\s*\*\*(Status|Date|Deciders):\*\*", line, re.I))
+
+
 # ---------------------------------------------------------------------- parsing
 
 
@@ -855,7 +860,7 @@ def check_duplication(docs: list[Doc], corpus: list[Path], template: Path,
         mask = code_mask(lines)
         toks: list[str] = []
         for i, line in enumerate(lines, start=1):
-            if mask[i - 1] or is_separator_row(line):
+            if mask[i - 1] or is_separator_row(line) or is_meta_line(line):
                 continue
             toks.extend(tokens(to_prose(line)))
         return {
@@ -866,7 +871,7 @@ def check_duplication(docs: list[Doc], corpus: list[Path], template: Path,
     def token_list(doc: Doc) -> list[str]:
         toks = []
         for i, line in enumerate(doc.lines, start=1):
-            if doc.code_mask[i - 1] or is_separator_row(line):
+            if doc.code_mask[i - 1] or is_separator_row(line) or is_meta_line(line):
                 continue
             toks.extend(tokens(to_prose(line)))
         return toks
