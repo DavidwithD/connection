@@ -3,7 +3,7 @@
  *
  *   drag            pan the map
  *   wheel           zoom toward the cursor
- *   click a node    glide it to the middle, which makes it the accent
+ *   click a node    glide it to the middle, drawing its ring on the click
  *   arrows          nudge the camera
  *
  * The accent is whatever node is nearest the middle of the screen, recomputed at most
@@ -16,6 +16,10 @@
  * further than that: the ring around the accent is read on arrival and held undrawn, so
  * the next step is already paid for — see docs/decisions/0006-only-the-centre-reads.md.
  *
+ * How long "stopped" takes depends on what moved the camera. Naming a node — a click, a
+ * ghost — skips the wait entirely, because the destination is not in doubt. Drift waits,
+ * and waits longest for the inputs that carry inertia.
+ *
  * See docs/decisions/0003-graph-exploration-demo-stack.md.
  */
 import { fetchIndex, fetchNeighbourhood } from "./api.js"
@@ -25,8 +29,26 @@ import { currentPalette, onThemeChange } from "./palette.js"
 import { distance } from "./placement.js"
 import { World } from "./world.js"
 
-/** Camera stillness before a fetch sweep. */
+/**
+ * Camera stillness before the centre is drawn from.
+ *
+ * The wait is not about the read — that is usually already held — but about *drift*. A
+ * drag or a wheel sweeps the middle of the screen across whatever lies between here and
+ * there, and a ring drawn for each would seat those nodes permanently: `World` never
+ * reassigns a position, so a place panned past is a place that stays on the map. The
+ * settle is what keeps the picture to the route.
+ */
 const SETTLE_MS = 190
+
+/**
+ * The same wait, for an input that stops dead.
+ *
+ * Most of the 190 is inertia — a drag's fling, a wheel's momentum. An arrow has none: the
+ * camera moves its 120px and is still. What is left to wait for is only whether another
+ * key is coming, and a held arrow repeats faster than this on a stock keyboard, so a run
+ * across six nodes still coalesces into the one draw at the end of it.
+ */
+const NUDGE_SETTLE_MS = 110
 
 /** A rival must be this much closer to the middle before it takes the accent. */
 const ACCENT_HYSTERESIS = 0.78
@@ -122,9 +144,13 @@ const settle = debounce(() => {
   render()
 }, SETTLE_MS)
 
+/** Set by an input that stops dead, and read by the one `viewport` it provokes. */
+let nudged = false
+
 view.cy.on("viewport", () => {
   trackAccent()
-  settle()
+  settle(nudged ? NUDGE_SETTLE_MS : SETTLE_MS)
+  nudged = false
 })
 
 view.cy.on("tap", "node", (event) => {
@@ -140,7 +166,15 @@ view.cy.on("tap", "node", (event) => {
     return
   }
 
-  if (world.has(id)) view.focus(id)
+  if (!world.has(id)) return
+
+  // Naming a node is not drifting past it. There is no ambiguity left about where this
+  // is going, so its ring is drawn on the click rather than on the settle at the far end
+  // of the flight — the same bargain the ghost above makes, and for the same reason. With
+  // the reply usually already held it costs nothing, and the camera lands on a finished
+  // picture instead of completing one a beat after it stops.
+  explorer.prefetch(id)
+  view.focus(id)
 })
 
 window.addEventListener("keydown", (event) => {
@@ -153,6 +187,7 @@ window.addEventListener("keydown", (event) => {
   const step = pan[event.key]
   if (!step) return
   event.preventDefault()
+  nudged = true
   view.cy.panBy({ x: step[0], y: step[1] })
 })
 

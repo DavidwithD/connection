@@ -213,11 +213,15 @@ export class Explorer {
   }
 }
 
-export function debounce(fn: () => void, ms: number): () => void {
+/**
+ * The default wait can be overridden per call, because how long a camera has to be still
+ * before it counts as stopped depends on what moved it.
+ */
+export function debounce(fn: () => void, ms: number): (after?: number) => void {
   let timer: number | undefined
-  return () => {
+  return (after = ms) => {
     if (timer !== undefined) clearTimeout(timer)
-    timer = setTimeout(fn, ms) as unknown as number
+    timer = setTimeout(fn, after) as unknown as number
   }
 }
 
