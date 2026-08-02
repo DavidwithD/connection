@@ -9,7 +9,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0003](0003-graph-exploration-demo-stack.md) | Rendering stack for the graph demo | 🔵 Proposed |
 | [0004](0004-the-centre-and-its-neighbourhood.md) | Showing the centre all of its neighbours | 🔵 Proposed |
 | [0005](0005-a-second-view-that-keeps-no-world.md) | A second view that keeps no world | 🔵 Proposed |
-| [0006](0006-only-the-centre-reads.md) | Only the centre reads | 🔵 Proposed |
+| [0006](0006-only-the-centre-reads.md) | Read ahead of what is drawn | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
