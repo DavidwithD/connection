@@ -33,7 +33,10 @@ one shows which kind you have.
 
 - Count what is drawn around the node in the middle. It matches the count the store reports
   for that node, or that node is visibly marked as having more.
-- Nothing that has been drawn ever moves. Not on arrival, not while loading, not on resize.
+- Nothing that has been drawn ever moves on its own. Not on arrival, not while loading, not
+  on resize. A ghost crossing to the node it stands in for
+  ([ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md)) is the answer to a
+  click, and it dissolves on landing.
 - Every connection of the node in the middle can be followed in one gesture.
 - Arriving somewhere new does not leave you looking at an empty screen while it loads.
 - Two people walking different routes through the same graph get different pictures, and
