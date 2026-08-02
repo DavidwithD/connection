@@ -37,10 +37,12 @@ Break one of these and the map lies, rather than merely looking wrong.
 rests on that absence and not on the renderer declining. Drawing is additive only, which is
 why a reply landing mid-gesture cannot disturb what is on screen.
 
-**Only the centre reads, and only once the camera settles.** Movement triggers nothing, so
-panning never waits on the network, and a gesture crossing six nodes reads the one it stops
-on. [explore.ts](../../web/src/explore.ts) holds the whole rule; the one node it will read
-without being the centre is a flight's destination, asked for by name.
+**Drawing is the centre's neighbourhood; reading runs a hop past it.** Movement triggers
+nothing, so panning never waits on the network, and a gesture crossing six nodes draws the
+one it stops on. Landing also reads the ring around that node and holds the replies unspent
+— nothing from one reaches the map, because a seat taken for a place nobody walked to would
+freeze against a map that never existed. [explore.ts](../../web/src/explore.ts) holds the
+whole rule.
 
 **A node is claimed before its request leaves**, so two settles cannot double-read it — and
 the claim comes back if that request is cancelled or fails, because a node marked as read
@@ -55,12 +57,15 @@ lets a `Limit` drop edges but never the node.
 
 ## Where each record landed
 
-| Record | The constraint it put in the code |
+Which files carry each record's constraint. What was decided stays in the record — a
+summary here is a second copy, and it is the copy that goes stale.
+
+| Record | Carried by |
 |---|---|
-| [0002](../decisions/0002-single-table-layout.md) | One table, `pk`/`sk`, one sparse GSI |
-| [0003](../decisions/0003-graph-exploration-demo-stack.md) | Frozen positions, a camera, fetch on settle |
-| [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | The centre draws every neighbour; ghosts move, nothing else does |
-| [0006](../decisions/0006-only-the-centre-reads.md) | The centre is the only node that reads; the map is the route walked |
+| [0002](../decisions/0002-single-table-layout.md) | [tables.ts](../../src/db/tables.ts), [keys.ts](../../src/graph/keys.ts) |
+| [0003](../decisions/0003-graph-exploration-demo-stack.md) | [placement.ts](../../web/src/placement.ts), [world.ts](../../web/src/world.ts), [repo.ts](../../src/graph/repo.ts) |
+| [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | [map-view.ts](../../web/src/map-view.ts), drawn out in [the-centre.md](the-centre.md) |
+| [0006](../decisions/0006-only-the-centre-reads.md) | [explore.ts](../../web/src/explore.ts), [main.ts](../../web/src/main.ts) |
 
 0003, 0004 and 0006 are Proposed, so their constraints are live but unsettled — each of the
 later two reverses one line of 0003.

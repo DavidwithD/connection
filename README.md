@@ -172,10 +172,11 @@ Pan around an undirected cyclic graph like a map. Whatever you stop on is what l
 | `↑↓←→` | Nudge the view |
 
 The node nearest the middle of the screen is the **centre**, which is what gliding a node
-to the middle is for. It is also the only node that reads: the map holds the route you
-walked, and nothing is loaded ahead of you except the far end of a ghost you clicked.
-Panning itself does no work — no simulation, no layout, every node seated once and never
-moved, and no read until the camera goes still.
+to the middle is for. It is also the only node the map draws around, so what you see is the
+route you walked. Reading runs a hop past that: arriving somewhere fetches the ring around
+it too and holds the reply, unspent and undrawn, until somebody walks there. Panning itself
+does no work — no simulation, no layout, every node seated once and never moved, and no
+read until the camera goes still.
 
 How that is put together, and what has to stay true, is in [design](docs/design/) —
 [architecture.md](docs/design/architecture.md) for the layers and the invariants, and

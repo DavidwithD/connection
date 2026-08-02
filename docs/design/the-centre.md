@@ -25,9 +25,12 @@ without anything having to remember that it arrived.
 
 ## Tiers
 
-Tier is recomputed only when the centre changes, in `setTiers`
-([map-view.ts](../../web/src/map-view.ts)) — never per frame. Four data writes over two
-neighbourhoods, so it stays affordable during a pan.
+Tier is recomputed in `setTiers` ([map-view.ts](../../web/src/map-view.ts)) — when the
+centre changes, and again when a reply lands on the current centre. The second is not
+optional: a node already seated when that reply arrives was tiered for a neighbourhood it
+was not yet known to be in, and nothing else would promote it until the centre moved on.
+Never per frame, though — four data writes over two neighbourhoods on a centre change, and
+`O(degree + backdrop)` once per reply, so it stays affordable during a pan.
 
 Backdrop membership is a distance test, not a corridor test: everything within the centre's
 own ring reach that is not one of its neighbours. `ringReach` measures that from the
