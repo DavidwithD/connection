@@ -149,15 +149,16 @@ Two pages, one API, opposite ideas about what exploring a graph is. Both come up
 
 ```bash
 npm run dev:db          # local DynamoDB + tables
-npm run graph:seed      # 600 nodes / 3000 edges by default
+npm run graph:seed      # a small-world graph, sized in src/graph/seed.ts
 npm run demo            # the map at :5173, one node at a time at :5173/orbit.html
 ```
 
 Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, and how many of its
-nodes are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K`. Re-seeding clears the previous graph
-first. The API adds an artificial `GRAPH_API_DELAY_MS` (default 120) because a local read
-returns too fast to ever see a loading state. Both pages read the same seed through the
-same two routes.
+nodes are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K` — the defaults, and what each one costs,
+are in [seed.ts](src/graph/seed.ts). Re-seeding clears the previous graph first. The API
+adds an artificial delay (`GRAPH_API_DELAY_MS`, [index.ts](src/server/index.ts)) because a
+local read returns too fast to ever see a loading state. Both pages read the same seed
+through the same two routes.
 
 ### The map — `/`
 
