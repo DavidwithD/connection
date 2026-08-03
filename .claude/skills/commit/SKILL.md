@@ -17,7 +17,8 @@ the diff.
 git status --porcelain=v2 --branch      # branch, ahead/behind, staged vs not
 git diff --cached                        # what would land
 git diff                                 # what would be left behind
-git diff --check                         # whitespace + conflict markers
+git diff --cached --check                # whitespace + conflict markers, in what lands
+git diff --check                         # the same, in what stays behind
 git log --format='%s%n%b%n---' -8        # the style to match
 git stash list                           # work that may belong to this change
 ```
@@ -30,12 +31,32 @@ tree as the candidate and stage deliberately — never `git add -A` to save a st
 Run it. An unverified commit is a claim, not a change.
 
 ```
-npm test              # typecheck + DynamoDB Local smoke
-scripts/adr-gate.py   # only when docs/decisions/** is touched
+npm run typecheck     # always; needs nothing running
+npm run ddb:smoke     # needs DynamoDB Local (`npm run ddb:status`)
+scripts/adr-gate.py   # docs/** touched, or a file a record links to moved
 ```
 
-If the smoke test needs a database that isn't up (`npm run ddb:status`), say so and offer
-`npm run dev:db` — do not quietly count a skipped test as a pass.
+Verification answers for the **index**, not the disk. Staging the whole working tree makes
+the two the same, and `npm test` runs both legs at once. A partial stage — §5's
+`git add -p` — does not: the file on disk is not the file being committed. Run against the
+staged tree instead, either `git stash push --keep-index --include-untracked` around the
+run, or `git checkout-index -a --prefix=` into a temp dir, which is what
+`scripts/hooks/pre-commit` does and why.
+
+Typecheck always blocks. If the database isn't up, offer `npm run dev:db`; left down, the
+smoke test blocks a diff that touches `src/db/`, `src/graph/` or `src/server/`, and
+elsewhere is reported as uncovered. Never quietly count a skipped leg as a pass — name the
+leg that didn't run and what it would have covered.
+
+The gate is not only for records. `M010` and `D005` read the whole tree, and `M002` breaks
+when a file a record links to is renamed or deleted, so a commit touching only `web/src/`
+can fail it. `scripts/hooks/pre-commit` runs the same gate against the staged tree on every
+commit — but only where someone ran `npm run hooks:install`, since `.git/hooks` is not
+versioned, and only where `python3` is on `PATH`, since it fails the commit outright
+without one. Even with one, a console that isn't UTF-8 kills the gate on the em dash in its
+own output; `PYTHONIOENCODING=utf-8` fixes that, and a `UnicodeEncodeError` traceback is not
+a pass. Where none of that holds, §2 by hand is the only gate there is — say so, rather than
+letting a hook that never ran read as one that found nothing.
 
 ## 3. Review
 
@@ -49,11 +70,14 @@ commit's problem — mention it once, never block on it.
 
 `B001` a secret in the diff — key, token, password, connection string, real AWS
 credentials, a `.env` file · `B002` conflict markers or a half-finished merge/rebase ·
-`B003` tests or typecheck failing, or never run · `B004` the ADR gate fails on a record
-this change touches · `B005` an ADR deleted or renumbered — a reversed decision gets a
-*new* record and the old one flips to ♻️ Superseded (`docs/decisions/README.md`) ·
-`B006` ignored or generated output staged — `dist/`, `vendor/`, `.dynamodb-data/`,
-`__pycache__/`, `*.log` · `B007` the change reverts or deletes work with no stated reason.
+`B003` typecheck failing, or never run; the smoke test failing, or unrun against a diff
+that touches `src/db/`, `src/graph/` or `src/server/` · `B004` the ADR gate fails —
+on any record, not only one this change touches (§2) · `B005` an ADR renumbered, or a
+*decided* one deleted: a reversed decision gets a *new* record and the old one flips to
+♻️ Superseded. A record still Proposed may be withdrawn, if its index row goes with it and
+its number stays spent (`docs/decisions/README.md`) · `B006` ignored or generated output
+staged — `dist/`, `vendor/`, `.dynamodb-data/`, `__pycache__/`, `*.log` · `B007` the change
+reverts or deletes work and you cannot say why — §6 confirms the message says it.
 
 ### Warnings
 
@@ -161,11 +185,18 @@ Never, without being asked in that turn: `push`, `amend` a commit that is alread
 `git checkout`/`restore`/`reset --hard` anything with uncommitted work in it, `stash drop`,
 `rebase`, or a force flag of any kind. A commit is recoverable; those are how work is lost.
 
+`--no-verify` belongs on that list for a different reason: it costs nothing and voids
+`B004`. The hook names it as the fix whenever it blocks, which is the one moment it must
+not be taken. Fix the record, or ask.
+
 ## Amend and fixup
 
-`amend` — for the tip commit only, and only if unpushed (`git status -sb` shows no
-`ahead`). Re-run §2 and §3 against the *combined* diff, and rewrite the message to describe
-the result rather than appending "also fix X".
+`amend` — for the tip commit only, and only while it is unpushed. `git status --porcelain=v2
+--branch` has to show `# branch.ab +N -M` with N ≥ 1: those are the commits the upstream
+does not have yet. `+0` means the tip is already published and amending rewrites history
+someone else may hold. No `branch.ab` line at all means nothing was compared, which is not
+an answer either — ask. Re-run §2 and §3 against the *combined* diff, and rewrite the
+message to describe the result rather than appending "also fix X".
 
 `fixup` — once the commit is pushed or shared, a follow-up commit is the answer. Say that
 instead of rewriting history.
