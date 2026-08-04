@@ -1,17 +1,23 @@
 # The centre and its neighbourhood
 
 What the map draws around the node in the middle, and what has to stay true while it does.
-The constraint behind it is [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md);
-the options that lost are still drawn in [names-and-options.html](names-and-options.html).
+The constraints behind it are [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md),
+for what is drawn, and [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it
+is drawn as; the options that lost are still drawn in
+[names-and-options.html](names-and-options.html).
 
 ## The names
+
+A named node draws *as* its name: a pill sized to the label, with no disc beside it. Only
+the centre and its ring are named, so only they are pills — everything else is still a disc,
+and the reason for the split is [ADR 0012](../decisions/0012-the-name-is-the-node.md).
 
 Seven kinds of thing, and one of them is not a node.
 
 | Name | What it is | In the code |
 |---|---|---|
 | centre | The node nearest the middle of the screen | `tier 0` |
-| ring | A neighbour of the centre, drawn and named | `tier 1` |
+| ring | A neighbour of the centre, named — the name being the mark | `tier 1` |
 | arrival | A ring node that turns up *while* its parent is the centre | born at `tier 1` |
 | backdrop | Near the centre, connected to something else, dimmed | `tier 3` |
 | field | Everything else, at rest | `tier 2` |
@@ -22,6 +28,14 @@ Seven kinds of thing, and one of them is not a node.
 *Arrival* is a word for describing behaviour, not a state. Every ring node carries the same
 surface-coloured outline, so one arriving over a dimmed node reads as being on top of it
 without anything having to remember that it arrived.
+
+## Where two names meet
+
+A pill is as wide as its name, and seats were spaced for discs, so two ring pills can
+overlap where a ring runs horizontally. They stack rather than interleave: the
+better-connected name draws whole, over the other. `setTiers` ranks the ring into a band of
+`z-index` values for that, and `RING_Z` ([map-view.ts](../../web/src/map-view.ts)) carries
+the reason degree settles it and distance cannot.
 
 ## Tiers
 
@@ -81,7 +95,8 @@ the only reason a neighbour is not drawn, and it is temporary.
 ## Where the numbers are
 
 Beside the code that reads them, once: separations and ring geometry in
-[placement.ts](../../web/src/placement.ts), flight speed and its clamps, the ghost cap and the
-long-edge threshold in [map-view.ts](../../web/src/map-view.ts), and the settle delay and
-accent hysteresis in [main.ts](../../web/src/main.ts). Each carries the reason for its value
-in a comment. Copying one here would make this the stale copy.
+[placement.ts](../../web/src/placement.ts), flight speed and its clamps, the ghost cap, the
+long-edge threshold, the pill's inset and the ring's paint band in
+[map-view.ts](../../web/src/map-view.ts), and the settle delay and accent hysteresis in
+[main.ts](../../web/src/main.ts). Each carries the reason for its value in a comment.
+Copying one here would make this the stale copy.

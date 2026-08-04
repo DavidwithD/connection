@@ -65,6 +65,38 @@ const DISSOLVE_MS = 320
  */
 const EASING = "cubic-bezier(0.4, 0, 0.2, 1)" as Css.TransitionTimingFunction
 
+/**
+ * The inset between a name and the edge of the pill it draws as.
+ *
+ * Both of a pill's dimensions come from its label and Cytoscape adds `padding` to each of
+ * them (`nodeWidth = node.width() + 2 * padding`, in its `drawing-nodes.mjs`), so this one
+ * number is the whole geometry: every pill hugs its name equally on all sides, at whatever
+ * size that name is set in.
+ *
+ * Not a `NODE_SIZE`: those diameters are what the separations are derived from
+ * (placement.ts) and what a field node still draws at, and a pill is neither.
+ */
+const PILL_PAD = "8px"
+
+/**
+ * `z-index` takes a `data()` mapper at runtime — cytoscape's `style/parse.mjs` accepts a
+ * mapper for any property without consulting its type — but the typings model only the
+ * literal number. The cast describes the library.
+ */
+const RANKED_Z = "data(lift)" as unknown as number
+
+/**
+ * Paint order within the ring: above the field and the backdrop, below a ghost and the
+ * centre. The band's ends are here; the tiers it has to stay between are in `buildStyle`.
+ *
+ * Ranked by degree, because a tie has to be settled by something a reader can infer and
+ * distance cannot settle it: pills collide *because* they are siblings on one ring, which
+ * is to say at one radius. Degree already decides which neighbours get the closest seats
+ * when room runs short (`seatAndLink` in world.ts), so the better-connected name being the
+ * one drawn whole is the same rule twice rather than a new one.
+ */
+const RING_Z = { top: 24, bottom: 10 } as const
+
 const pairKey = (a: string, b: string): string => (a < b ? `${a} ${b}` : `${b} ${a}`)
 
 /** A ghost belongs to the centre that raised it, and names the node it stands in for. */
@@ -80,6 +112,8 @@ export function ghostTarget(id: string): string | null {
 function buildStyle(p: Palette): StylesheetJson {
   const font = 'system-ui, -apple-system, "Segoe UI", sans-serif'
   return [
+    // A node at rest: a disc, and unnamed. Only the centre and its ring are named, and a
+    // named node draws as its name — see the pill selectors below.
     {
       selector: "node",
       style: {
@@ -91,14 +125,14 @@ function buildStyle(p: Palette): StylesheetJson {
         "font-size": 11,
         // Ink tokens, never the node's own colour.
         color: p.textSecondary,
+        // A name sits inside its pill, so it is centred on both axes for every node that
+        // has one.
         "text-valign": "center",
-        "text-halign": "right",
-        "text-margin-x": 5,
-        "text-background-color": p.surface,
-        "text-background-opacity": 0.72,
-        "text-background-padding": "2px",
+        "text-halign": "center",
         "border-width": 0,
-        "transition-property": "background-color, width, height",
+        // Neither axis can tween once width is sized from the label, so promotion reads
+        // through the fill instead — and mostly through a name appearing at all.
+        "transition-property": "background-color, background-opacity",
         "transition-duration": 160,
       },
     },
@@ -111,13 +145,21 @@ function buildStyle(p: Palette): StylesheetJson {
         opacity: 0.55,
       },
     },
+    // The ring: the name *is* the node. Why it keeps a plate instead of floating as bare
+    // type is docs/decisions/0012-the-name-is-the-node.md.
     {
       selector: "node[tier = 1]",
       style: {
-        "background-color": p.hop[0]!,
-        width: NODE_SIZE.neighbour,
-        height: NODE_SIZE.neighbour,
+        shape: "round-rectangle",
+        width: "label",
+        height: "label",
+        padding: PILL_PAD,
+        "background-color": p.surface,
+        // Near-opaque, so where two pills overlap the front one reads whole instead of the
+        // two interleaving. Why they are allowed to overlap: docs/design/the-centre.md.
+        "background-opacity": 0.92,
         label: "data(label)",
+        color: p.hop[0]!,
         "font-size": 12,
         "font-weight": 500,
         // A halo in the surface colour, so a ring node reads as being *over* the
@@ -126,9 +168,12 @@ function buildStyle(p: Palette): StylesheetJson {
         // a frontier has to keep its dashed edge.
         "outline-width": 3,
         "outline-color": p.surface,
-        "z-index": 20,
+        "z-index": RING_Z.bottom,
       },
     },
+    // Ranked paint order, once `setTiers` has ranked them. Kept a separate rule so a ring
+    // node that has not been ranked yet still sits above the field rather than at zero.
+    { selector: "node[tier = 1][?lift]", style: { "z-index": RANKED_Z } },
     // The backdrop: close to the centre, but connected to something else. It gives up
     // its label and most of its contrast so the ring can be read across it.
     {
@@ -136,20 +181,21 @@ function buildStyle(p: Palette): StylesheetJson {
       style: { opacity: 0.22, label: "", "z-index": 0 },
     },
     { selector: "edge[dim = 1]", style: { opacity: 0.12 } },
+    // The centre: the same pill, filled. The fill is what carries "you are here", and it is
+    // the loudest thing on screen.
     {
       selector: "node[tier = 0]",
       style: {
+        shape: "round-rectangle",
+        width: "label",
+        height: "label",
+        padding: PILL_PAD,
         "background-color": p.accent,
-        width: NODE_SIZE.accent,
-        height: NODE_SIZE.accent,
+        "background-opacity": 1,
         label: "data(label)",
-        "text-halign": "center",
-        "text-valign": "bottom",
-        "text-margin-x": 0,
-        "text-margin-y": 6,
-        "font-size": 14,
-        "font-weight": 600,
-        color: p.textPrimary,
+        "font-size": 15,
+        "font-weight": 700,
+        color: p.inkOnAccent,
         "border-width": 3,
         "border-color": p.accentRing,
         "z-index": 30,
@@ -158,13 +204,18 @@ function buildStyle(p: Palette): StylesheetJson {
     { selector: "edge[accent = 1]", style: { "line-color": p.edgeActive, opacity: 0.9, width: 2 } },
     // "More this way" is a border style, not a hue — it still reads for someone who
     // cannot separate the two ramp steps.
+    //
+    // A seam rather than an outline, because a pill's perimeter is over twice a disc's and
+    // this sits on nearly every drawn node — see 0006's consequences. Finer than the
+    // ghost's dash, so the two are not read as one.
     {
       selector: "node[?more]",
       style: {
-        "border-width": 2,
+        "border-width": 1,
         "border-color": p.frontierRing,
         "border-style": "dashed",
-        "border-opacity": 0.8,
+        "border-dash-pattern": [1, 3],
+        "border-opacity": 0.55,
       },
     },
     // A ghost: a neighbour of the centre whose real seat is too far away to draw. Hollow
@@ -173,9 +224,11 @@ function buildStyle(p: Palette): StylesheetJson {
     {
       selector: "node[?ghost]",
       style: {
+        shape: "round-rectangle",
         "background-opacity": 0,
-        width: NODE_SIZE.neighbour,
-        height: NODE_SIZE.neighbour,
+        width: "label",
+        height: "label",
+        padding: PILL_PAD,
         "border-width": 2,
         "border-color": p.hop[0]!,
         "border-style": "dashed",
@@ -245,7 +298,9 @@ export class MapView {
       maxZoom: 2.4,
       wheelSensitivity: 0.22,
       textureOnViewport: false,
-      pixelRatio: 1,
+      // Type is the mark, so a 1:1 canvas would read as soft on every HiDPI screen. Capped
+      // at 2: past that the fill cost climbs and nothing about the names looks better.
+      pixelRatio: Math.min(2, window.devicePixelRatio || 1),
     })
   }
 
@@ -494,8 +549,23 @@ export class MapView {
   private setTiers(id: string, active: boolean): void {
     const node = this.cy.$id(id)
     node.data("tier", active ? 0 : 2)
-    for (const other of this.world.neighbours(id)) {
-      this.cy.$id(other).data("tier", active ? 1 : 2)
+    const neighbours = this.world.neighbours(id)
+    if (active) {
+      // Ranked into the `RING_Z` band rather than given consecutive values: a hub's ring
+      // would otherwise run off the bottom of the band and stack arbitrarily again.
+      const ranked = [...neighbours].sort(
+        (a, b) => (this.world.get(b)?.degree ?? 0) - (this.world.get(a)?.degree ?? 0),
+      )
+      const band = RING_Z.top - RING_Z.bottom
+      ranked.forEach((other, i) => {
+        const lift =
+          ranked.length > 1
+            ? RING_Z.top - Math.round((i / (ranked.length - 1)) * band)
+            : RING_Z.top
+        this.cy.$id(other).data({ tier: 1, lift })
+      })
+    } else {
+      for (const other of neighbours) this.cy.$id(other).data("tier", 2)
     }
     node.connectedEdges().data("accent", active ? 1 : 0)
     for (const other of this.backdropOf(id)) {

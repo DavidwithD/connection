@@ -15,6 +15,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0009](0009-the-first-write-outside-the-seed.md) | The first write outside the seed | 🔵 Proposed |
 | [0010](0010-writing-to-the-graph-from-the-browser.md) | Writing to the graph from the browser | 🔵 Proposed |
 | [0011](0011-taking-a-write-back.md) | Taking a write back | 🔵 Proposed |
+| [0012](0012-the-name-is-the-node.md) | The name is the node | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

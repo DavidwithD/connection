@@ -8,6 +8,7 @@
  *   light  blue 250/350/450/550   ordinal: 4/4 pass (adjacent ΔL >= 0.06)
  *   dark   blue 300/400/500/600   ordinal: 4/4 pass (dark end 2.15:1 vs surface)
  *   accent vs nearest hop step    CVD ΔE 24.4 light / 24.9 dark (>= 8 target)
+ *   ink on the accent fill        6.2:1 light / 5.1:1 dark (>= 4.5 target)
  *
  * The steps are applied discretely, never interpolated. Interpolating between them
  * would put colours on screen that nothing validated, and five classes do not need
@@ -19,6 +20,11 @@ export interface Palette {
   /** Centre node. A reserved accent, not a step on the hop ramp. */
   accent: string
   accentRing: string
+  /**
+   * The centre's name, which sits *on* the accent rather than on the surface, so it needs
+   * its own contrast pair. Dark in both themes: the accent is a mid-tone orange either way.
+   */
+  inkOnAccent: string
   /** Index 0 is hop 1; the last entry covers every hop beyond the ramp. */
   hop: readonly string[]
   edge: string
@@ -33,6 +39,7 @@ const LIGHT: Palette = {
   surface: "#fcfcfb",
   accent: "#eb6834",
   accentRing: "#fcfcfb",
+  inkOnAccent: "#0b0b0b",
   hop: ["#1c5cab", "#2a78d6", "#5598e7", "#86b6ef"],
   edge: "#c3c2b7",
   edgeActive: "#898781",
@@ -46,6 +53,7 @@ const DARK: Palette = {
   surface: "#1a1a19",
   accent: "#d95926",
   accentRing: "#1a1a19",
+  inkOnAccent: "#0b0b0b",
   hop: ["#6da7ec", "#3987e5", "#256abf", "#184f95"],
   edge: "#383835",
   edgeActive: "#898781",

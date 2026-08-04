@@ -91,7 +91,9 @@ summary here is a second copy, and it is the copy that goes stale.
 | [0009](../decisions/0009-the-first-write-outside-the-seed.md) | [edge.ts](../../src/graph/edge.ts) |
 | [0010](../decisions/0010-writing-to-the-graph-from-the-browser.md) | [node.ts](../../src/graph/node.ts), [server/index.ts](../../src/server/index.ts), [join.ts](../../web/src/join.ts), [world.ts](../../web/src/world.ts) |
 | [0011](../decisions/0011-taking-a-write-back.md) | [edge.ts](../../src/graph/edge.ts), [node.ts](../../src/graph/node.ts), [combobox.ts](../../web/src/combobox.ts), [map-view.ts](../../web/src/map-view.ts) |
+| [0012](../decisions/0012-the-name-is-the-node.md) | [map-view.ts](../../web/src/map-view.ts), [palette.ts](../../web/src/palette.ts), drawn out in [the-centre.md](the-centre.md) |
 
-0003 through 0009 are Proposed, so their constraints are live but unsettled — 0004 and 0006
-each reverse one line of 0003, 0005 exists to find out how much of it was needed, and 0007
-is the first time the store's layout was argued rather than assumed.
+0003 through 0012 are Proposed, so their constraints are live but unsettled — 0004 and 0006
+each reverse one line of 0003, 0005 exists to find out how much of it was needed, 0007 is the
+first time the store's layout was argued rather than assumed, and 0012 replaces the mark 0004
+chose without touching what it chose to draw.
