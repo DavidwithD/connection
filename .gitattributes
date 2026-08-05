@@ -1,0 +1,6 @@
+# Shell interprets these, and a carriage return is not whitespace to it — a CRLF
+# checkout turns `failed=1` into `failed=1\r` and every test on it breaks. The repo
+# is developed on Windows with core.autocrlf=true, so the working tree has to be
+# pinned rather than left to the default.
+*.sh          text eol=lf
+scripts/hooks/* text eol=lf
