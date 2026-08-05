@@ -211,16 +211,18 @@ it too and holds the reply, unspent and undrawn, until somebody walks there. Pan
 does no work — no simulation, no layout, every node seated once and never moved, and no
 read until the camera goes still.
 
-The box at the top does two things, and the tabs say which. **find** takes you somewhere:
-type a prefix, `↑↓` to choose, `↵` to fly there. **join** adds to the graph — pick a source
-once, then name targets at it, one `↵` each.
+The box at the top is one box until you name something in it, and then it is an edge: two
+ends and the line between them. Naming a node takes you there. Name one in the other end and
+they are joined — either end, since the graph has no direction to tell them apart. Whichever
+end you leave alone is the anchor, so the same widget fans out from one node or fans in to
+one, and the end you fired empties for the next name.
 
-| Key | In the box |
+| Key | In an end |
 |---|---|
 | `↑` `↓` | Move the highlight, wrapping at both ends |
-| `↵` | Take the highlighted row — in **join**, that writes the edge immediately |
+| `↵` | Take the highlighted row — with the other end filled, that writes the edge |
 | `⇧↵` | Create exactly what is typed, whatever the list shows |
-| `Esc` | Close the list; again, empty the box |
+| `Esc` | Close the list; again, let the name go |
 
 The two Enters are the shape of it. `↵` takes the best match, so a prefix and one key
 reaches a node that already exists. Creating is a different act with its own key, and never
@@ -232,6 +234,10 @@ no best match to take, so `↵` creates as well.
 the edge again and deletes the node if that write is what created it. It stays for thirty
 seconds. A node that something else has since been joined to is kept — the edge still
 parts. See [ADR 0011](docs/decisions/0011-taking-a-write-back.md).
+
+A receipt names both ends, and clicking either name puts it back in the near end, which is
+how a path costs one name per node. Clicking loads and never writes.
+See [ADR 0013](docs/decisions/0013-one-box-that-grows-into-an-edge.md).
 
 How the map is put together, and what has to stay true, is in [design](docs/design/) —
 [architecture.md](docs/design/architecture.md) for the layers and the invariants, and

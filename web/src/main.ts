@@ -24,7 +24,6 @@
  */
 import { fetchIndex, fetchNeighbourhood } from "./api.js"
 import type { GraphIndex, NodeMeta } from "./api.js"
-import { Combobox } from "./combobox.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
 import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
@@ -59,9 +58,6 @@ const ACCENT_HYSTERESIS = 0.78
 /** Keyboard pan step, in screen pixels. */
 const NUDGE = 120
 
-/** The two things the box at the top can be for: arriving somewhere, or adding to it. */
-type Mode = "find" | "join"
-
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id)
   if (!found) throw new Error(`missing element: #${id}`)
@@ -69,8 +65,6 @@ const el = <T extends HTMLElement>(id: string): T => {
 }
 
 const stage = el<HTMLDivElement>("stage")
-const searchInput = el<HTMLInputElement>("search-input")
-const results = el<HTMLUListElement>("results")
 const statCentre = el<HTMLSpanElement>("stat-centre")
 const statDegree = el<HTMLSpanElement>("stat-degree")
 const statNodes = el<HTMLSpanElement>("stat-nodes")
@@ -189,18 +183,14 @@ view.cy.on("tap", "node", (event) => {
  * Arriving somewhere by name.
  *
  * Every other node on the map got here because somebody walked to its neighbour, and its
- * seat came from the node it neighbours. A searched node has neither: it is joined to
- * nothing on screen, and the only thing its position can answer to is where the camera
- * happens to be. That is the cost of the box, and it is paid once — from the moment it
- * lands it is an ordinary node, and what draws around it is its own neighbourhood, read on
- * the settle at the end of the flight like anywhere else. The centre still draws; this only
- * changes how a node becomes the centre.
+ * seat came from the node it neighbours. A named node has neither: it is joined to nothing
+ * on screen, and the only thing its position can answer to is where the camera happens to
+ * be. That is the cost of the box, and it is paid once — from the moment it lands it is an
+ * ordinary node, and what draws around it is its own neighbourhood, read on the settle at
+ * the end of the flight like anywhere else. The centre still draws; this only changes how a
+ * node becomes the centre.
  */
 function goTo(node: NodeMeta): void {
-  results.replaceChildren()
-  searchInput.value = ""
-  searchInput.blur()
-
   if (!world.has(node.id)) {
     view.add([world.place(node, world.landing(view.centre(), node.id))], [])
     view.setAccent(node.id)
@@ -216,36 +206,36 @@ function goTo(node: NodeMeta): void {
 const note = (node: NodeMeta): string =>
   world.has(node.id) ? "already placed" : `${String(node.degree)} edges`
 
-const findBox = new Combobox(searchInput, results, {
-  note,
-  onError: (message) => setStatus(`⚠ ${message}`, "error"),
-  // Nothing is created from the find box: it exists to arrive somewhere, and a name that
-  // matches nothing is somewhere there is no arriving at.
-  onPick: (picked) => {
-    if (picked.kind === "node") goTo(picked.node)
-  },
-})
-
 /**
- * What the two writes change on the map.
+ * What the panel changes on the map.
  *
- * A created node lands like a searched one: joined to nothing on screen yet, so the only
- * thing its position can answer to is the camera. The edge that follows a moment later
- * links it where it sits rather than re-seating it, which is the seated-once rule holding
- * for a node that arrived by being made rather than by being walked to.
+ * A created node lands like a named one: joined to nothing on screen yet, so the only thing
+ * its position can answer to is the camera. The edge that follows a moment later links it
+ * where it sits rather than re-seating it, which is the seated-once rule holding for a node
+ * that arrived by being made rather than by being walked to.
  */
-const joinPanel = new JoinPanel(
+new JoinPanel(
   {
-    from: el<HTMLInputElement>("join-from"),
-    fromList: el<HTMLUListElement>("join-from-list"),
-    fromClear: el<HTMLButtonElement>("join-from-clear"),
-    to: el<HTMLInputElement>("join-to"),
-    toList: el<HTMLUListElement>("join-to-list"),
-    receipts: el<HTMLDivElement>("join-receipts"),
+    near: {
+      field: el<HTMLDivElement>("near-end"),
+      input: el<HTMLInputElement>("near"),
+      list: el<HTMLUListElement>("near-list"),
+      clear: el<HTMLButtonElement>("near-clear"),
+    },
+    far: {
+      field: el<HTMLDivElement>("far-end"),
+      input: el<HTMLInputElement>("far"),
+      list: el<HTMLUListElement>("far-list"),
+      clear: el<HTMLButtonElement>("far-clear"),
+    },
+    link: el<HTMLSpanElement>("link"),
+    receipts: el<HTMLDivElement>("receipts"),
   },
   {
     note,
     onStatus: setStatus,
+    // Arming an end is the page's other way of arriving somewhere.
+    onArm: goTo,
     onNode: (node) => {
       // Counted here rather than only after the edge: a create that lands before a refused
       // join is still a node in the store, and the HUD should say so.
@@ -283,32 +273,8 @@ const joinPanel = new JoinPanel(
   },
 )
 
-const panes: Record<Mode, { tab: HTMLButtonElement; pane: HTMLElement }> = {
-  find: { tab: el<HTMLButtonElement>("mode-find"), pane: el<HTMLDivElement>("find-pane") },
-  join: { tab: el<HTMLButtonElement>("mode-join"), pane: el<HTMLDivElement>("join-pane") },
-}
-
-function setMode(mode: Mode): void {
-  for (const [name, { tab, pane }] of Object.entries(panes)) {
-    const on = name === mode
-    tab.setAttribute("aria-selected", String(on))
-    pane.hidden = !on
-  }
-  // A half-typed query in the box you just left would search again the moment you came
-  // back to it, against a list that is no longer on screen.
-  if (mode === "find") findBox.focus()
-  else {
-    findBox.clear()
-    joinPanel.focus()
-  }
-}
-
-for (const [name, { tab }] of Object.entries(panes)) {
-  tab.addEventListener("click", () => setMode(name as Mode))
-}
-
 window.addEventListener("keydown", (event) => {
-  // The arrows below pan the camera. Inside the search box they belong to the text.
+  // The arrows below pan the camera. Inside an end of the panel they belong to the text.
   if (event.target instanceof HTMLInputElement) return
 
   const pan: Record<string, [number, number]> = {

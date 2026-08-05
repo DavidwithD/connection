@@ -6,8 +6,8 @@
  * string is never enough to say which one was meant. Every box in the app that names a node
  * therefore resolves it here first, and its caller only ever sees a `NodeMeta`.
  *
- * Three of these run: the find box, and the two halves of the join panel. They differ in
- * what `onPick` does and in whether a name matching nothing may be created — nothing else.
+ * Two of these run, one at each end of the panel that names an edge. They differ in nothing
+ * but which end they report to.
  *
  * Keyboard, because a box you have to click is a box you can only use once in a row:
  *
@@ -45,6 +45,8 @@ export type Picked =
 export interface ComboboxHooks {
   onPick: (picked: Picked) => void
   onError: (message: string) => void
+  /** The box was emptied by `Esc`, rather than by a pick or a blur. */
+  onEmptied?: () => void
   /** Offer `+ create "…"` when nothing already carries the typed name. */
   allowCreate?: boolean
   /** Hover text for a row, for whatever the caller knows that this does not. */
@@ -52,7 +54,7 @@ export interface ComboboxHooks {
 }
 
 /** The same shallow rule as `normaliseLabel` in src/graph/keys.ts. */
-const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, " ")
+export const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, " ")
 
 export class Combobox {
   private rows: Picked[] = []
@@ -143,6 +145,7 @@ export class Combobox {
       if (this.rows.length) this.close()
       else {
         this.input.value = ""
+        this.hooks.onEmptied?.()
         this.input.blur()
       }
     }

@@ -9,6 +9,7 @@ nothing in here is wrong.
 | [the-centre.md](the-centre.md) | What the map draws around the node in the middle |
 | [one-node-at-a-time.md](one-node-at-a-time.md) | The second page: spokes, rings, and the hop |
 | [names-and-options.html](names-and-options.html) | The far-neighbour options, drawn and animated |
+| [two-ends.html](two-ends.html) | The panel that finds and joins, driveable, with its losing layouts |
 
 A figure earns its own file when the thing in question is visual. The options for a far
 neighbour were drawn and moved before one was picked, and

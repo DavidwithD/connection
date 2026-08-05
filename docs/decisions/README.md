@@ -16,6 +16,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0010](0010-writing-to-the-graph-from-the-browser.md) | Writing to the graph from the browser | 🔵 Proposed |
 | [0011](0011-taking-a-write-back.md) | Taking a write back | 🔵 Proposed |
 | [0012](0012-the-name-is-the-node.md) | The name is the node | 🔵 Proposed |
+| [0013](0013-one-box-that-grows-into-an-edge.md) | One box that grows into an edge | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
