@@ -13,6 +13,7 @@ A DynamoDB-backed service. TypeScript on Node, AWS SDK v3.
 |---|---|
 | **Node ≥ 20.6** | Runtime |
 | **Java (JRE) 11+** | DynamoDB Local runs as a JAR — there is no Docker requirement. See [ADR 0002](docs/decisions/0002-single-table-layout.md) |
+| **bash** | npm runs every script through it, so the POSIX ones work on Windows too. Ships with git. See [ADR 0015](docs/decisions/0015-bash-as-the-script-shell.md) |
 
 No AWS account or credentials are needed for local development.
 

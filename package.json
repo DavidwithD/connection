@@ -12,7 +12,7 @@
     "build:web": "vite build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web",
     "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: gates installed'",
-    "adr": "scripts/adr-gate.py",
+    "adr": "python3 scripts/adr-gate.py",
     "docs": "python3 scripts/docs-gate.py",
     "ddb:install": "./scripts/dynamodb-local.sh install",
     "ddb:start": "./scripts/dynamodb-local.sh start",
