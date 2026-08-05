@@ -7,6 +7,8 @@
 
 A DynamoDB-backed service. TypeScript on Node, AWS SDK v3.
 
+[![CI](https://github.com/DavidwithD/connection/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidwithD/connection/actions/workflows/ci.yml)
+
 ## Prerequisites
 
 | | Why |
@@ -128,6 +130,8 @@ scripts/
   adr-gate.py          the decision gate — shape, budgets, wiring
   docs-gate.py         the docs gate — the living docs against the code
   hooks/pre-commit     runs both gates on the staged tree
+.github/workflows/
+  ci.yml               the same gates, where they cannot be skipped
 .dynamodb-data/        local database files + server log (gitignored)
 vendor/                the DynamoDB Local JAR (gitignored)
 ```

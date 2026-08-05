@@ -11,7 +11,9 @@ scripts/docs-gate.py --only env # one check, while fixing it
 
 `npm run hooks:install` puts this and the [decision gate](decisions/GATE.md) on every
 commit, over the staged tree. Errors block, warnings print and pass, and
-`DOCS_GATE_STRICT=1` makes warnings block too.
+`DOCS_GATE_STRICT=1` makes warnings block too. [CI](../.github/workflows/ci.yml) runs the
+same two gates the same way, on the assumption that a hook is opt-in and skippable —
+[ADR 0016](decisions/0016-the-gates-run-in-ci.md).
 
 ## What we're actually protecting
 

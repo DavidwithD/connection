@@ -20,6 +20,7 @@ correct. Errors block, warnings print and pass; `ADR_GATE_STRICT=1` makes warnin
 too and `--no-verify` skips the hook. `.git/hooks` is not versioned, so a fresh clone is
 unguarded until someone runs the install — and git skips a hook it cannot execute without
 saying so, which is the one failure mode this cannot warn you about.
+[CI](../../.github/workflows/ci.yml) is the copy that cannot be skipped.
 
 ## What we're actually protecting
 

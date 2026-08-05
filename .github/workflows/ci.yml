@@ -1,0 +1,98 @@
+# The gates, somewhere they cannot be skipped.
+#
+# The pre-commit hook runs the same two gates the same way, but it is per-clone,
+# opt-in, and one `--no-verify` from silent — docs/decisions/0016-the-gates-run-in-ci.md.
+#
+# Nothing here reimplements a check. Every step is an npm script a contributor runs
+# locally, so a red run is reproducible with one command and never means "CI has its
+# own rules".
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push makes the running one pointless: it is testing a commit that is
+# already history.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: gates and build (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Both versions get reported. Knowing only that "something failed" would mean
+      # running it again to find out which.
+      fail-fast: false
+      matrix:
+        # The floor `engines` declares, and the version development happens on. The
+        # floor is the interesting one: it is a promise nothing exercises until
+        # somebody actually holds a runtime to it.
+        node: ["20.19", "24"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+      - run: npm run adr
+      - run: npm run docs
+
+      # Bundling fails in ways typecheck cannot see, and it is the step most likely
+      # to be the thing that objects to the older runtime.
+      - run: npm run build
+      - run: npm run build:web
+
+  smoke:
+    name: the getting-started the README documents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      # DynamoDB Local is a JAR. The version here only has to clear the floor the
+      # prerequisites name.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # ddb:start polls the port with lsof. A runner without it would wait out the
+      # whole timeout and then report a startup failure that never happened.
+      - name: ensure lsof
+        run: command -v lsof >/dev/null || (sudo apt-get update && sudo apt-get install -y lsof)
+
+      # ~47MB from CloudFront, and it never changes within a v2 release.
+      - name: cache DynamoDB Local
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: dynamodb-local-v2
+
+      - run: npm ci
+
+      # These four lines are the README's Getting started, run in order. A change
+      # that breaks the documented path fails here rather than on somebody's first
+      # morning with the repo.
+      - run: npm run ddb:install
+      - run: npm run dev:db
+      - run: npm test
+
+      - name: the server log, if the round trip failed
+        if: failure()
+        run: tail -50 .dynamodb-data/dynamodb-local.log || true
