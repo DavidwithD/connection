@@ -387,6 +387,52 @@ def check_commands(gate: Gate) -> None:
                    "does not define")
 
 
+def check_engines(gate: Gate) -> None:
+    """Every version `engines` demands is a version the prerequisites name.
+
+    A floor is the easiest claim in the repo to falsify: it moves when a dependency
+    raises its own, and nothing about installing that dependency touches the
+    sentence promising the old one.
+
+    One direction only. The prerequisites table also names things npm knows nothing
+    about — a JRE, a shell — and a rule reading those back would report every one of
+    them as undeclared.
+    """
+    pkg_text = gate.read(PACKAGE_JSON)
+    if pkg_text is None:
+        gate.error("G000", PACKAGE_JSON, 1, "missing")
+        return
+    try:
+        declared = json.loads(pkg_text).get("engines", {}).get("node", "")
+    except json.JSONDecodeError:
+        return  # check_commands reports the parse failure
+    if not declared:
+        gate.empty("G000", PACKAGE_JSON, "engines.node constraint")
+        return
+
+    # Compare on major.minor: a range says 20.19.0, prose says 20.19, and the patch
+    # is noise in both.
+    wanted = {f"{m.group(1)}.{m.group(2)}"
+              for m in re.finditer(r"(\d+)\.(\d+)(?:\.\d+)?", declared)}
+    if not wanted:
+        gate.empty("G000", PACKAGE_JSON, "version numbers in engines.node")
+        return
+
+    readme = gate.read(README) or ""
+    table = table_with(readme, "Why")
+    if not table:
+        gate.empty("G000", README, "prerequisites table")
+        return
+    lineno, rows = table
+    prose = " ".join(cell for row in rows for cell in row)
+
+    for version in sorted(wanted):
+        if version not in prose:
+            gate.error("G001", README, lineno,
+                       f"engines.node requires {version} and the prerequisites do "
+                       f"not mention it — `{declared}` is what a reader has to meet")
+
+
 def check_routes(gate: Gate) -> None:
     """The API's header comment lists what the API serves, and the client calls it.
 
@@ -597,6 +643,7 @@ def check_paths(gate: Gate) -> None:
 CHECKS = [
     ("env", check_env),
     ("commands", check_commands),
+    ("engines", check_engines),
     ("routes", check_routes),
     ("keys", check_keys),
     ("layout", check_layout),

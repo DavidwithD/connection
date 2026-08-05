@@ -11,7 +11,7 @@ A DynamoDB-backed service. TypeScript on Node, AWS SDK v3.
 
 | | Why |
 |---|---|
-| **Node ≥ 20.6** | Runtime |
+| **Node 20.19+ or 22.12+** | Runtime. The floor is Vite's, not ours, and `engines` is held to it by the [docs gate](docs/checks.md) |
 | **Java (JRE) 11+** | DynamoDB Local runs as a JAR — there is no Docker requirement. See [ADR 0002](docs/decisions/0002-single-table-layout.md) |
 | **bash** | npm runs every script through it, so the POSIX ones work on Windows too. Ships with git. See [ADR 0015](docs/decisions/0015-bash-as-the-script-shell.md) |
 

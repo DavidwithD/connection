@@ -32,6 +32,7 @@ beside each identifier is the part a person came for and no script can grade it.
 |---|---|---|
 | `env` | every variable the code reads | the README's variable table, [.env.example](../.env.example) |
 | `commands` | the scripts in `package.json` | the README's command table |
+| `engines` | the runtime range npm demands | the README's prerequisites |
 | `routes` | the handlers [the API](../src/server/index.ts) registers | its own header comment, and [the client](../web/src/api.ts) |
 | `keys` | key attributes and index names | the README's data model |
 | `layout` | the files in each directory | the README's layout tree |
@@ -42,17 +43,20 @@ omits is a contract the client cannot rely on; a route it promises and nothing s
 a lie in the opposite direction. Same for a file missing from the layout tree, and for a
 variable documented but never read — somebody will set that one and wait.
 
+`engines` is the exception, and runs one way only: the prerequisites also name a JRE and
+a shell, which npm knows nothing about and a reverse check would call undeclared.
+
 ## Rules
 
 **Bindings** — `E001` a knob read and documented nowhere · `E002` documented and read by
 nothing · `N001`/`N002` a script missing from the command table, or a row naming no
-script · `R001`/`R002` a route served but not listed, or listed but not served · `R003`
-the client calling a path nothing serves · `K001` a key attribute or index absent from
-the data model · `L001` the layout tree naming what does not exist · `L002` a source file
-the tree omits · `M001` a broken relative link · `M002` a backticked path with nothing
-behind it.
+script · `G001` a version `engines` demands that the prerequisites do not name · `R001`/
+`R002` a route served but not listed, or listed but not served · `R003` the client calling
+a path nothing serves · `K001` a key attribute or index absent from the data model ·
+`L001` the layout tree naming what does not exist · `L002` a source file the tree omits ·
+`M001` a broken relative link · `M002` a backticked path with nothing behind it.
 
-**Extraction** — `E000`, `N000`, `R000`, `K000`, `L000`, `M000`: the check found nothing
+**Extraction** — `E000`, `N000`, `G000`, `R000`, `K000`, `L000`, `M000`: the check found nothing
 at all to compare. Every extractor is a pattern over how this repo happens to write
 things, so each one is required to match something. A gate that quietly stops looking
 reports PASS for ever, and is worse than no gate because it is believed.
