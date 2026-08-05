@@ -17,6 +17,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0011](0011-taking-a-write-back.md) | Taking a write back | 🔵 Proposed |
 | [0012](0012-the-name-is-the-node.md) | The name is the node | 🔵 Proposed |
 | [0013](0013-one-box-that-grows-into-an-edge.md) | One box that grows into an edge | 🔵 Proposed |
+| [0014](0014-binding-the-docs-to-the-code.md) | Binding the living docs to the code | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
@@ -33,6 +34,6 @@ and the reasoning, so the "why" survives even after the code changes.
    one flips to ♻️ Superseded with a link forward. A record whose Decision was never
    made is a note, not a decision, and may be withdrawn — its number stays spent.
 
-Run `scripts/adr-gate.py` before it lands — or `npm run hooks:install` once, and the
-pre-commit hook runs it for you. [GATE.md](GATE.md) documents the required shape, the
-budgets, and the checks a reader still has to make themselves.
+Run `npm run adr` before it lands — or `npm run hooks:install` once, and the pre-commit
+hook runs it for you. [GATE.md](GATE.md) documents the required shape, the budgets, and
+the checks a reader still has to make themselves.

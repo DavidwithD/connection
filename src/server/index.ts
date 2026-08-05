@@ -1,11 +1,13 @@
 /**
  * The graph API the demo page talks to.
  *
- *   GET  /api/graph            where to start, and how big the graph is
- *   GET  /api/nodes/:id        one node and its neighbours, with their true degrees
- *   GET  /api/search?q=        nodes whose name starts with q
- *   POST /api/nodes            create a node by name
- *   POST /api/edges            join two nodes by id
+ *   GET    /api/graph          where to start, and how big the graph is
+ *   GET    /api/nodes/:id      one node and its neighbours, with their true degrees
+ *   GET    /api/search?q=      nodes whose name starts with q
+ *   POST   /api/nodes          create a node by name
+ *   POST   /api/edges          join two nodes by id
+ *   DELETE /api/nodes/:id      delete a node, for a create being taken back
+ *   DELETE /api/edges?a=&b=    part two nodes, for a join being taken back
  *
  * The client seats new nodes itself, so a read only ever answers "who is next to this?" —
  * one Query plus one BatchGet. Vite proxies /api here in development, so there is one

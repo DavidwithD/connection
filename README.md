@@ -44,7 +44,8 @@ npm run ddb:smoke       # verify it all works
 | `npm run build` | Compile to `dist/` |
 | `npm test` | `typecheck` + `ddb:smoke` |
 | `npm run adr` | Run the decision gate over `docs/decisions/` |
-| `npm run hooks:install` | Install the pre-commit hook that runs the gate on the staged tree |
+| `npm run docs` | Run the docs gate: the living documents against the code |
+| `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 | `npm run graph:seed` | Generate a small-world graph and write it to the table |
 | `npm run graph:node` | Create one node by name |
 | `npm run graph:edge` | Join two existing nodes by name |
@@ -100,6 +101,8 @@ src/graph/
   repo.ts       the reads: adjacency Query + metas BatchGet
   labels.ts     name -> node, exact and by prefix
   edge.ts       joins two nodes, in one transaction
+  node.ts       creates one node, or deletes an edgeless one
+  refused.ts    the graph declining a write, and the reason it gives back
 src/server/
   index.ts      the graph API (Hono)
 web/
@@ -112,6 +115,8 @@ web/src/            the map, and the client both pages read the API through
   map-view.ts   Cytoscape render; additive only, no layout engine
   explore.ts    what the centre reads once the camera settles
   palette.ts    validated colour tokens, light and dark
+  combobox.ts   a text box that hands back nodes, not text
+  join.ts       the panel at the top: two ends, and the writes
   main.ts       wiring, accent tracking, the HUD
 web/src/orbit/      one node at a time
   rings.ts      ring geometry — pure, no DOM
@@ -120,7 +125,8 @@ web/src/orbit/      one node at a time
 scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
   adr-gate.py          the decision gate — shape, budgets, wiring
-  hooks/pre-commit     runs the gate on the staged tree
+  docs-gate.py         the docs gate — the living docs against the code
+  hooks/pre-commit     runs both gates on the staged tree
 .dynamodb-data/        local database files + server log (gitignored)
 vendor/                the DynamoDB Local JAR (gitignored)
 ```
@@ -172,8 +178,8 @@ Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, and how ma
 nodes are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K` — the defaults, and what each one costs,
 are in [seed.ts](src/graph/seed.ts). Re-seeding drops the graph table and builds it again,
 so it refuses to run against anything but the local emulator unless `GRAPH_SEED_DROP=1`
-says otherwise. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor
-([index.ts](src/server/index.ts)).
+says otherwise. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor, and `PORT`
+moves the API off `:8787` ([index.ts](src/server/index.ts)).
 
 Two commands write outside the seed. Each is one transaction, because `degree` and the
 edges it counts must never disagree
@@ -273,3 +279,5 @@ second page rather than a mode on the map, and what keeping no world costs.
 - [Requirements](docs/requirements/) — no product scope yet, and what the demo has to do
 - [Design](docs/design/) — layers, boundaries, and the invariants the code protects
 - [Architecture decisions](docs/decisions/) — the "why" behind these choices
+- [Checks](docs/checks.md) — what binds the tables and trees on this page to the code, so
+  that a rename cannot quietly falsify them

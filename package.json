@@ -11,8 +11,9 @@
     "build": "tsc",
     "build:web": "vite build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web",
-    "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: ADR gate installed'",
+    "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: gates installed'",
     "adr": "scripts/adr-gate.py",
+    "docs": "python3 scripts/docs-gate.py",
     "ddb:install": "./scripts/dynamodb-local.sh install",
     "ddb:start": "./scripts/dynamodb-local.sh start",
     "ddb:stop": "./scripts/dynamodb-local.sh stop",
@@ -28,7 +29,7 @@
     "api": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/server/index.ts",
     "web": "vite",
     "demo": "trap 'kill 0' EXIT; npm run api & npm run web",
-    "test": "npm run typecheck && npm run ddb:smoke"
+    "test": "npm run typecheck && npm run adr && npm run docs && npm run ddb:smoke"
   },
   "keywords": [],
   "license": "UNLICENSED",

@@ -3,7 +3,7 @@
 What a record must clear before it lands.
 
 ```
-scripts/adr-gate.py            # all records + the index
+npm run adr                    # all records + the index
 scripts/adr-gate.py --stats    # metrics table
 scripts/adr-gate.py --strict   # warnings fail too
 scripts/adr-gate.py --json     # for a hook or CI
@@ -12,13 +12,14 @@ scripts/adr-gate.py --json     # for a hook or CI
 Errors block. Warnings need a reason — if a warning is wrong for a record, say why in
 the change that keeps it. An unexplained warning is one nobody will ever clear.
 
-`npm run hooks:install` symlinks `scripts/hooks/pre-commit` into `.git/hooks`, which runs
-the gate on every commit. It checks the **staged** tree, not the working tree: a partial
-`git add -p` stages one version while the file on disk says another, and the commit is
-what has to be correct. Errors block, warnings print and pass; `ADR_GATE_STRICT=1` makes
-warnings block too and `--no-verify` skips the hook. `.git/hooks` is not versioned, so a
-fresh clone is unguarded until someone runs the install — and git skips a hook it cannot
-execute without saying so, which is the one failure mode this cannot warn you about.
+`npm run hooks:install` links `scripts/hooks/pre-commit` into `.git/hooks`, which runs this
+gate and the [docs gate](../checks.md) on every commit; that file's header covers how the
+link is made. It checks the **staged** tree, not the working tree: a partial `git add -p`
+stages one version while the file on disk says another, and the commit is what has to be
+correct. Errors block, warnings print and pass; `ADR_GATE_STRICT=1` makes warnings block
+too and `--no-verify` skips the hook. `.git/hooks` is not versioned, so a fresh clone is
+unguarded until someone runs the install — and git skips a hook it cannot execute without
+saying so, which is the one failure mode this cannot warn you about.
 
 ## What we're actually protecting
 

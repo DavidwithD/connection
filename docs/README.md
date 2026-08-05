@@ -30,3 +30,9 @@ know whether it still holds. So the links that matter run *inbound*: the file ca
 constraint points at the document explaining it, not only the reverse.
 [decisions/GATE.md](decisions/GATE.md) makes that a rule for records (`M010`); the same
 habit is what keeps the two living directories from going unread.
+
+## What is enforced
+
+One gate per lifecycle, following the split at the top of this page.
+[decisions/GATE.md](decisions/GATE.md) holds a record to its shape and its supersede
+discipline; [checks.md](checks.md) holds a living document to the code it describes.

@@ -1,33 +1,38 @@
 #!/bin/sh
-# ADR quality gate, run against the staged tree.
+# The repo's gates, run against the staged tree.
 #
 # Checks what is being committed, not what is sitting in the working tree. A
-# partial `git add -p` stages one version of a record while the file on disk
-# says something else, and the commit is the thing that has to be correct. So
-# the staged tree is materialised into a temp directory and the gate runs there.
+# partial `git add -p` stages one version of a file while the disk says something
+# else, and the commit is the thing that has to be correct. So the staged tree is
+# materialised into a temp directory and the gates run there.
 #
-# The staged copy of the gate is the one that runs, which is deliberate: a
+# The staged copies of the gates are the ones that run, which is deliberate: a
 # commit that changes the rules gets checked by its own new rules.
 #
-# Versioned here and symlinked into .git/hooks, so there is one copy to edit.
-# Install with `npm run hooks:install`.
+# Two gates, one per kind of document — docs/README.md says why they differ.
+# The rules are in docs/decisions/GATE.md and docs/checks.md.
 #
-# Errors block. Warnings print but pass, matching docs/decisions/GATE.md. Set
-# ADR_GATE_STRICT=1 to make warnings block too. Bypass with --no-verify.
+# Versioned here and linked into .git/hooks by `npm run hooks:install`, which
+# docs/decisions/GATE.md describes. On Windows that link is a copy — MSYS `ln` falls
+# back to one without developer mode — so editing this file does not reach an
+# installed hook. Re-run the install after touching it.
+#
+# Errors block. Warnings print but pass. ADR_GATE_STRICT=1 and DOCS_GATE_STRICT=1
+# make each gate's warnings block too. Bypass everything with --no-verify.
 
 set -eu
 
-GATE="scripts/adr-gate.py"
+ADR_GATE="scripts/adr-gate.py"
+DOCS_GATE="scripts/docs-gate.py"
 DECISIONS="docs/decisions"
 
-# If the gate is not part of the commit, there is nothing to enforce with.
-if ! git ls-files --error-unmatch "$GATE" >/dev/null 2>&1; then
-	echo "pre-commit: $GATE is not tracked — skipping the ADR gate." >&2
-	exit 0
-fi
+# Anything whose shape is a commitment rather than a detail. Changing one of these
+# is usually a decision, and decisions are the thing no script can notice going
+# unrecorded.
+WEIGHTY="package.json src/db/tables.ts src/graph/table.ts src/graph/keys.ts"
 
 if ! command -v python3 >/dev/null 2>&1; then
-	echo "pre-commit: python3 not found, cannot run the ADR gate." >&2
+	echo "pre-commit: python3 not found, cannot run the gates." >&2
 	echo "            Install python3, or commit with --no-verify." >&2
 	exit 1
 fi
@@ -39,29 +44,55 @@ trap 'rm -rf "$staged" "$output"' EXIT INT TERM
 # Honours GIT_INDEX_FILE, so `git commit -a` gets its temporary index too.
 git checkout-index -a --prefix="$staged/"
 
-if [ ! -d "$staged/$DECISIONS" ]; then
-	echo "pre-commit: no $DECISIONS in the commit — skipping the ADR gate." >&2
-	exit 0
+failed=0
+
+# Run one gate over the staged tree, reporting repo-relative paths — the temp
+# prefix is noise nobody can click.
+run_gate() {
+	gate=$1
+	shift
+	if ! git ls-files --error-unmatch "$gate" >/dev/null 2>&1; then
+		echo "pre-commit: $gate is not tracked — skipping it." >&2
+		return 0
+	fi
+	rc=0
+	python3 "$staged/$gate" "$@" >"$output" 2>&1 || rc=$?
+	sed "s#$staged/##g" "$output" >&2
+	return "$rc"
+}
+
+if [ -d "$staged/$DECISIONS" ]; then
+	adr_strict=""
+	[ -n "${ADR_GATE_STRICT:-}" ] && adr_strict="--strict"
+	run_gate "$ADR_GATE" --dir "$staged/$DECISIONS" --root "$staged" $adr_strict ||
+		failed=1
+else
+	echo "pre-commit: no $DECISIONS in the commit — skipping the decision gate." >&2
 fi
 
-strict=""
-if [ -n "${ADR_GATE_STRICT:-}" ]; then
-	strict="--strict"
+docs_strict=""
+[ -n "${DOCS_GATE_STRICT:-}" ] && docs_strict="--strict"
+run_gate "$DOCS_GATE" --root "$staged" $docs_strict || failed=1
+
+# The nudge. Everything above compares two things that must agree; this asks the
+# one question no comparison can, so it prints and never blocks — a gate that
+# demands a record gets empty records.
+if [ -z "$(git diff --cached --name-only --diff-filter=A -- "$DECISIONS")" ]; then
+	touched=$(git diff --cached --name-only -- $WEIGHTY)
+	if [ -n "$touched" ]; then
+		echo >&2
+		echo "pre-commit: this commit changes something whose shape is a commitment:" >&2
+		echo "$touched" | sed 's/^/              /' >&2
+		echo "            and adds no record. If a fork was taken here, take the next" >&2
+		echo "            number in $DECISIONS while the alternatives are still in" >&2
+		echo "            your head. If not, carry on." >&2
+	fi
 fi
 
-status=0
-python3 "$staged/$GATE" \
-	--dir "$staged/$DECISIONS" \
-	--root "$staged" \
-	$strict >"$output" 2>&1 || status=$?
-
-# Report repo-relative paths; the temp prefix is noise nobody can click.
-sed "s#$staged/##g" "$output" >&2
-
-if [ "$status" -ne 0 ]; then
+if [ "$failed" -ne 0 ]; then
 	echo >&2
-	echo "pre-commit: the ADR gate rejected this commit. See $DECISIONS/GATE.md." >&2
-	echo "            Fix the errors above, or commit with --no-verify." >&2
+	echo "pre-commit: a gate rejected this commit. See $DECISIONS/GATE.md and" >&2
+	echo "            docs/checks.md. Fix the errors above, or use --no-verify." >&2
 fi
 
-exit "$status"
+exit "$failed"
