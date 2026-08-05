@@ -991,6 +991,13 @@ def stats_table(rows: list[tuple[str, dict]]) -> str:
 
 
 def main(argv: list[str]) -> int:
+    # Findings quote prose, and a Windows console defaults to a codepage that cannot
+    # encode an em dash — which crashes the gate instead of failing it, and reads to
+    # the hook as a rejection nobody can act on.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     ap = argparse.ArgumentParser(description="ADR quality gate")
     ap.add_argument("paths", nargs="*", help="records to check (default: all)")
     ap.add_argument("--dir", default=str(DECISIONS_DIR), help="decisions directory")
