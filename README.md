@@ -110,6 +110,7 @@ src/server/
   index.ts      the graph API (Hono)
 web/
   index.html    the map
+  app.css       the chrome around it
 web/src/            the map, and the client it reads the API through
   api.ts        the wire shape
   placement.ts  seating geometry + spatial index — pure, no renderer
