@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>connection — two ends and a line</title>
     <style>
-      /* Tokens and panel styles copied from web/index.html so the mock reads as the app in
+      /* Tokens and panel styles copied from web/app.css so the mock reads as the app in
          either theme. Nothing is wired to a store: the search is a prefix scan over a fixed
          list and a write is a timeout. */
       :root {
@@ -99,9 +99,8 @@
       button[aria-pressed="true"] { background: var(--plane); border-color: var(--accent); }
 
       /* ── the widget ───────────────────────────────────────────────────────────── */
-      /* 320px at every window width, which is the whole reason for stacking rather than
-         spreading. The line takes a gutter of its own so it can span both ends instead of
-         sitting between them. */
+      /* 320px, which is the whole reason for stacking rather than spreading. The line takes
+         a gutter of its own so it can span both ends instead of sitting between them. */
       .panel {
         display: grid;
         grid-template-columns: 15px 1fr;
@@ -381,6 +380,13 @@
         every pixel of its growth runs toward the controls; re-centred, half of it runs the
         other way. What each costs is
         <a href="../decisions/0013-one-box-that-grows-into-an-edge.md">0013</a>.
+      </p>
+      <p class="sub">
+        This is the wide room, and it is the only one there is to share: past the breakpoint
+        at the foot of <a href="../../web/app.css">app.css</a> the strip is the panel's alone
+        and the HUD and the controls go to the foot of the window. The comparison still
+        decides the shape, because a wide window is where the widget has neighbours to run
+        into at all.
       </p>
       <div class="controls">
         <span class="hint">window:</span>
@@ -760,7 +766,7 @@
       paint()
 
       // ── the room ──────────────────────────────────────────────────────────────────
-      // From web/index.html: #hud min-width 232 plus 14px padding a side, panels 16px from
+      // From web/app.css: #hud min-width 232 plus 14px padding a side, panels 16px from
       // their edge, the panel 320 wide. The spread figure is two 240px ends, the 52px line,
       // and the panel's own 18px — the narrowest side-by-side that still fit a create row.
       const INSET = 16, CTL = 180, STACKED = 320, SPREAD = 240 * 2 + 52 + 18

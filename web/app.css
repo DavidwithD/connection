@@ -124,9 +124,10 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   background: var(--ink-muted);
 }
 
-/* Top centre, between the HUD and the controls. It grows downward, never sideways, so
-   the width it needs is the width it always has. Both layouts are drawn to scale
-   against this room in docs/design/two-ends.html. */
+/* Top centre, between the HUD and the controls. It grows downward, never sideways, so the
+   width it needs is the width it always has — until the foot of this file takes its
+   neighbours away, and the 320 with them. Both layouts are drawn to scale against this
+   room in docs/design/two-ends.html. */
 #ends {
   top: 16px;
   left: 50%;
@@ -323,3 +324,74 @@ kbd {
 }
 #keys { bottom: 16px; right: 16px; display: grid; gap: 4px; font-size: 11px; }
 #keys span { color: var(--ink-2); }
+
+/* ── The room, when there is less of it ───────────────────────────────────────────
+   Five panels at the corners and the centre need no arithmetic while the room is
+   wide. Below 816px the HUD's right edge reaches #ends' left one, and two more
+   collisions follow it down. One rule settles all of them: below the first collision
+   the top strip holds exactly one panel, and it is #ends — the only one that is
+   interactive, and the only one that grows.
+
+   #controls is moved rather than measured. It ends in the rendered text "Recentre"
+   at 11px, so the width at which it collides moves with the font stack and cannot be
+   pinned here; out of the strip, it never has to be. */
+
+/* 816 plus headroom for a font stack that measures wider than this one. */
+@media (max-width: 860px) {
+  #ends {
+    left: 16px;
+    right: 16px;
+    width: auto;
+    transform: none;
+  }
+
+  /* Last, so a thumb reaches it. Stacked the other way up this could not be written:
+     the HUD's height moves with how the run of numbers wraps. */
+  #controls { top: auto; bottom: 16px; }
+
+  /* 16 at the foot, the controls' own 46 — one row of 11px buttons, and nothing about
+     that moves — and 10 between. */
+  #hud {
+    top: auto;
+    bottom: 72px;
+    left: 16px;
+    right: 16px;
+  }
+  /* The two columns become a run of text. A grid needs room for its widest value in
+     every row; a run needs only the line it is on, and the colon carries what the
+     second column used to say by being one. */
+  #hud dl { display: block; }
+  #hud dt,
+  #hud dd { display: inline; }
+  #hud dt::after { content: ":"; }
+  #hud dd { margin-right: 12px; }
+
+  /* Both are reading aids, and one of them advertises drag, wheel and the arrow keys
+     to a device that has none of the three. */
+  #legend,
+  #keys { display: none; }
+}
+
+/* A phone holding the page upright. The insets are worth more as room than as margin
+   here, and the title and the line under it are the two things on screen that say
+   nothing the map does not. */
+@media (max-width: 460px) {
+  #ends,
+  #hud { left: 8px; right: 8px; }
+  #controls { right: 8px; }
+  #hud h1,
+  #hud .sub { display: none; }
+}
+
+/* A phone on its side: the strip is nearly all there is. The HUD keeps the one line
+   that can carry bad news and drops the seven that cannot. Both dimensions, because a
+   short window that is also wide has room for all of this and loses nothing by it. */
+@media (max-height: 520px) and (max-width: 860px) {
+  #hud h1,
+  #hud .sub,
+  #hud dl { display: none; }
+  #status { margin: 0; padding: 0; border-top: 0; }
+  /* The list is what runs off the bottom of a short window, being the one thing here
+     that opens downward into space it never asked for. */
+  .end ul { max-height: 40vh; }
+}

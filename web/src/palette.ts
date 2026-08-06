@@ -76,11 +76,24 @@ function stamped(): "light" | "dark" | null {
 export const currentPalette = (): Palette =>
   (stamped() ?? (query.matches ? "dark" : "light")) === "dark" ? DARK : LIGHT
 
-/** Fires on the OS setting and on a `data-theme` stamp, so a toggle wins both ways. */
-export function onThemeChange(fn: (palette: Palette) => void): void {
-  query.addEventListener("change", () => fn(currentPalette()))
-  new MutationObserver(() => fn(currentPalette())).observe(document.documentElement, {
+/**
+ * Fires on the OS setting and on a `data-theme` stamp, so a toggle wins both ways.
+ *
+ * Returns the way to stop. Nothing here calls it — both subscribers live as long as
+ * the page does — but a subscriber that comes and goes has no other exit, and the
+ * leak is a quiet one: the restyle keeps running, correctly, against something that
+ * is no longer on screen.
+ */
+export function onThemeChange(fn: (palette: Palette) => void): () => void {
+  const fire = (): void => fn(currentPalette())
+  const stamp = new MutationObserver(fire)
+  query.addEventListener("change", fire)
+  stamp.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["data-theme"],
   })
+  return () => {
+    query.removeEventListener("change", fire)
+    stamp.disconnect()
+  }
 }

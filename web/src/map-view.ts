@@ -56,6 +56,12 @@ const FLIGHT_MAX = 900
 const DISSOLVE_MS = 320
 
 /**
+ * The OS asking for less movement. Read per flight rather than once at load, so the
+ * setting takes effect on the next click instead of the next reload.
+ */
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)")
+
+/**
  * The same curve the timing was judged against in the figure.
  *
  * Cytoscape parses a parameterised `cubic-bezier(...)` at runtime — see its
@@ -615,8 +621,13 @@ export class MapView {
    * A fixed duration cannot be right when the distances vary tenfold: it is a jump-cut
    * at one end and a drag at the other. Holding the speed roughly constant is what the
    * eye is actually judging, and the clamps stop both extremes.
+   *
+   * Nothing, when the OS has asked for reduced motion: the camera cuts to where it was
+   * going and the ghost dissolves where it lands. The dissolve is left alone — a fade is
+   * what a move is meant to be replaced with.
    */
   private flightTime(from: Point, to: Point): number {
+    if (REDUCED_MOTION.matches) return 0
     const pixels = Math.hypot(to.x - from.x, to.y - from.y) * this.cy.zoom()
     return Math.min(FLIGHT_MAX, Math.max(FLIGHT_MIN, pixels / FLIGHT_SPEED))
   }
