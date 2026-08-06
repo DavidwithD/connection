@@ -17,7 +17,6 @@ web/src  ──HTTP──>  src/server  ──>  src/graph  ──>  src/db  ─
 | `src/graph` | Key layout, the generator, the reads | Speak HTTP |
 | `src/server` | Routing, status codes, and the latency floor | Hold graph logic |
 | `web/src` | The map: seating, camera, renderer, palette | Reach the database |
-| `web/src/orbit` | The second page: rings, spokes, one neighbourhood | Import anything of the map's but `api.ts` |
 
 Two things follow. [client.ts](../../src/db/client.ts) is the only file that differs between
 DynamoDB Local and real AWS, so an environment is a variable rather than a code path. And the
@@ -28,11 +27,7 @@ The rule repeats inside `web/src`. [placement.ts](../../web/src/placement.ts) an
 [world.ts](../../web/src/world.ts) compute geometry and hold state with no renderer present,
 [map-view.ts](../../web/src/map-view.ts) is the only file that knows Cytoscape exists, and
 [palette.ts](../../web/src/palette.ts) is the sole authority on colour. Replacing the
-renderer is meant to touch one file. The second page splits the same way —
-[rings.ts](../../web/src/orbit/rings.ts) is geometry with no DOM,
-[orbit-view.ts](../../web/src/orbit/orbit-view.ts) is the only file that touches SVG — and
-it shares nothing with the map but the wire shape, which is the experiment
-[0005](../decisions/0005-a-second-view-that-keeps-no-world.md) set up.
+renderer is meant to touch one file.
 
 ## Invariants
 
@@ -84,7 +79,7 @@ summary here is a second copy, and it is the copy that goes stale.
 | [0002](../decisions/0002-single-table-layout.md) | Superseded — see 0007 |
 | [0003](../decisions/0003-graph-exploration-demo-stack.md) | [placement.ts](../../web/src/placement.ts), [world.ts](../../web/src/world.ts), [repo.ts](../../src/graph/repo.ts) |
 | [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | [map-view.ts](../../web/src/map-view.ts), drawn out in [the-centre.md](the-centre.md) |
-| [0005](../decisions/0005-a-second-view-that-keeps-no-world.md) | [web/src/orbit/](../../web/src/orbit/), drawn out in [one-node-at-a-time.md](one-node-at-a-time.md) |
+| [0005](../decisions/0005-a-second-view-that-keeps-no-world.md) | Superseded — see 0017 |
 | [0006](../decisions/0006-only-the-centre-reads.md) | [explore.ts](../../web/src/explore.ts), [main.ts](../../web/src/main.ts) |
 | [0007](../decisions/0007-a-table-for-the-graph.md) | [table.ts](../../src/graph/table.ts), [tables.ts](../../src/db/tables.ts), [client.ts](../../src/db/client.ts) |
 | [0008](../decisions/0008-finding-a-node-by-name.md) | [keys.ts](../../src/graph/keys.ts), [labels.ts](../../src/graph/labels.ts), [main.ts](../../web/src/main.ts) |
@@ -93,7 +88,7 @@ summary here is a second copy, and it is the copy that goes stale.
 | [0011](../decisions/0011-taking-a-write-back.md) | [edge.ts](../../src/graph/edge.ts), [node.ts](../../src/graph/node.ts), [combobox.ts](../../web/src/combobox.ts), [map-view.ts](../../web/src/map-view.ts) |
 | [0012](../decisions/0012-the-name-is-the-node.md) | [map-view.ts](../../web/src/map-view.ts), [palette.ts](../../web/src/palette.ts), drawn out in [the-centre.md](the-centre.md) |
 
-0003 through 0012 are Proposed, so their constraints are live but unsettled — 0004 and 0006
-each reverse one line of 0003, 0005 exists to find out how much of it was needed, 0007 is the
-first time the store's layout was argued rather than assumed, and 0012 replaces the mark 0004
-chose without touching what it chose to draw.
+0003 through 0012 are Proposed apart from 0005, so their constraints are live but unsettled
+— 0004 and 0006 each reverse one line of 0003, 0007 is the first time the store's layout was
+argued rather than assumed, and 0012 replaces the mark 0004 chose without touching what it
+chose to draw.

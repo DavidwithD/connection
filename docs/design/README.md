@@ -7,7 +7,6 @@ nothing in here is wrong.
 |---|---|
 | [architecture.md](architecture.md) | Layers, which way dependencies point, the invariants |
 | [the-centre.md](the-centre.md) | What the map draws around the node in the middle |
-| [one-node-at-a-time.md](one-node-at-a-time.md) | The second page: spokes, rings, and the hop |
 | [names-and-options.html](names-and-options.html) | The far-neighbour options, drawn and animated |
 | [two-ends.html](two-ends.html) | The panel that finds and joins, driveable, with its losing layouts |
 

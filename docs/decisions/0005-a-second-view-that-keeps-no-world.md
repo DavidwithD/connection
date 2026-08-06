@@ -1,6 +1,6 @@
 # 0005 — A second view that keeps no world
 
-**Status:** 🔵 Proposed
+**Status:** ♻️ Superseded by [0017](0017-the-second-view-goes.md)
 **Date:** 2026-08-01
 **Deciders:** David HL
 

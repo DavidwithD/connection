@@ -52,10 +52,10 @@ npm run ddb:smoke       # verify it all works
 | `npm run graph:seed` | Generate a small-world graph and write it to the table |
 | `npm run graph:node` | Create one node by name |
 | `npm run graph:edge` | Join two existing nodes by name |
-| `npm run demo` | Graph API + dev server together — both demo pages |
+| `npm run demo` | Graph API + dev server together |
 | `npm run api` | Just the graph API, on `:8787` |
 | `npm run web` | Just the Vite dev server, on `:5173` |
-| `npm run build:web` | Bundle both demo pages to `dist/web/` |
+| `npm run build:web` | Bundle the map to `dist/web/` |
 
 Use a different port with `DYNAMODB_LOCAL_PORT=8001`.
 
@@ -110,9 +110,8 @@ src/server/
   index.ts      the graph API (Hono)
 web/
   index.html    the map
-  orbit.html    one node at a time
-web/src/            the map, and the client both pages read the API through
-  api.ts        the wire shape; the only code the two pages share
+web/src/            the map, and the client it reads the API through
+  api.ts        the wire shape
   placement.ts  seating geometry + spatial index — pure, no renderer
   world.ts      the store: frozen positions, adjacency, degrees
   map-view.ts   Cytoscape render; additive only, no layout engine
@@ -121,10 +120,6 @@ web/src/            the map, and the client both pages read the API through
   combobox.ts   a text box that hands back nodes, not text
   join.ts       the panel at the top: two ends, and the writes
   main.ts       wiring, accent tracking, the HUD
-web/src/orbit/      one node at a time
-  rings.ts      ring geometry — pure, no DOM
-  orbit-view.ts the SVG drawing, and the hop
-  main.ts       wiring: fetch, hop, cancel
 scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
   adr-gate.py          the decision gate — shape, budgets, wiring
@@ -168,15 +163,15 @@ one partition, and a label owns another so a name resolves in one read
 still **provisional** — the domain is not defined, and DynamoDB wants access patterns known
 up front.
 
-## Graph demos
+## The graph demo
 
-Two pages, one API, opposite ideas about what exploring a graph is. Both come up under
-`npm run demo`.
+One page, backed by the graph API. A second page answering the same question one node
+at a time was retired — [ADR 0017](docs/decisions/0017-the-second-view-goes.md).
 
 ```bash
 npm run dev:db          # local DynamoDB + tables
 npm run graph:seed      # a small-world graph, sized in src/graph/seed.ts
-npm run demo            # the map at :5173, one node at a time at :5173/orbit.html
+npm run demo            # the map at :5173
 ```
 
 Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, and how many of its
@@ -257,25 +252,6 @@ How the map is put together, and what has to stay true, is in [design](docs/desi
 [ADR 0004](docs/decisions/0004-the-centre-and-its-neighbourhood.md) and
 [ADR 0006](docs/decisions/0006-only-the-centre-reads.md) hold the reasoning, and what each
 choice cost.
-
-### One node at a time — `/orbit.html`
-
-The same graph with no world kept. One node sits in the middle, its whole ring around it,
-and a hop recomputes every position and forgets the last neighbourhood.
-
-| Gesture | Does |
-|---|---|
-| click a neighbour | It travels to the middle and its own ring resolves around it |
-| hover | Names a node, once there are too many to label them all |
-
-Neighbours sit on concentric rings and size is `degree` — how much graph is behind a node.
-No Cytoscape here, no store, no shared code but [api.ts](web/src/api.ts): the page is SVG
-and CSS transitions.
-
-How the spokes, the rings and the hop are built is in
-[one-node-at-a-time.md](docs/design/one-node-at-a-time.md).
-[ADR 0005](docs/decisions/0005-a-second-view-that-keeps-no-world.md) records why this is a
-second page rather than a mode on the map, and what keeping no world costs.
 
 ## Docs
 
