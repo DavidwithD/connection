@@ -56,8 +56,14 @@ async function write<T>(run: () => Promise<T>): Promise<T | Refused> {
 
 app.get("/api/graph", async (c) => {
   const index = await readIndex()
+  // No index item at all, which is a table nothing has prepared rather than a graph with
+  // nothing in it. `graph:init` is the answer either way and takes nothing with it; the
+  // seed is named second because it replaces whatever is there.
   if (!index) {
-    return c.json({ error: "no graph seeded — run npm run graph:seed" }, 404)
+    return c.json(
+      { error: "no index item — run npm run graph:init, or npm run graph:seed for a demo one" },
+      404,
+    )
   }
   return c.json(index)
 })

@@ -192,7 +192,10 @@ async function main(): Promise<void> {
 
   const items = await scanAll()
   if (!items.length) throw new Error("the table is empty — nothing to export")
-  classify(items)
+  // Only the default run has to tell the two apart, so only the default run can be stopped
+  // by an id it cannot place. `--all` keeps every node whatever its shape, which is the
+  // escape this refusal names.
+  if (!options.all) classify(items)
 
   const selection = select(items, options.all ? () => true : isMadeId)
   if (!selection.counts.nodes) {
