@@ -28,6 +28,7 @@ import {
   labelBucket,
   labelPk,
   labelSort,
+  madeId,
   nodePk,
   normaliseLabel,
   type NodeMeta,
@@ -58,8 +59,12 @@ const DELETE_REASONS = [
  * hoping nobody else did the same — a second round trip that still races. A random id needs
  * neither, and `nodeId` only slices a prefix, so the shape is free. Collision is refused by
  * the condition on the meta item rather than trusted away.
+ *
+ * The shape is not free of meaning, though: it is the only record that this node was made
+ * here rather than by a seed run, which is what `graph:export` reads. `madeId` holds the
+ * prefix beside the seed's own, in src/graph/keys.ts, so neither can move alone.
  */
-const freshId = (): string => `n-${randomUUID()}`
+const freshId = (): string => madeId(randomUUID())
 
 export async function createNode(label: string): Promise<NodeMeta> {
   const name = label.trim().replace(/\s+/g, " ")

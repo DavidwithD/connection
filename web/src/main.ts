@@ -358,6 +358,20 @@ async function boot(): Promise<void> {
   const index = await fetchIndex()
   showTotals(index)
 
+  // A graph with nowhere to start. Two of these, and only one is a fault: a table that has
+  // been prepared and not yet written to is exactly what it should be, and reading its
+  // absent root would report `no such node:` for a node nobody has made yet. The panel is
+  // built before this runs, so naming the first node is available either way.
+  if (!index.rootId) {
+    setStatus(
+      index.nodeCount > 0
+        ? `⚠ ${String(index.nodeCount)} nodes and no starting point — run npm run graph:init`
+        : "no nodes yet — name one above to start",
+      index.nodeCount > 0 ? "error" : "idle",
+    )
+    return
+  }
+
   const root = await fetchNeighbourhood(index.rootId)
   world.place(root.node, { x: 0, y: 0 })
   const absorbed = world.absorb(root.node.id, root.neighbours)

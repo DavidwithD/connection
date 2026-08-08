@@ -5,33 +5,18 @@
  *   GRAPH_N=2000 GRAPH_K=8 npm run graph:seed
  *   GRAPH_HUB_K=25 npm run graph:seed   # a longer tail of well-connected nodes
  *
- * The previous graph goes by dropping the table and creating it again. Overwriting without
- * clearing looked idempotent and was not: node metas were replaced but stale *edge* items
- * survived, so a node's stored `degree` stopped matching the edges in its partition and
- * reads returned more neighbours than the node claimed to have. Deleting item by item fixed
- * that and left its own gap — a run interrupted before the index landed orphaned whatever
- * it had already written. Nothing outlives the table it lived in, so dropping closes both.
+ * The previous graph goes by dropping the table and creating it again, which is the one
+ * destructive thing here: outside DynamoDB Local it refuses to run without
+ * GRAPH_SEED_DROP=1. Why a drop rather than a delete pass is in src/graph/bulk.ts, with the
+ * code that does it — `graph:restore` rebuilds the same way.
  *
- * That only works because the table is the graph's alone
- * (docs/decisions/0007-a-table-for-the-graph.md), and it is the one destructive thing here:
- * outside DynamoDB Local it refuses to run without GRAPH_SEED_DROP=1.
+ * A seed run replaces whatever was there, including nodes made by hand since the last one.
+ * `npm run graph:export` takes those out first; see src/graph/export.ts.
  */
-import {
-  CreateTableCommand,
-  DeleteTableCommand,
-  ResourceNotFoundException,
-  waitUntilTableExists,
-  waitUntilTableNotExists,
-} from "@aws-sdk/client-dynamodb"
-import { BatchWriteCommand, PutCommand } from "@aws-sdk/lib-dynamodb"
-import {
-  db,
-  rawClient,
-  GRAPH_TABLE_NAME,
-  describeTarget,
-  isLocal,
-} from "../db/client.js"
-import { GRAPH_KEYS as KEYS, graphTableDefinition } from "./table.js"
+import { PutCommand } from "@aws-sdk/lib-dynamodb"
+import { db, GRAPH_TABLE_NAME, describeTarget, isLocal } from "../db/client.js"
+import { GRAPH_KEYS as KEYS } from "./table.js"
+import { guardDrop, recreateTable, writeAll, type Item } from "./bulk.js"
 import {
   INDEX_PK,
   LABEL_OWNER_SK,
@@ -45,67 +30,10 @@ import {
 } from "./keys.js"
 import { degrees, generate } from "./generate.js"
 
-/** DynamoDB's hard cap on a single BatchWriteItem request. */
-const BATCH_MAX = 25
-
 const num = (name: string, fallback: number): number => {
   const raw = process.env[name]?.trim()
   const parsed = raw ? Number(raw) : NaN
   return Number.isFinite(parsed) ? parsed : fallback
-}
-
-type Item = Record<string, unknown>
-
-async function submit(requests: { PutRequest: { Item: Item } }[]): Promise<void> {
-  let pending = requests
-  // BatchWrite can decline part of a batch under throttling and hands the rest back
-  // rather than failing. Local never does this; real DynamoDB does.
-  for (let attempt = 0; pending.length > 0 && attempt < 8; attempt++) {
-    const res = await db.send(
-      new BatchWriteCommand({ RequestItems: { [GRAPH_TABLE_NAME]: pending } }),
-    )
-    pending = (res.UnprocessedItems?.[GRAPH_TABLE_NAME] ?? []) as typeof pending
-    if (pending.length > 0) await new Promise((r) => setTimeout(r, 50 * 2 ** attempt))
-  }
-  if (pending.length > 0) throw new Error("BatchWrite kept declining items")
-}
-
-async function writeAll(items: Item[], label: string): Promise<void> {
-  for (let i = 0; i < items.length; i += BATCH_MAX) {
-    await submit(items.slice(i, i + BATCH_MAX).map((Item) => ({ PutRequest: { Item } })))
-    const done = Math.min(i + BATCH_MAX, items.length)
-    if (done % 1000 === 0 || done === items.length) {
-      process.stdout.write(`\r  ${label} ${done}/${items.length} items`)
-    }
-  }
-  process.stdout.write("\n")
-}
-
-/**
- * Drop the graph table and build it again from the same definition `ddb:migrate` uses.
- *
- * Both waiters are load-bearing against real DynamoDB, where the two calls are asynchronous
- * and creating a table still being deleted fails. Local completes them near-instantly.
- */
-async function recreateTable(): Promise<void> {
-  try {
-    await rawClient.send(new DeleteTableCommand({ TableName: GRAPH_TABLE_NAME }))
-    await waitUntilTableNotExists(
-      { client: rawClient, maxWaitTime: 300 },
-      { TableName: GRAPH_TABLE_NAME },
-    )
-    console.log(`  dropped ${GRAPH_TABLE_NAME}`)
-  } catch (err) {
-    // Nothing to drop on a first run, which is not a failure.
-    if (!(err instanceof ResourceNotFoundException)) throw err
-  }
-
-  await rawClient.send(new CreateTableCommand(graphTableDefinition))
-  await waitUntilTableExists(
-    { client: rawClient, maxWaitTime: 300 },
-    { TableName: GRAPH_TABLE_NAME },
-  )
-  console.log(`  created ${GRAPH_TABLE_NAME}`)
 }
 
 async function main(): Promise<void> {
@@ -120,14 +48,7 @@ async function main(): Promise<void> {
   const hubs = num("GRAPH_HUBS", Math.max(1, Math.round(n / 5)))
   const hubK = num("GRAPH_HUB_K", 20)
 
-  // Dropping a table is not deleting rows, and the command that does it reads the same
-  // either way. Somewhere with real data has to say so out loud.
-  if (!isLocal && process.env["GRAPH_SEED_DROP"] !== "1") {
-    throw new Error(
-      `refusing to drop ${GRAPH_TABLE_NAME} outside DynamoDB Local — ` +
-        "set GRAPH_SEED_DROP=1 if that is really what you want",
-    )
-  }
+  guardDrop(isLocal, "GRAPH_SEED_DROP")
 
   console.log(`→ ${describeTarget(GRAPH_TABLE_NAME)}`)
   console.log(

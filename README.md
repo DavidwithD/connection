@@ -49,7 +49,10 @@ npm run ddb:smoke       # verify it all works
 | `npm run adr` | Run the decision gate over `docs/decisions/` |
 | `npm run docs` | Run the docs gate: the living documents against the code |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
-| `npm run graph:seed` | Generate a small-world graph and write it to the table |
+| `npm run graph:init` | Make the index item match the table — starts an empty graph, repairs a stale root |
+| `npm run graph:seed` | ⚠️ Drop the graph table and write a generated small-world graph |
+| `npm run graph:export` | Copy the graph out to JSON — by default only what was made by hand |
+| `npm run graph:restore` | ⚠️ Drop the graph table and rebuild it from an export |
 | `npm run graph:node` | Create one node by name |
 | `npm run graph:edge` | Join two existing nodes by name |
 | `npm run demo` | Graph API + dev server together |
@@ -100,7 +103,11 @@ src/graph/
   table.ts      the graph's table and its label index
   keys.ts       key layout for nodes, edges, and labels
   generate.ts   Watts–Strogatz generator (pure, deterministic)
+  bulk.ts       whole-table reads and writes, and dropping the table
+  init.ts       makes the index item match the table; writes nothing else
   seed.ts       drops the table, writes a new graph
+  export.ts     copies the graph out to JSON; read-only
+  restore.ts    checks an export, then rebuilds the table from it
   repo.ts       the reads: adjacency Query + metas BatchGet
   labels.ts     name -> node, exact and by prefix
   edge.ts       joins two nodes, in one transaction
@@ -191,7 +198,49 @@ npm run graph:node -- "Vessarin"              # a node with no edges yet
 npm run graph:edge -- "Vessarin" "Ashanlin"   # join two that exist
 ```
 
-Running either a second time is refused rather than repeated — a name is owned by one node,
+### Starting a graph without seeding one
+
+`graph#index` is a precondition, not a summary: every write carries a conditional update on
+it, so a table without one refuses the first node as readily as the ten-thousandth. It also
+holds `rootId`, which is where the map starts, and nothing maintains that after a write.
+
+```bash
+npm run graph:init            # write the index item from what is in the table
+npm run graph:init -- --check # say what it would write, write nothing, fail if it differs
+```
+
+On an empty table that is the bootstrap — no generated nodes needed. On a graph that already
+exists it recomputes `rootId` and the counts, which is the repair for a root that was deleted
+or a count that drifted. It reads and puts one item; it never drops or deletes, so it is the
+one graph command that needs no guard.
+
+### Keeping what you made
+
+A seed run replaces the graph, so anything created since the last one goes with it. Two
+commands carry it across:
+
+```bash
+npm run graph:export                             # only nodes made by hand → graph-export.json
+npm run graph:restore -- graph-export.json --dry-run   # check the file, touch nothing
+npm run graph:restore -- graph-export.json       # ⚠️ drop the table, rebuild from the file
+```
+
+The export tells the two apart by id shape alone — `n-<uuid>` for a node made one at a time
+against the seed's `n0000` ([keys.ts](src/graph/keys.ts)) — and refuses anything of neither
+shape rather than guessing. A subset of a graph is not automatically a graph, so it drops
+edges with one end outside the export, drops claims on names not coming, and rewrites
+`degree` to match what it kept, saying so each time.
+
+Restoring drops the table and builds it again, because DynamoDB has no rename and no way to
+copy a table onto an existing name. Every check happens before the drop: both halves of every
+edge, degrees matching the edges they count, one live claim per name. A file that fails any
+of them leaves the table exactly as it was, and `--dry-run` stops after the checks. Like the
+seed, it refuses to drop anything but the local emulator unless `GRAPH_RESTORE_DROP=1` says
+otherwise. The index item is rebuilt rather than restored, since `rootId` usually named a
+node the export left behind
+([ADR 0018](docs/decisions/0018-the-graph-outlives-the-seed.md)).
+
+Running either write a second time is refused rather than repeated — a name is owned by one node,
 and a degree must not be raised twice for one edge. Both reverse, and the reversal is
 constrained from the other side: a degree must not be lowered for an edge that was not
 there, and a node with edges cannot be deleted at all, because each edge is stored twice and

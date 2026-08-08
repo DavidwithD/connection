@@ -13,3 +13,6 @@ vendor/
 .DS_Store
 *.log
 __pycache__/
+
+# Graph exports. `npm run graph:export` writes one; it is your data, not the repo's.
+graph-export*.json

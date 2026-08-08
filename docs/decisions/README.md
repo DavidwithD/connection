@@ -21,6 +21,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0015](0015-bash-as-the-script-shell.md) | Bash as the npm script shell | 🔵 Proposed |
 | [0016](0016-the-gates-run-in-ci.md) | The gates run in CI | 🔵 Proposed |
 | [0017](0017-the-second-view-goes.md) | The second view goes | 🔵 Proposed |
+| [0018](0018-the-graph-outlives-the-seed.md) | The graph outlives the seed | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

@@ -31,6 +31,27 @@ export const nodePk = (id: string): string => `${NODE_PREFIX}${id}`
 /** Recover the node id from a partition key. */
 export const nodeId = (pk: string): string => pk.slice(NODE_PREFIX.length)
 
+/**
+ * Two id shapes, and the only thing telling them apart.
+ *
+ * The seed numbers its nodes `n0000` upward because it knows all of them before it writes
+ * any (src/graph/generate.ts); a node made one at a time cannot, so `freshId` mints
+ * `n-<uuid>` instead (src/graph/node.ts). Nothing else marks where an item came from — no
+ * attribute, no separate partition — so the hyphen is what an export reads to decide which
+ * items are somebody's own work and which are scaffolding. Both shapes are named here,
+ * together, because a change to either one alone would quietly reclassify a graph.
+ */
+const MADE_PREFIX = "n-"
+
+/** Made one at a time, by the command or the API. */
+export const isMadeId = (id: string): boolean => id.startsWith(MADE_PREFIX)
+
+/** Written by a seed run. Deliberately not `!isMadeId` — an id of neither shape is a
+ * question, not a seed node, and the export refuses rather than guessing. */
+export const isSeedId = (id: string): boolean => /^n\d+$/.test(id)
+
+export const madeId = (uuid: string): string => `${MADE_PREFIX}${uuid}`
+
 export const META_SK = "#meta"
 
 export const EDGE_PREFIX = "edge#"
