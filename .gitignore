@@ -16,3 +16,6 @@ __pycache__/
 
 # Graph exports. `npm run graph:export` writes one; it is your data, not the repo's.
 graph-export*.json
+
+# Screenshots from `node scripts/drive-map.mjs`. Evidence for one change, not the repo's.
+.shots/
