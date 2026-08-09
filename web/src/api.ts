@@ -26,17 +26,38 @@ export interface Neighbourhood {
  * The map is walked outward from wherever you are, so a component holding nothing you have
  * reached cannot be found by walking at all. This is the address of one: somewhere to be
  * taken to, and how much graph is waiting when you arrive.
+ *
+ * Which node names it is decided by the order the unions happened in, so the name is stable
+ * only while nothing merges or splits the component — see 0020.
  */
 export interface IslandMeta extends NodeMeta {
   size: number
+}
+
+/**
+ * Islands, and where to ask for the next of them.
+ *
+ * A graph can be in any number of pieces, so this is a page and says so: `cursor` is null
+ * only when the last row is here. It is opaque — the store's own key, and picking it apart
+ * is how a client comes to break when the index changes shape.
+ */
+export interface IslandPage {
+  islands: IslandMeta[]
+  cursor: string | null
 }
 
 export interface GraphIndex {
   rootId: string
   nodeCount: number
   edgeCount: number
-  /** Components no walk from `rootId` reaches, largest first. Its own is never here. */
+  /** The first page of components, largest first — the one holding `rootId` included. */
   islands: IslandMeta[]
+  /** Where to carry on from, or null when `islands` is all of them. */
+  islandCursor: string | null
+  /** How many there are in total, which is the one thing a page of them cannot say. */
+  islandCount: number
+  /** Which component holds `rootId`, so the first frame knows where it is standing. */
+  homeIslandId: string | null
 }
 
 export class Cancelled extends Error {
@@ -97,6 +118,10 @@ async function del<T>(path: string): Promise<T> {
 
 export const fetchIndex = (signal?: AbortSignal): Promise<GraphIndex> =>
   get<GraphIndex>("/api/graph", signal)
+
+/** The islands after `cursor`. Only ever called by the list running out of rows. */
+export const fetchIslands = (cursor: string, signal?: AbortSignal): Promise<IslandPage> =>
+  get<IslandPage>(`/api/islands?after=${encodeURIComponent(cursor)}`, signal)
 
 export const fetchNeighbourhood = (
   id: string,

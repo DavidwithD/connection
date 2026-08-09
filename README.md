@@ -131,6 +131,7 @@ web/src/            the map, and the client it reads the API through
   palette.ts    validated colour tokens, light and dark
   combobox.ts   a text box that hands back nodes, not text
   join.ts       the panel at the top: two ends, and the writes
+  islands.ts    the panel down the left: every component, as somewhere to go
   main.ts       wiring, accent tracking, the HUD
 scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
@@ -283,7 +284,7 @@ Pan around an undirected cyclic graph like a map. Whatever you stop on is what l
 | wheel | Zoom toward the cursor |
 | click a node | Glide it to the middle |
 | click a ghost | Fly to the node it stands in for |
-| click under **elsewhere** | Cross to a component no walk from here reaches |
+| click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
 
 The node nearest the middle of the screen is the **centre**, which is what gliding a node
@@ -293,12 +294,25 @@ it too and holds the reply, unspent and undrawn, until somebody walks there. Pan
 does no work — no simulation, no layout, every node seated once and never moved, and no
 read until the camera goes still.
 
-Which is exactly why **elsewhere** exists. A graph in pieces has components no walk from
-here can reach, however long you look — and a node you make is one until you join it to
-something. That list is those components, biggest first, and picking one sets it down in
-open water rather than in the nearest gap, so the island it grows into stays its own
-([ADR 0019](docs/decisions/0019-every-island-has-an-address.md)). An island you have already
-landed on leaves the list; so does one that a join has made reachable.
+Which is exactly why **islands** exists. A graph in pieces has components no walk from here
+can reach, however long you look — and a node you make is one until you join it to something.
+That list is every component, biggest first, and picking one sets it down in open water
+rather than in the nearest gap, so the island it grows into stays its own
+([ADR 0019](docs/decisions/0019-every-island-has-an-address.md)).
+
+Rows do not leave when you use them, which is what makes the list an *index of places* rather
+than a list of errands: crossing back is a click, not a name typed from memory
+([ADR 0020](docs/decisions/0020-the-islands-list-is-an-index.md)). The marked row is the
+island you are standing in. A dim one is not on the map yet — clicking it seats a whole
+island that was never there; clicking any other row only moves the camera. The list changes
+only when the graph's components do, which is a join, a split, or a node made from the box
+at the top.
+
+How many components a graph has is a property of the data and has no ceiling — 688 nodes of
+vocabulary arrived as 267 of them. So the list is a page of twenty and says which page it is:
+the heading reads `20 of 267` until it holds them all, and scrolling to the foot fetches the
+next twenty. Pages already loaded are left alone by a write, because a join changes an
+island's size and size is what the list is ordered by; only the first page is re-read.
 
 The box at the top is one box until you name something in it, and then it is an edge: two
 ends and the line between them. Naming a node takes you there. Name one in the other end and

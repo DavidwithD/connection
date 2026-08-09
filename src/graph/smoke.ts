@@ -23,7 +23,14 @@ import { addEdge, removeEdge } from "./edge.js"
 import { shares } from "./generate.js"
 import { find } from "./islands.js"
 import { createNode, deleteNode } from "./node.js"
-import { readAdjacency, readIndex, readIslands } from "./repo.js"
+import {
+  ISLAND_LIMIT,
+  readAdjacency,
+  readIndex,
+  readIslandCount,
+  readIslandPage,
+  type IslandCursor,
+} from "./repo.js"
 import type { GraphIndex, NodeMeta } from "./keys.js"
 
 const run = `smoke-${String(process.pid)}`
@@ -44,6 +51,24 @@ async function island(node: NodeMeta): Promise<{ root: string; size: number }> {
 async function islands(a: NodeMeta, b: NodeMeta): Promise<[typeof one, typeof one]> {
   const [one, two] = await Promise.all([island(a), island(b)])
   return [one, two]
+}
+
+/**
+ * Whether the island index carries this root, wherever in it that falls.
+ *
+ * Paged rather than asked for in one go. The index is ordered by size, and the islands this
+ * run makes are the smallest there are — so on any graph in enough pieces they sort past the
+ * end of a single read, and a check written against the first page of them stops testing the
+ * index and starts testing how fragmented the table happens to be.
+ */
+async function listed(root: string): Promise<boolean> {
+  let after: IslandCursor | undefined
+  do {
+    const page = await readIslandPage(ISLAND_LIMIT, after)
+    if (page.islands.some((found) => found.id === root)) return true
+    after = page.cursor ?? undefined
+  } while (after)
+  return false
 }
 
 async function main(): Promise<void> {
@@ -67,7 +92,7 @@ async function main(): Promise<void> {
 
   const before = await readIndex()
   if (!before) throw new Error("no index item — run npm run graph:init")
-  const wasListed = (await readIslands()).length
+  const wasListed = await readIslandCount()
 
   // --- three nodes, three components ---------------------------------------
   const [a, b, c] = await Promise.all([
@@ -132,10 +157,7 @@ async function walk(
   check(`that island counts two (counts ${String(joined[0].size)})`, joined[0].size === 2)
   // The case a sparse index over degree-zero nodes cannot see: neither end is loose any
   // more, and the component is made entirely of nodes somebody made by hand.
-  check(
-    "and it is still listed, with neither end loose",
-    (await readIslands(100)).some((found) => found.id === joined[0].root),
-  )
+  check("and it is still listed, with neither end loose", await listed(joined[0].root))
 
   // --- a second join grows it ----------------------------------------------
   await addEdge(b.id, c.id)
@@ -151,13 +173,7 @@ async function walk(
   check("parting a bridge leaves two islands", split[0].root !== split[1].root)
   check(`the half that kept two counts two (counts ${String(split[0].size)})`, split[0].size === 2)
   check(`the half left alone counts one (counts ${String(split[1].size)})`, split[1].size === 1)
-  check(
-    "both halves are listed",
-    await (async () => {
-      const listed = new Set((await readIslands(100)).map((found) => found.id))
-      return listed.has(split[0].root) && listed.has(split[1].root)
-    })(),
-  )
+  check("both halves are listed", (await listed(split[0].root)) && (await listed(split[1].root)))
 
   // --- a part that strands the root ----------------------------------------
   // The other side of the same walk. Above, the half that closed first did not hold the
@@ -185,10 +201,7 @@ async function walk(
       `${String(before.edgeCount)} edges)`,
     after?.nodeCount === before.nodeCount && after.edgeCount === before.edgeCount,
   )
-  check(
-    "and lists the islands it listed before",
-    (await readIslands(100)).length === wasListed,
-  )
+  check("and lists the islands it listed before", (await readIslandCount()) === wasListed)
 
   console.log("\nAll checks passed — components survive every write that changes them.")
 }

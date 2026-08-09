@@ -1,7 +1,8 @@
 /**
  * The graph API the demo page talks to.
  *
- *   GET    /api/graph          where to start, how big the graph is, and its other islands
+ *   GET    /api/graph          where to start, how big the graph is, and its first islands
+ *   GET    /api/islands        the islands after a cursor, largest first
  *   GET    /api/nodes/:id      one node and its neighbours, with their true degrees
  *   GET    /api/search?q=      nodes whose name starts with q
  *   POST   /api/nodes          create a node by name
@@ -34,7 +35,16 @@ import { find } from "../graph/islands.js"
 import { searchLabels } from "../graph/labels.js"
 import { createNode, deleteNode } from "../graph/node.js"
 import { Refused } from "../graph/refused.js"
-import { readIndex, readIslands, readMetas, readNeighbourhood } from "../graph/repo.js"
+import {
+  ISLAND_LIMIT,
+  isIslandCursor,
+  readIndex,
+  readIslandCount,
+  readIslandPage,
+  readMetas,
+  readNeighbourhood,
+  type IslandCursor,
+} from "../graph/repo.js"
 
 const app = new Hono()
 
@@ -55,11 +65,44 @@ async function write<T>(run: () => Promise<T>): Promise<T | Refused> {
   }
 }
 
+/**
+ * Where a page of islands stopped, as something a URL can carry.
+ *
+ * The store's key, opaque on the wire. Base64 rather than the keys spelled out as query
+ * parameters, because what DynamoDB needs back is whatever it handed over — the table's keys
+ * and the index's, four attributes today — and a client picking those apart would be a client
+ * that breaks when the index gains one.
+ */
+const encodeCursor = (key: IslandCursor | null): string | null =>
+  key ? Buffer.from(JSON.stringify(key), "utf8").toString("base64url") : null
+
+/**
+ * Null for anything that is not a cursor this served — see the 400 at the route.
+ *
+ * Decoding is not the whole of it: a value that is base64 of valid JSON can still be an
+ * object the index cannot start a Query from, and handing one on unchecked spends the
+ * caller's mistake as a fault of the store. Which attributes make a key is the store's own
+ * question, so it is asked there.
+ */
+function decodeCursor(raw: string): IslandCursor | null {
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"))
+    return isIslandCursor(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 app.get("/api/graph", async (c) => {
-  // Together, because the page needs both to draw its first frame and neither depends on
-  // the other. The islands ride on this rather than a route of their own: boot already
-  // makes this call, and a second one would only be a second round trip to the same answer.
-  const [index, all] = await Promise.all([readIndex(), readIslands()])
+  // Together, because the page needs all of it to draw its first frame and none of it
+  // depends on the rest. The first page of islands rides on this rather than waiting for a
+  // call of its own: boot already makes this one, and a second would be a second round trip
+  // to the same answer. The pages after it are the route below.
+  const [index, first, islandCount] = await Promise.all([
+    readIndex(),
+    readIslandPage(),
+    readIslandCount(),
+  ])
   // No index item at all, which is a table nothing has prepared rather than a graph with
   // nothing in it. `graph:init` is the answer either way and takes nothing with it; the
   // seed is named second because it replaces whatever is there.
@@ -69,15 +112,41 @@ app.get("/api/graph", async (c) => {
       404,
     )
   }
-  // Everything except where the map already starts. The list means "graph no walk from
-  // here reaches", and the component holding `rootId` is the one it always does — offering
-  // it would name the ground under the reader's feet as somewhere else to go. Which
-  // component that is has to be asked, because the node naming an island is whichever node
-  // won its unions and is rarely the best-connected one `rootId` picks.
+  // Every component, the one the map starts in included. The page lists them as places
+  // rather than as errands, so the ground under the reader's feet belongs on the list —
+  // it is the only row that can say where they are standing.
+  //
+  // Which component that is has to be asked, because the node naming an island is whichever
+  // node won its unions and is rarely the best-connected one `rootId` picks. Named rather
+  // than filtered out: the page marks it, and answering here costs the same read either way.
   const home = index.rootId ? await find(index.rootId) : null
-  const islands = all.filter((island) => island.id !== home?.root)
 
-  return c.json({ ...index, islands })
+  return c.json({
+    ...index,
+    islands: first.islands,
+    islandCursor: encodeCursor(first.cursor),
+    islandCount,
+    homeIslandId: home?.root ?? null,
+  })
+})
+
+/**
+ * The islands after the first page.
+ *
+ * Its own route because it is the only read here that is asked for by scrolling rather than
+ * by arriving: `/api/graph` is one call at boot, and hanging "twenty more" off it would mean
+ * re-reading the totals and re-walking to the root's island for every scroll.
+ *
+ * A bad cursor is a 400 and not a 500. It is a value the caller handed back, so a truncated
+ * or edited one is the caller being wrong, and the page can recover by starting again.
+ */
+app.get("/api/islands", async (c) => {
+  const after = c.req.query("after")
+  const start = after ? decodeCursor(after) : null
+  if (after && !start) return c.json({ error: "bad cursor" }, 400)
+
+  const page = await readIslandPage(ISLAND_LIMIT, start ?? undefined)
+  return c.json({ islands: page.islands, cursor: encodeCursor(page.cursor) })
 })
 
 app.get("/api/nodes/:id", async (c) => {
