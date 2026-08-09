@@ -20,6 +20,7 @@
 import { pathToFileURL } from "node:url"
 import { describeTarget, GRAPH_TABLE_NAME } from "../db/client.js"
 import { addEdge, removeEdge } from "./edge.js"
+import { shares } from "./generate.js"
 import { find } from "./islands.js"
 import { createNode, deleteNode } from "./node.js"
 import { readIndex, readIslands } from "./repo.js"
@@ -47,6 +48,22 @@ async function islands(a: NodeMeta, b: NodeMeta): Promise<[typeof one, typeof on
 
 async function main(): Promise<void> {
   console.log(`→ ${describeTarget(GRAPH_TABLE_NAME)}\n`)
+
+  // --- the split, before anything is written ------------------------------
+  // Pure, and first because it needs nothing. Every node has to land in exactly one island
+  // or it sits outside every range the generator builds — no ring to join, no component to
+  // belong to — and the rounding that produces the sizes moves the total both ways.
+  let uncovered = ""
+  for (const n of [10, 60, 600, 2000]) {
+    for (let islands = 1; islands <= Math.min(n, 40); islands++) {
+      const sizes = shares(n, islands)
+      const sum = sizes.reduce((total, size) => total + size, 0)
+      if (sum !== n || sizes.length !== islands || sizes.some((size) => size < 1)) {
+        uncovered = `n=${String(n)} islands=${String(islands)} → ${sizes.join(",")} sums ${String(sum)}`
+      }
+    }
+  }
+  check(`every split covers its graph exactly${uncovered ? ` — ${uncovered}` : ""}`, !uncovered)
 
   const before = await readIndex()
   if (!before) throw new Error("no index item — run npm run graph:init")

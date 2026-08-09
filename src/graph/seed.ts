@@ -52,6 +52,11 @@ async function main(): Promise<void> {
   // seeing. Raising GRAPH_N must not bring that back.
   const hubs = num("GRAPH_HUBS", Math.max(1, Math.round(n / 5)))
   const hubK = num("GRAPH_HUB_K", 20)
+  // Ten, because one is the case the page had no answer for. A demo of a map that can only
+  // show you what you can walk to should arrive with somewhere it cannot — including the two
+  // smallest, which is where the halving in `shares` ends up and what a hand-made component
+  // actually looks like. Set it to 1 for a single connected graph.
+  const islands = num("GRAPH_ISLANDS", 10)
 
   guardDrop(isLocal, "GRAPH_SEED_DROP")
 
@@ -62,10 +67,11 @@ async function main(): Promise<void> {
   // can be rebuilt, which is the question that matters on a local table.
   await guardHandmade("GRAPH_SEED_DROP")
   console.log(
-    `  generating n=${n} k=${k} p=${p} seed=${seed} hubs=${hubs} hubK=${hubK}`,
+    `  generating n=${n} k=${k} p=${p} seed=${seed} hubs=${hubs} hubK=${hubK} ` +
+      `islands=${islands}`,
   )
 
-  const graph = generate({ n, k, p, seed, hubs, hubK })
+  const graph = generate({ n, k, p, seed, hubs, hubK, islands })
   const degree = degrees(graph)
   // Components, from the edge list already in hand — no store access, and the answer is
   // exact rather than maintained. A rewired ring lattice comes out as one, but nothing here

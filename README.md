@@ -199,8 +199,11 @@ npm run graph:seed      # a small-world graph, sized in src/graph/seed.ts
 npm run demo            # the map at :5173
 ```
 
-Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, and how many of its
-nodes are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K` — the defaults, and what each one costs,
+Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, how many of its nodes
+are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K`, and how many disconnected components it comes
+in with `GRAPH_ISLANDS` — ten by default, halving in size down to a pair and a lone node, so
+the page arrives with graph it cannot walk to. `GRAPH_ISLANDS=1` gives one connected graph,
+which is what every seed before this was. The defaults, and what each one costs,
 are in [seed.ts](src/graph/seed.ts). Re-seeding drops the graph table and builds it again, so
 it refuses twice over: against anything but the local emulator, and — wherever it is pointed
 — against a table holding nodes no seed wrote. The second refusal saves them to a timestamped
