@@ -23,8 +23,8 @@ import { addEdge, removeEdge } from "./edge.js"
 import { shares } from "./generate.js"
 import { find } from "./islands.js"
 import { createNode, deleteNode } from "./node.js"
-import { readIndex, readIslands } from "./repo.js"
-import type { NodeMeta } from "./keys.js"
+import { readAdjacency, readIndex, readIslands } from "./repo.js"
+import type { GraphIndex, NodeMeta } from "./keys.js"
 
 const run = `smoke-${String(process.pid)}`
 
@@ -75,6 +75,50 @@ async function main(): Promise<void> {
     createNode(`${run}-birch`),
     createNode(`${run}-cedar`),
   ])
+  // From here on the graph holds nodes this run made, so every exit has to take them out
+  // again — a check that fails is still a run that has to leave the graph as it found it.
+  // Left to the happy path, one interrupted run silently adds a component, and the next
+  // graph:init --check reports drift that has nothing to do with what it is gating.
+  try {
+    await walk(a, b, c, before, wasListed)
+  } finally {
+    await tidy([a, b, c])
+  }
+}
+
+/**
+ * Part and delete whatever a run made, from any state it left them in.
+ *
+ * Every edge first, because the store refuses a node that still has one, and read back
+ * rather than assumed: which edges exist depends on how far the run got. Failures are
+ * reported and not thrown — this is the path a failure already took, and hiding the check
+ * that failed behind a cleanup error helps nobody.
+ */
+async function tidy(nodes: NodeMeta[]): Promise<void> {
+  for (const node of nodes) {
+    try {
+      // Null is the node already being gone, which is the ordinary case on the second pass
+      // — the walk tidies up itself so it can check the result, and the `finally` runs
+      // anyway. Silence there, so the only thing this ever prints is a real leftover.
+      const adjacency = await readAdjacency(node.id)
+      if (!adjacency) continue
+      for (const other of adjacency.neighbourIds) await removeEdge(node.id, other)
+      await deleteNode(node.id, node.label)
+    } catch (err) {
+      console.error(
+        `  ⚠ could not remove ${node.label}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+}
+
+async function walk(
+  a: NodeMeta,
+  b: NodeMeta,
+  c: NodeMeta,
+  before: GraphIndex,
+  wasListed: number,
+): Promise<void> {
   const fresh = await Promise.all([island(a), island(b), island(c)])
   check(
     "a made node is its own island, of one",
@@ -132,12 +176,9 @@ async function main(): Promise<void> {
   )
 
   // --- and back ------------------------------------------------------------
-  await removeEdge(b.id, c.id)
-  await Promise.all([
-    deleteNode(a.id, a.label),
-    deleteNode(b.id, b.label),
-    deleteNode(c.id, c.label),
-  ])
+  // The same removal `tidy` would do, run here so what follows can be checked. Doing it
+  // twice is harmless: the second pass finds the edges parted and the nodes gone.
+  await tidy([a, b, c])
   const after = await readIndex()
   check(
     `the graph counts what it counted before (${String(before.nodeCount)} nodes, ` +
