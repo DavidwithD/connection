@@ -3,6 +3,7 @@
  *
  *   Query     pk = node#<id>          -> the meta item, then every edge item
  *   BatchGet  node#<other>/#meta      -> labels and true degrees, in bulk
+ *   Query     island index            -> one row per component, largest first
  *
  * `#meta` sorts ahead of `edge#`, so the node item is always the first result and a
  * Limit can only ever truncate edges. Degree is read from the meta item rather than
@@ -13,15 +14,18 @@
  */
 import { BatchGetCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME } from "../db/client.js"
-import { GRAPH_KEYS as KEYS } from "./table.js"
+import { GRAPH_KEYS as KEYS, ISLAND_INDEX } from "./table.js"
 import {
   EDGE_PREFIX,
   INDEX_PK,
   META_SK,
   edgeTarget,
+  islandBucket,
+  islandSize,
   nodeId,
   nodePk,
   type GraphIndex,
+  type IslandMeta,
   type NodeMeta,
 } from "./keys.js"
 
@@ -56,6 +60,46 @@ export async function readIndex(): Promise<GraphIndex | null> {
     nodeCount: Number(item["nodeCount"] ?? 0),
     edgeCount: Number(item["edgeCount"] ?? 0),
   }
+}
+
+/**
+ * Most islands offered at once. The page shows a list, not a page of them — and a graph
+ * with more components than this has bigger problems than which to name first.
+ */
+export const ISLAND_LIMIT = 20
+
+/**
+ * Every component, largest first.
+ *
+ * One Query, because only a component's root carries the island keys (src/graph/keys.ts) —
+ * so the index holds a row per island rather than per node, and there is no filtering to
+ * do. Sorted descending on a size that is zero-padded into the sort key, which is what
+ * makes "the biggest place you have not been" the first row rather than a scan of all of
+ * them.
+ *
+ * Eventually consistent, like any GSI, and that costs nothing here: an island appearing a
+ * beat after the write that made it is a list that catches up, not a map that lies.
+ */
+export async function readIslands(limit: number = ISLAND_LIMIT): Promise<IslandMeta[]> {
+  const res = await db.send(
+    new QueryCommand({
+      TableName: GRAPH_TABLE_NAME,
+      IndexName: ISLAND_INDEX,
+      KeyConditionExpression: "#bucket = :bucket",
+      ExpressionAttributeNames: { "#bucket": KEYS.islandBucket },
+      ExpressionAttributeValues: { ":bucket": islandBucket() },
+      ScanIndexForward: false,
+      Limit: limit,
+    }),
+  )
+
+  // The index projects everything, so a hit is already a whole node.
+  return (res.Items ?? []).map((item) => ({
+    id: nodeId(String(item[KEYS.pk] ?? "")),
+    label: String(item["label"] ?? ""),
+    degree: Number(item["degree"] ?? 0),
+    size: islandSize(String(item[KEYS.islandSort] ?? "")),
+  }))
 }
 
 /** Labels and degrees for many ids at once, chunked and retried. */

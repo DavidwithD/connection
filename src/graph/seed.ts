@@ -24,6 +24,8 @@ import {
   LABEL_OWNER_SK,
   META_SK,
   edgeSk,
+  islandBucket,
+  islandSort,
   labelBucket,
   labelPk,
   labelSort,
@@ -31,6 +33,7 @@ import {
   nodePk,
 } from "./keys.js"
 import { degrees, generate } from "./generate.js"
+import { components } from "./islands.js"
 
 const num = (name: string, fallback: number): number => {
   const raw = process.env[name]?.trim()
@@ -64,6 +67,13 @@ async function main(): Promise<void> {
 
   const graph = generate({ n, k, p, seed, hubs, hubK })
   const degree = degrees(graph)
+  // Components, from the edge list already in hand — no store access, and the answer is
+  // exact rather than maintained. A rewired ring lattice comes out as one, but nothing here
+  // assumes that: the generator is free to change, and the reckoning would find it anyway.
+  const { parent, sizes } = components(
+    graph.nodes.map((node) => node.id),
+    graph.edges,
+  )
 
   // Every label claims a partition, so two nodes sharing one would leave a claim pointing
   // at whichever was written last and the other unreachable by name. BatchWrite cannot
@@ -80,6 +90,7 @@ async function main(): Promise<void> {
     }
     claimed.set(normaliseLabel(node.label), node.id)
 
+    const size = sizes.get(node.id)
     items.push({
       [KEYS.pk]: nodePk(node.id),
       [KEYS.sk]: META_SK,
@@ -89,6 +100,15 @@ async function main(): Promise<void> {
       // index to one entry per node.
       [KEYS.labelBucket]: labelBucket(node.label),
       [KEYS.labelSort]: labelSort(node.label, node.id),
+      parent: parent.get(node.id) ?? node.id,
+      // And only a root carries these, which is what keeps the island index to one entry
+      // per component. `sizes` holds a count for roots alone, so its own keys are the test.
+      ...(size === undefined
+        ? {}
+        : {
+            [KEYS.islandBucket]: islandBucket(),
+            [KEYS.islandSort]: islandSort(size, node.id),
+          }),
     })
     items.push({
       [KEYS.pk]: labelPk(node.label),
@@ -107,7 +127,10 @@ async function main(): Promise<void> {
   if (!isLocal) console.log("  recreating the table (tens of seconds against AWS)…")
   await recreateTable()
 
-  console.log(`  ${graph.nodes.length} nodes, ${graph.edges.length} edges`)
+  console.log(
+    `  ${graph.nodes.length} nodes, ${graph.edges.length} edges, ` +
+      `${sizes.size} island(s): ${[...sizes.values()].sort((a, b) => b - a).join(", ")}`,
+  )
   await writeAll(items, "wrote")
 
   // The best-connected node makes the most interesting centre, and the client should

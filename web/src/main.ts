@@ -5,6 +5,7 @@
  *   wheel           zoom toward the cursor
  *   click a node    glide it to the middle, drawing its ring on the click
  *   arrows          nudge the camera
+ *   elsewhere       cross to a component no walk from here reaches
  *
  * The accent is whatever node is nearest the middle of the screen, recomputed at most
  * once per frame. It uses hysteresis — a rival has to be clearly closer before it takes
@@ -23,12 +24,12 @@
  * See docs/decisions/0003-graph-exploration-demo-stack.md.
  */
 import { fetchIndex, fetchNeighbourhood } from "./api.js"
-import type { GraphIndex, NodeMeta } from "./api.js"
+import type { GraphIndex, IslandMeta, NodeMeta } from "./api.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
 import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
-import { distance } from "./placement.js"
+import { distance, type Point } from "./placement.js"
 import { World } from "./world.js"
 
 /**
@@ -73,6 +74,8 @@ const statPending = el<HTMLSpanElement>("stat-pending")
 const statReady = el<HTMLSpanElement>("stat-ready")
 const statTotal = el<HTMLSpanElement>("stat-total")
 const status = el<HTMLParagraphElement>("status")
+const elsewhereBox = el<HTMLDivElement>("elsewhere")
+const elsewhereList = el<HTMLUListElement>("elsewhere-list")
 
 const world = new World()
 const view = new MapView(stage, world)
@@ -189,10 +192,14 @@ view.cy.on("tap", "node", (event) => {
  * ordinary node, and what draws around it is its own neighbourhood, read on the settle at
  * the end of the flight like anywhere else. The centre still draws; this only changes how a
  * node becomes the centre.
+ *
+ * `at` is what an island arrives on instead. A searched node is one node and answers to the
+ * camera; an island is the first of a neighbourhood that will grow as it is walked, and it
+ * needs water around it rather than the nearest gap — see `World.berth`.
  */
-function goTo(node: NodeMeta): void {
+function goTo(node: NodeMeta, at?: Point): void {
   if (!world.has(node.id)) {
-    view.add([world.place(node, world.landing(view.centre(), node.id))], [])
+    view.add([world.place(node, at ?? world.landing(view.centre(), node.id))], [])
     view.setAccent(node.id)
   }
   // From here on this is the click path: name a destination, read it now rather than on
@@ -338,16 +345,68 @@ function showTotals(index: GraphIndex): void {
   statTotal.textContent = `${String(index.nodeCount)} nodes · ${String(index.edgeCount)} edges`
 }
 
+/** The islands as last read. Kept, because what is *shown* depends on the map as well. */
+let islands: IslandMeta[] = []
+
 /**
- * Re-read how big the graph is.
+ * The graph you cannot get to from here.
  *
- * Only the totals: everything else on the map is what somebody walked to, and re-reading
- * that would seat nodes nobody went to. A write is the one thing that can make this number
- * wrong without the camera moving, so it is the only thing that asks again.
+ * Every node on the map arrived because somebody walked to its neighbour, which is exactly
+ * why this list has to exist: a component holding nothing anyone has reached is not at the
+ * end of any walk, however long. Naming it is the only way in.
+ *
+ * An island already on the map is dropped rather than greyed. It is not somewhere else any
+ * more — you are standing in it — and a list of places to go should not be mostly places
+ * you have been. That is also what retires an entry after a join: the two components became
+ * one, and the store may not have noticed yet, but the map has.
+ */
+function showIslands(): void {
+  const elsewhere = islands.filter((island) => !world.has(island.id))
+  elsewhereBox.hidden = elsewhere.length === 0
+  elsewhereList.replaceChildren()
+
+  for (const island of elsewhere) {
+    const item = document.createElement("li")
+    const go = document.createElement("button")
+    go.type = "button"
+    go.className = "island"
+    go.title = `go to ${island.label}`
+
+    const name = document.createElement("span")
+    name.className = "island-name"
+    name.textContent = island.label
+
+    const size = document.createElement("span")
+    size.className = "island-size"
+    // Nodes rather than edges: it is how much is over there, not how tangled it is.
+    size.textContent = String(island.size)
+
+    go.append(name, size)
+    go.addEventListener("click", () => {
+      // Water, not the nearest gap. An island grows as it is walked, and seating its first
+      // node beside the camera would grow it through whatever is already there.
+      goTo(island, world.berth(island.id))
+      showIslands()
+    })
+    item.append(go)
+    elsewhereList.append(item)
+  }
+}
+
+/**
+ * Re-read how big the graph is, and what is still out of reach.
+ *
+ * Only these: everything else on the map is what somebody walked to, and re-reading that
+ * would seat nodes nobody went to. A write is the one thing that can make either wrong
+ * without the camera moving — a join can merge two islands into one — so it is the only
+ * thing that asks again.
  */
 async function refreshTotals(): Promise<void> {
   try {
-    showTotals(await fetchIndex())
+    const index = await fetchIndex()
+    showTotals(index)
+    islands = index.islands
+    showIslands()
   } catch {
     // A stale count is not worth an error state over. The next write asks again.
   }
@@ -357,12 +416,16 @@ async function boot(): Promise<void> {
   setStatus("loading graph…", "busy")
   const index = await fetchIndex()
   showTotals(index)
+  islands = index.islands
 
   // A graph with nowhere to start. Two of these, and only one is a fault: a table that has
   // been prepared and not yet written to is exactly what it should be, and reading its
   // absent root would report `no such node:` for a node nobody has made yet. The panel is
   // built before this runs, so naming the first node is available either way.
   if (!index.rootId) {
+    // Nothing has been placed, so every island is still somewhere else — and on a table
+    // with no root at all this list is the only way into any of them.
+    showIslands()
     setStatus(
       index.nodeCount > 0
         ? `⚠ ${String(index.nodeCount)} nodes and no starting point — run npm run graph:init`
@@ -387,6 +450,9 @@ async function boot(): Promise<void> {
   // neighbour seated too far to draw is still one of these neighbours, and the first
   // frame is the one place with nothing else on screen to stand in for it.
   view.showGhosts()
+  // After the root is placed, so the island it sits in is already off the list rather than
+  // offered as somewhere to go and then withdrawn on the first frame.
+  showIslands()
   render()
 }
 

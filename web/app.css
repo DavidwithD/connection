@@ -91,6 +91,55 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 #status[data-tone="busy"] { color: var(--accent); }
 #status[data-tone="error"] { color: var(--accent); font-weight: 500; }
 
+/* Graph no walk from here reaches. Under the same rule as the status line above it —
+   its own hairline, so it reads as a second thing the panel says rather than more of
+   the table. Capped and scrollable for the same reason the ends' list is: the server
+   caps the query, and a graph in pieces should not push the panel off the screen.
+
+   The cap is a whole number of rows, which is why the row height is stated rather than
+   left to the font. A cap in round pixels lands wherever it lands — at 168px it cut the
+   eighth row through the middle, and a half-drawn name reads as a broken panel and not
+   as an invitation to scroll. Nine rows, because a default seed is ten islands and you
+   are always standing in one of them. */
+#elsewhere {
+  --island-row: 22px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--hairline);
+}
+#elsewhere h2 {
+  margin: 0 0 5px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+#elsewhere ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: calc(var(--island-row) * 9);
+  overflow-y: auto;
+}
+/* The same row the ends' list uses: a name, and a number pushed to the far side. Two
+   lists of things to pick in one interface, so they are picked the same way. */
+/* `line-height` is load-bearing: it plus the padding is `--island-row`, and the cap above
+   is a multiple of that. Left to the font, the row lands on a fraction of a pixel and the
+   cap cuts a name in half. */
+.island {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 6px;
+  line-height: 16px;
+  text-align: left;
+}
+.island:hover,
+.island:focus-visible { background: var(--plane); }
+.island-size { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
 #legend { bottom: 16px; left: 16px; }
 #legend .row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
 #legend .row:first-of-type { margin-top: 0; }
@@ -394,4 +443,8 @@ kbd {
   /* The list is what runs off the bottom of a short window, being the one thing here
      that opens downward into space it never asked for. */
   .end ul { max-height: 40vh; }
+  /* Hidden rather than shortened. The HUD above has already given up everything but the
+     status line, and three islands out of nine is a worse answer than none — the box at
+     the top reaches any of them by name. */
+  #elsewhere { display: none; }
 }

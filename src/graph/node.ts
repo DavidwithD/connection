@@ -25,6 +25,8 @@ import {
   INDEX_PK,
   LABEL_OWNER_SK,
   META_SK,
+  islandBucket,
+  islandSort,
   labelBucket,
   labelPk,
   labelSort,
@@ -105,6 +107,14 @@ export async function createNode(label: string): Promise<NodeMeta> {
                 degree: 0,
                 [KEYS.labelBucket]: labelBucket(name),
                 [KEYS.labelSort]: labelSort(name, id),
+                // A node with no edges is a component of one, which is a fact and not a
+                // guess — so the island keys go on here, in the item the transaction was
+                // already writing, and this costs no extra operation. Everything else
+                // about components is maintained after the fact (src/graph/islands.ts);
+                // this is the one place the answer is known before the write.
+                parent: id,
+                [KEYS.islandBucket]: islandBucket(),
+                [KEYS.islandSort]: islandSort(1, id),
               },
               ConditionExpression: "attribute_not_exists(#pk)",
               ExpressionAttributeNames: { "#pk": KEYS.pk },

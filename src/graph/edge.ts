@@ -19,6 +19,11 @@
  * them: the self-edge guard, and turning a cancellation into a sentence. The browser gets
  * the same refusals the terminal does.
  *
+ * Each is followed by a second write that neither joins nor parts anything: an edge can
+ * merge two components or split one, and the index that lets the page find the graph it
+ * cannot walk to has to be told. That write is outside the transaction and is allowed to
+ * fail — see `reindex` below, and src/graph/islands.ts for why the index is derived.
+ *
  * See docs/decisions/0009-the-first-write-outside-the-seed.md,
  * docs/decisions/0010-writing-to-the-graph-from-the-browser.md and
  * docs/decisions/0011-taking-a-write-back.md.
@@ -29,6 +34,7 @@ import { TransactWriteCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
 import { INDEX_PK, META_SK, edgeSk, nodePk, type NodeMeta } from "./keys.js"
+import { resettle, settle } from "./islands.js"
 import { resolveLabel } from "./labels.js"
 import { Refused, reasonFor } from "./refused.js"
 
@@ -79,6 +85,28 @@ async function resolve(label: string): Promise<NodeMeta> {
   const node = await resolveLabel(label)
   if (!node) throw new Error(`no node is called "${label}"`)
   return node
+}
+
+/**
+ * Keep the component index up with the edge that just changed it.
+ *
+ * Outside the transaction on purpose, and allowed to fail on purpose. The five operations
+ * above are the graph; this is an index over it (src/graph/islands.ts), and a merge that
+ * cannot be recorded must not undo a join that already happened. What it costs when this
+ * loses is an index that over-lists, or a size that is out by the half it could not walk —
+ * both of which `npm run graph:init` reckons back from the nodes and edges themselves.
+ *
+ * Here rather than in the two callers, so the API and the terminal cannot drift on it.
+ */
+async function reindex(run: () => Promise<void>): Promise<void> {
+  try {
+    await run()
+  } catch (err) {
+    console.error(
+      `⚠ island index lagging (run npm run graph:init): ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
 }
 
 /**
@@ -136,6 +164,10 @@ export async function addEdge(aId: string, bId: string): Promise<void> {
     }
     throw err
   }
+
+  // The graph is written. Whether the two ends were already in one component is a question
+  // only the index cares about, and it is asked after the fact rather than inside the join.
+  await reindex(() => settle(aId, bId))
 }
 
 /**
@@ -196,6 +228,10 @@ export async function removeEdge(aId: string, bId: string): Promise<void> {
     }
     throw err
   }
+
+  // The edge is gone. Whether it was the only path between its two ends is a question the
+  // store cannot answer without walking, so this walks — after the part, never inside it.
+  await reindex(() => resettle(aId, bId))
 }
 
 async function main(): Promise<void> {

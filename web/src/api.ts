@@ -20,10 +20,23 @@ export interface Neighbourhood {
   truncated: boolean
 }
 
+/**
+ * A component of the graph, named by one of its nodes.
+ *
+ * The map is walked outward from wherever you are, so a component holding nothing you have
+ * reached cannot be found by walking at all. This is the address of one: somewhere to be
+ * taken to, and how much graph is waiting when you arrive.
+ */
+export interface IslandMeta extends NodeMeta {
+  size: number
+}
+
 export interface GraphIndex {
   rootId: string
   nodeCount: number
   edgeCount: number
+  /** Components no walk from `rootId` reaches, largest first. Its own is never here. */
+  islands: IslandMeta[]
 }
 
 export class Cancelled extends Error {

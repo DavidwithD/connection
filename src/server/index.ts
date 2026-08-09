@@ -1,7 +1,7 @@
 /**
  * The graph API the demo page talks to.
  *
- *   GET    /api/graph          where to start, and how big the graph is
+ *   GET    /api/graph          where to start, how big the graph is, and its other islands
  *   GET    /api/nodes/:id      one node and its neighbours, with their true degrees
  *   GET    /api/search?q=      nodes whose name starts with q
  *   POST   /api/nodes          create a node by name
@@ -30,10 +30,11 @@ import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { GRAPH_TABLE_NAME, describeTarget } from "../db/client.js"
 import { addEdge, removeEdge } from "../graph/edge.js"
+import { find } from "../graph/islands.js"
 import { searchLabels } from "../graph/labels.js"
 import { createNode, deleteNode } from "../graph/node.js"
 import { Refused } from "../graph/refused.js"
-import { readIndex, readMetas, readNeighbourhood } from "../graph/repo.js"
+import { readIndex, readIslands, readMetas, readNeighbourhood } from "../graph/repo.js"
 
 const app = new Hono()
 
@@ -55,7 +56,10 @@ async function write<T>(run: () => Promise<T>): Promise<T | Refused> {
 }
 
 app.get("/api/graph", async (c) => {
-  const index = await readIndex()
+  // Together, because the page needs both to draw its first frame and neither depends on
+  // the other. The islands ride on this rather than a route of their own: boot already
+  // makes this call, and a second one would only be a second round trip to the same answer.
+  const [index, all] = await Promise.all([readIndex(), readIslands()])
   // No index item at all, which is a table nothing has prepared rather than a graph with
   // nothing in it. `graph:init` is the answer either way and takes nothing with it; the
   // seed is named second because it replaces whatever is there.
@@ -65,7 +69,15 @@ app.get("/api/graph", async (c) => {
       404,
     )
   }
-  return c.json(index)
+  // Everything except where the map already starts. The list means "graph no walk from
+  // here reaches", and the component holding `rootId` is the one it always does — offering
+  // it would name the ground under the reader's feet as somewhere else to go. Which
+  // component that is has to be asked, because the node naming an island is whichever node
+  // won its unions and is rarely the best-connected one `rootId` picks.
+  const home = index.rootId ? await find(index.rootId) : null
+  const islands = all.filter((island) => island.id !== home?.root)
+
+  return c.json({ ...index, islands })
 })
 
 app.get("/api/nodes/:id", async (c) => {
