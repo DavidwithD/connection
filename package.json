@@ -29,6 +29,7 @@
     "graph:export": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/export.ts",
     "graph:restore": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/restore.ts",
     "graph:edge": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/edge.ts",
+    "graph:load": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/load.ts",
     "graph:node": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/node.ts",
     "graph:smoke": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/smoke.ts",
     "api": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/server/index.ts",

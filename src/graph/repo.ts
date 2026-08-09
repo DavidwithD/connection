@@ -188,32 +188,60 @@ export async function readIslandCount(): Promise<number> {
   return total
 }
 
+/** One item's primary key, as a BatchGet wants it handed over. */
+export type ItemKey = Record<string, string>
+
+/**
+ * Whatever is there, of many items named by key.
+ *
+ * Chunked to DynamoDB's cap and retried for whatever it declines, which is the part a
+ * second copy of this loop would lose: BatchGetItem is allowed to hand keys back unread,
+ * and DynamoDB Local never does — so the retry looks like dead code right up until it runs
+ * against AWS. Missing items are simply absent from the result, so a caller asking whether
+ * something exists compares what came back against what it asked for.
+ */
+export async function batchGet(
+  keys: ItemKey[],
+  consistent = false,
+): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = []
+
+  for (let i = 0; i < keys.length; i += BATCH_GET_MAX) {
+    let batch = keys.slice(i, i + BATCH_GET_MAX)
+
+    for (let attempt = 0; batch.length > 0 && attempt < 8; attempt++) {
+      const res = await db.send(
+        new BatchGetCommand({
+          RequestItems: {
+            [GRAPH_TABLE_NAME]: { Keys: batch, ConsistentRead: consistent },
+          },
+        }),
+      )
+      out.push(...(res.Responses?.[GRAPH_TABLE_NAME] ?? []))
+      batch = (res.UnprocessedKeys?.[GRAPH_TABLE_NAME]?.Keys ?? []) as typeof batch
+      if (batch.length > 0) await new Promise((r) => setTimeout(r, 50 * 2 ** attempt))
+    }
+  }
+
+  return out
+}
+
 /** Labels and degrees for many ids at once, chunked and retried. */
 export async function readMetas(ids: string[]): Promise<Map<string, NodeMeta>> {
   const out = new Map<string, NodeMeta>()
-  const unique = [...new Set(ids)]
+  const keys = [...new Set(ids)].map((id) => ({
+    [KEYS.pk]: nodePk(id),
+    [KEYS.sk]: META_SK,
+  }))
 
-  for (let i = 0; i < unique.length; i += BATCH_GET_MAX) {
-    let keys = unique
-      .slice(i, i + BATCH_GET_MAX)
-      .map((id) => ({ [KEYS.pk]: nodePk(id), [KEYS.sk]: META_SK }))
-
-    for (let attempt = 0; keys.length > 0 && attempt < 8; attempt++) {
-      const res = await db.send(
-        new BatchGetCommand({ RequestItems: { [GRAPH_TABLE_NAME]: { Keys: keys } } }),
-      )
-      for (const item of res.Responses?.[GRAPH_TABLE_NAME] ?? []) {
-        const id = nodeId(String(item[KEYS.pk] ?? ""))
-        if (!id) continue
-        out.set(id, {
-          id,
-          label: String(item["label"] ?? id),
-          degree: Number(item["degree"] ?? 0),
-        })
-      }
-      keys = (res.UnprocessedKeys?.[GRAPH_TABLE_NAME]?.Keys ?? []) as typeof keys
-      if (keys.length > 0) await new Promise((r) => setTimeout(r, 50 * 2 ** attempt))
-    }
+  for (const item of await batchGet(keys)) {
+    const id = nodeId(String(item[KEYS.pk] ?? ""))
+    if (!id) continue
+    out.set(id, {
+      id,
+      label: String(item["label"] ?? id),
+      degree: Number(item["degree"] ?? 0),
+    })
   }
 
   return out

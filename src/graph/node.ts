@@ -39,9 +39,17 @@ import { Refused, reasonFor } from "./refused.js"
 
 const USAGE = 'usage: npm run graph:node -- "<label>"'
 
+/**
+ * The one refusal a caller may want to treat as an outcome rather than a fault: a bulk
+ * load meets names that are already here and counts them as skipped
+ * (src/graph/load.ts). Named so that comparison is against this string and not a copy of
+ * it — the sentences below are read by people, and one of them is now read by code.
+ */
+export const NAME_TAKEN = "that name is taken"
+
 /** Positions in the create below, so a cancellation can be read back into English. */
 const CREATE_REASONS = [
-  "that name is taken",
+  NAME_TAKEN,
   "that id is taken",
   "no graph seeded — run npm run graph:seed",
 ]

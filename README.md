@@ -56,6 +56,7 @@ npm run ddb:smoke       # verify it all works
 | `npm run graph:restore` | ⚠️ Drop the graph table and rebuild it from an export |
 | `npm run graph:node` | Create one node by name |
 | `npm run graph:edge` | Join two existing nodes by name |
+| `npm run graph:load` | Add a text file of names and joins — additive, and safe to re-run |
 | `npm run graph:smoke` | Walk a component through create, join and part — cleans up after itself |
 | `npm run demo` | Graph API + dev server together |
 | `npm run api` | Just the graph API, on `:8787` |
@@ -106,6 +107,7 @@ src/graph/
   keys.ts       key layout for nodes, edges, labels, and components
   generate.ts   Watts–Strogatz generator (pure, deterministic)
   bulk.ts       whole-table reads and writes, and dropping the table
+  args.ts       the command line, for the two commands that take a file
   init.ts       makes what is derived match the table; writes nothing else
   seed.ts       drops the table, writes a new graph
   export.ts     copies the graph out to JSON; read-only
@@ -115,6 +117,7 @@ src/graph/
   islands.ts    which nodes can reach which, as union-find over the graph
   edge.ts       joins two nodes, in one transaction
   node.ts       creates one node, or deletes an edgeless one
+  load.ts       reads a text file of names and joins, and adds it
   refused.ts    the graph declining a write, and the reason it gives back
   smoke.ts      a component through every write that changes it
 src/server/
@@ -221,6 +224,39 @@ edges it counts must never disagree
 npm run graph:node -- "Vessarin"              # a node with no edges yet
 npm run graph:edge -- "Vessarin" "Ashanlin"   # join two that exist
 ```
+
+### Writing a graph down
+
+One line per node and whoever it joins, in a file you can edit
+([ADR 0021](docs/decisions/0021-a-graph-in-a-text-file.md)):
+
+```
+# The towns, and a lighthouse nobody can reach
+Kavara | Miselin | Vessarin | Thorne
+Miselin | Ashanlin
+Lighthouse
+```
+
+The first name on a line joins each of the rest — `a | b | c` is two edges out of `a`, not a
+path through `b` — so a hub is one line, and a line of one name is a node with no edges. The
+name is the identity, so nothing carries an id; case and runs of whitespace fold, so
+`ashanlin` and `Ashanlin` are the same node. A name cannot hold `|` or `#`.
+
+```bash
+npm run graph:load -- towns.txt --dry-run   # what it would add, written nowhere
+npm run graph:load -- towns.txt             # add it
+```
+
+It only ever adds. Deleting a line does not part an edge, and loading the same file twice
+writes nothing the second time — both "already there" refusals are counted rather than
+raised, which is what makes the file editable. A misspelling is therefore a new node and not
+an error, so the plan prints every name it is about to create, and `--dry-run` prints the
+pairs too: nothing in the file says whether a line was meant as a star or a chain.
+
+Each node and each edge is its own transaction and they run in series, at roughly a round
+trip per name and four per pair — seconds for a small file locally, minutes for a large one
+against AWS. A load leaves `rootId` where it was, so `npm run graph:init` afterwards is what
+moves the map's starting point onto the graph you just added.
 
 ### Starting a graph without seeding one
 

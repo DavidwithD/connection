@@ -22,6 +22,8 @@ import { describeTarget, GRAPH_TABLE_NAME } from "../db/client.js"
 import { addEdge, removeEdge } from "./edge.js"
 import { shares } from "./generate.js"
 import { find } from "./islands.js"
+import { resolveLabels } from "./labels.js"
+import { parse } from "./load.js"
 import { createNode, deleteNode } from "./node.js"
 import {
   ISLAND_LIMIT,
@@ -31,7 +33,7 @@ import {
   readIslandPage,
   type IslandCursor,
 } from "./repo.js"
-import type { GraphIndex, NodeMeta } from "./keys.js"
+import { normaliseLabel, type GraphIndex, type NodeMeta } from "./keys.js"
 
 const run = `smoke-${String(process.pid)}`
 
@@ -89,6 +91,36 @@ async function main(): Promise<void> {
     }
   }
   check(`every split covers its graph exactly${uncovered ? ` — ${uncovered}` : ""}`, !uncovered)
+
+  // --- what a line of a text graph means -----------------------------------
+  // Pure as well, and here for the same reason: the reading of a line is decided in one
+  // function and nowhere else (src/graph/load.ts), and the star is the half of it a file
+  // cannot state. A chain reading — `a | b | c` as a path through b — would pass every
+  // other check in this repo and quietly build a different graph.
+  const reading = parse(
+    [
+      "# a comment, and the blank line under it, say nothing",
+      "",
+      "Alder | Birch | Cedar",
+      "  birch |ALDER  ", // the first pair again: other order, other case, one edge
+      "Dogwood", // a node and no edges
+      "Elm | Elm",
+      "Fir | | Hazel",
+    ].join("\n"),
+  )
+  const pairs = reading.pairs.map(([a, b]) => `${a}-${b}`).join(" ")
+  check(
+    `a line joins its first name to each of the rest (read ${pairs})`,
+    pairs === "Alder-Birch Alder-Cedar Fir-Hazel",
+  )
+  check(
+    `it names 7 nodes, the lone one included (names ${String(reading.names.length)})`,
+    reading.names.length === 7,
+  )
+  check(
+    `and refuses a self-join and an empty name (found ${String(reading.faults.length)})`,
+    reading.faults.length === 2,
+  )
 
   const before = await readIndex()
   if (!before) throw new Error("no index item — run npm run graph:init")
@@ -148,6 +180,17 @@ async function walk(
   check(
     "a made node is its own island, of one",
     fresh.every((found, i) => found.root === [a, b, c][i]!.id && found.size === 1),
+  )
+
+  // What a bulk load asks the table before it writes anything (src/graph/load.ts). A name
+  // resolved to the wrong node would join the wrong pair, and a name wrongly missing would
+  // be created a second time and refused — so the miss is checked beside the hits.
+  const resolved = await resolveLabels([a.label, b.label, `${run}-nobody`])
+  check(
+    `many names resolve at once, and only the ones that exist (found ${String(resolved.size)})`,
+    resolved.size === 2 &&
+      resolved.get(normaliseLabel(a.label))?.id === a.id &&
+      resolved.get(normaliseLabel(b.label))?.id === b.id,
   )
 
   // --- a join merges two ----------------------------------------------------
