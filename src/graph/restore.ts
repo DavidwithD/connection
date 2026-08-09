@@ -39,6 +39,7 @@ import {
   nodeId,
   normaliseLabel,
 } from "./keys.js"
+import { stampIslands } from "./islands.js"
 
 const USAGE = "usage: npm run graph:restore -- <file> [--dry-run]"
 
@@ -236,6 +237,12 @@ async function main(): Promise<void> {
   // has moved on since. Every check above is about the file; this one is about what the file
   // is being written on top of.
   await guardHandmade("GRAPH_RESTORE_DROP")
+
+  // Rebuilt, not restored, and for the same reason as the index item below: the file is
+  // often a subset, and a subset's components are not the ones it was exported from. The
+  // keys carried in from the old table would name roots that are no longer here.
+  const { islands } = stampIslands(payload.items)
+  console.log(`  ${String(islands)} island(s)`)
 
   if (!isLocal) console.log("  recreating the table (tens of seconds against AWS)…")
   await recreateTable()
