@@ -185,9 +185,12 @@ npm run demo            # the map at :5173
 
 Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, and how many of its
 nodes are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K` — the defaults, and what each one costs,
-are in [seed.ts](src/graph/seed.ts). Re-seeding drops the graph table and builds it again,
-so it refuses to run against anything but the local emulator unless `GRAPH_SEED_DROP=1`
-says otherwise. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor, and `PORT`
+are in [seed.ts](src/graph/seed.ts). Re-seeding drops the graph table and builds it again, so
+it refuses twice over: against anything but the local emulator, and — wherever it is pointed
+— against a table holding nodes no seed wrote. The second refusal saves them to a timestamped
+export first, so the answer is recoverable even when you meant it. `GRAPH_SEED_DROP=1` clears
+both. `graph:restore` refuses on the same terms under `GRAPH_RESTORE_DROP`, since writing an
+older export over a table that has moved on loses exactly as much. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor, and `PORT`
 moves the API off `:8787` ([index.ts](src/server/index.ts)).
 
 Two commands write outside the seed. Each is one transaction, because `degree` and the
@@ -217,8 +220,10 @@ one graph command that needs no guard.
 
 ### Keeping what you made
 
-A seed run replaces the graph, so anything created since the last one goes with it. Two
-commands carry it across:
+A seed run replaces the graph, so anything created since the last one goes with it — but
+neither `graph:seed` nor `graph:restore` will let that happen silently. Each reads the table
+first, writes whatever no seed wrote to a timestamped export, and then stops. Doing it on
+purpose is the two commands below; the guard is for the times you were doing something else.
 
 ```bash
 npm run graph:export                             # only nodes made by hand → graph-export.json

@@ -29,7 +29,7 @@ import { PutCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget, isLocal } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
 import { guardDrop, recreateTable, writeAll, type Item } from "./bulk.js"
-import { EXPORT_VERSION, type GraphExport } from "./export.js"
+import { EXPORT_VERSION, guardHandmade, type GraphExport } from "./export.js"
 import {
   EDGE_PREFIX,
   INDEX_PK,
@@ -221,6 +221,10 @@ async function main(): Promise<void> {
   }
 
   guardDrop(isLocal, "GRAPH_RESTORE_DROP")
+  // The same hazard from the other direction: an older export written back over a table that
+  // has moved on since. Every check above is about the file; this one is about what the file
+  // is being written on top of.
+  await guardHandmade("GRAPH_RESTORE_DROP")
 
   if (!isLocal) console.log("  recreating the table (tens of seconds against AWS)…")
   await recreateTable()

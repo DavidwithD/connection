@@ -17,6 +17,7 @@ import { PutCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget, isLocal } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
 import { guardDrop, recreateTable, writeAll, type Item } from "./bulk.js"
+import { guardHandmade } from "./export.js"
 import {
   INDEX_PK,
   LABEL_OWNER_SK,
@@ -51,6 +52,11 @@ async function main(): Promise<void> {
   guardDrop(isLocal, "GRAPH_SEED_DROP")
 
   console.log(`→ ${describeTarget(GRAPH_TABLE_NAME)}`)
+
+  // Before anything is generated, because the answer can be "do not run this at all". The
+  // guard above asks whether the *target* may be dropped; this asks whether what is in it
+  // can be rebuilt, which is the question that matters on a local table.
+  await guardHandmade("GRAPH_SEED_DROP")
   console.log(
     `  generating n=${n} k=${k} p=${p} seed=${seed} hubs=${hubs} hubK=${hubK}`,
   )
