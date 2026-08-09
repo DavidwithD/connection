@@ -10,6 +10,13 @@
  * probability worth using. A pass afterwards moves edges onto a few chosen nodes to
  * make some, holding the total edge count fixed; see `hubs` and `hubK`.
  *
+ * Nor will it give you a graph in pieces: a rewired ring lattice is connected and stays so at
+ * every probability. `islands` is what does, by building one ring per component rather than
+ * one across the whole node list. All three passes have their own way out of a component —
+ * the ring can wrap past the end of one, a shortcut can land in the next, a hub can take its
+ * edge from anywhere — so all three are held inside an island, because a component this
+ * quietly joins to another is one the page can never offer as somewhere else to go.
+ *
  * Deterministic, because the *graph* must be reproducible across seed runs even
  * though the *layout* deliberately is not — see
  * docs/decisions/0003-graph-exploration-demo-stack.md.
@@ -39,7 +46,51 @@ export interface GenerateOptions {
   hubs?: number
   /** Top degree. One hub reaches this exactly; the others land between it and `k`. */
   hubK?: number
+  /** Components to split the nodes across. One is a single connected graph. */
+  islands?: number
 }
+
+/**
+ * How the nodes divide between islands: halving shares, largest first.
+ *
+ * Even shares would make the tail as big as the continent and leave nothing to notice about
+ * the order they are offered in. Halving gives one component worth exploring, a few worth
+ * crossing to, and — at the end of it — the ones that matter most for exercising this: a
+ * pair and a lone node, which is what somebody making nodes by hand actually produces.
+ *
+ * These must sum to exactly `n`, and that is the part worth being careful about rather than
+ * the weights: a node in no island is a node outside every range this builds, with no ring
+ * to join and no component to belong to. Rounding moves the total either way and the floor
+ * of one moves it up, so the difference is settled against the largest islands — the only
+ * ones with nodes to spare, and the only ones a few either way says nothing about. Taking
+ * from them always terminates, because the smallest total the floor can produce is one per
+ * island and `generate` has already refused more islands than nodes.
+ */
+export function shares(n: number, islands: number): number[] {
+  const weights = Array.from({ length: islands }, (_, i) => 0.5 ** i)
+  const total = weights.reduce((sum, weight) => sum + weight, 0)
+  const sizes = weights.map((weight) => Math.max(1, Math.round((n * weight) / total)))
+
+  let drift = n - sizes.reduce((sum, size) => sum + size, 0)
+  if (drift > 0) sizes[0]! += drift
+  for (let i = 0; drift < 0 && i < sizes.length; i++) {
+    const take = Math.min(sizes[i]! - 1, -drift)
+    sizes[i]! -= take
+    drift += take
+  }
+  return sizes
+}
+
+/**
+ * The lattice's reach inside one island, which is not always the one that was asked for.
+ *
+ * A ring needs more nodes than it has neighbours: `k` of 10 wants six before it means
+ * anything, and the small end of the halving above is a pair. So the reach is whatever the
+ * island can hold, and an island of one comes out with no edges at all — correctly, since
+ * every candidate neighbour is itself.
+ */
+const reachIn = (size: number, want: number): number =>
+  Math.max(1, Math.min(want, Math.floor((size - 1) / 2)))
 
 /** Small fast PRNG — good enough for demo data, and seedable, unlike Math.random. */
 function mulberry32(seed: number): () => number {
@@ -93,11 +144,25 @@ export function generate({
   seed,
   hubs = 0,
   hubK = 0,
+  islands = 1,
 }: GenerateOptions): GeneratedGraph {
   if (n < 4) throw new Error("n must be at least 4")
+  if (islands < 1) throw new Error("islands must be at least one")
+  if (islands > n) throw new Error("islands must not exceed n")
   const half = Math.max(1, Math.floor(k / 2))
-  if (half * 2 >= n) throw new Error("k must be well below n")
   if (hubs >= n) throw new Error("hubs must be below n")
+
+  // Contiguous ranges, so which island a node is in is an arithmetic question rather than a
+  // lookup — and so the ids in one island read consecutively, which makes a seeded graph
+  // legible in the table. Every edge below is confined to one of these: the lattice, the
+  // rewiring, and the hub pass each have their own way of leaving an island, and an island
+  // this generator connects to another is one the page can never show as separate.
+  const sizes = shares(n, islands)
+  const starts: number[] = []
+  for (let at = 0, i = 0; i < sizes.length; at += sizes[i]!, i++) starts.push(at)
+  // The largest island is the one the map boots into, so it is the one `k` has to mean
+  // something for. The rest give up whatever they cannot hold, quietly and by construction.
+  if (half * 2 >= sizes[0]!) throw new Error("k must be well below the largest island")
 
   // Two independent streams. Sharing one would let a change to how labels are drawn
   // shift every later draw, so editing the name list would silently rewire the graph —
@@ -132,28 +197,41 @@ export function generate({
     return true
   }
 
-  for (let i = 0; i < n; i++) {
-    for (let j = 1; j <= half; j++) add(i, (i + j) % n)
-  }
+  // One ring per island. The modulus is the island's size rather than the graph's, which is
+  // the whole of what keeps them apart: a ring that wrapped at `n` would close through the
+  // next island and make the two one.
+  sizes.forEach((size, island) => {
+    const start = starts[island]!
+    const reach = reachIn(size, half)
+    for (let i = 0; i < size; i++) {
+      for (let j = 1; j <= reach; j++) add(start + i, start + ((i + j) % size))
+    }
+  })
 
   // Rewire one endpoint of a lattice edge with probability p. Retry a bounded
   // number of times: a rejected rewire keeps the lattice edge, which is the
   // standard degradation and cannot disconnect the ring.
-  for (let i = 0; i < n; i++) {
-    for (let j = 1; j <= half; j++) {
-      if (rand() >= p) continue
-      const from = i
-      const old = (i + j) % n
-      for (let attempt = 0; attempt < 16; attempt++) {
-        const to = Math.floor(rand() * n)
-        if (to === from) continue
-        if (adjacency[from]!.has(to)) continue
-        drop(from, old)
-        add(from, to)
-        break
+  sizes.forEach((size, island) => {
+    const start = starts[island]!
+    const reach = reachIn(size, half)
+    for (let i = 0; i < size; i++) {
+      for (let j = 1; j <= reach; j++) {
+        if (rand() >= p) continue
+        const from = start + i
+        const old = start + ((i + j) % size)
+        for (let attempt = 0; attempt < 16; attempt++) {
+          // Inside this island, so a shortcut shortens a path that exists rather than
+          // creating one between components that are meant to have none.
+          const to = start + Math.floor(rand() * size)
+          if (to === from) continue
+          if (adjacency[from]!.has(to)) continue
+          drop(from, old)
+          add(from, to)
+          break
+        }
       }
     }
-  }
+  })
 
   // Hubs. The lattice hands out one degree and rewiring only nudges it a little either
   // side of `k`, at any probability worth using — so nothing in the graph is worth calling
@@ -171,8 +249,20 @@ export function generate({
   // Those two refusals are also the ceiling on `hubs`: everything a hub gains is somebody
   // else's spare degree, so once it is spent the pass runs out of donors and the hubs
   // asked for past that point are left sitting at `k`, silently.
+  //
+  // With islands, this is the pass that most wants to escape one: it takes an edge from
+  // wherever it finds it and hangs it on the hub. Both ends are held to the hub's island
+  // below, which also means the hubs asked for land where the nodes are — an island of two
+  // has no spare degree to give anybody, and contributes none.
   if (hubs > 0 && hubK > k) {
     const chosen = new Set<number>()
+    // Which island a node is in, by the ranges above. Read once per candidate rather than
+    // recomputed, since the hub pass asks for it thousands of times.
+    const islandOf = new Array<number>(n)
+    sizes.forEach((size, island) => {
+      for (let i = 0; i < size; i++) islandOf[starts[island]! + i] = island
+    })
+
     for (let h = 0; h < hubs; h++) {
       let hub = -1
       for (let attempt = 0; attempt < 64; attempt++) {
@@ -184,6 +274,8 @@ export function generate({
       }
       if (hub < 0) break
       chosen.add(hub)
+      const home = islandOf[hub]!
+      const floor = reachIn(sizes[home]!, half) + 1
 
       // One hub is driven to `hubK` exactly, so the top of the range is where the caller
       // asked for it. The rest are spread from just past where plain rewiring already
@@ -196,10 +288,13 @@ export function generate({
         adjacency[hub]!.size < target && attempt < 64 * hubK;
         attempt++
       ) {
-        const v = Math.floor(rand() * n)
+        // Drawn from the hub's own island. Picking across the whole graph and rejecting
+        // the misses would waste most attempts once the tail is small, and the small
+        // islands are exactly the ones whose few edges must not be moved away.
+        const v = starts[home]! + Math.floor(rand() * sizes[home]!)
         if (v === hub || adjacency[v]!.has(hub)) continue
         const donors = [...adjacency[v]!].filter(
-          (w) => w !== hub && !chosen.has(w) && adjacency[w]!.size > half + 1,
+          (w) => w !== hub && !chosen.has(w) && adjacency[w]!.size > floor,
         )
         const w = donors[Math.floor(rand() * donors.length)]
         if (w === undefined) continue

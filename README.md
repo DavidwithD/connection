@@ -56,6 +56,7 @@ npm run ddb:smoke       # verify it all works
 | `npm run graph:restore` | ⚠️ Drop the graph table and rebuild it from an export |
 | `npm run graph:node` | Create one node by name |
 | `npm run graph:edge` | Join two existing nodes by name |
+| `npm run graph:smoke` | Walk a component through create, join and part — cleans up after itself |
 | `npm run demo` | Graph API + dev server together |
 | `npm run api` | Just the graph API, on `:8787` |
 | `npm run web` | Just the Vite dev server, on `:5173` |
@@ -101,19 +102,21 @@ src/db/
   migrate.ts    creates missing tables (idempotent)
   smoke.ts      end-to-end check, doubles as a usage example
 src/graph/
-  table.ts      the graph's table and its label index
-  keys.ts       key layout for nodes, edges, and labels
+  table.ts      the graph's table, its label index and its island index
+  keys.ts       key layout for nodes, edges, labels, and components
   generate.ts   Watts–Strogatz generator (pure, deterministic)
   bulk.ts       whole-table reads and writes, and dropping the table
-  init.ts       makes the index item match the table; writes nothing else
+  init.ts       makes what is derived match the table; writes nothing else
   seed.ts       drops the table, writes a new graph
   export.ts     copies the graph out to JSON; read-only
   restore.ts    checks an export, then rebuilds the table from it
   repo.ts       the reads: adjacency Query + metas BatchGet
   labels.ts     name -> node, exact and by prefix
+  islands.ts    which nodes can reach which, as union-find over the graph
   edge.ts       joins two nodes, in one transaction
   node.ts       creates one node, or deletes an edgeless one
   refused.ts    the graph declining a write, and the reason it gives back
+  smoke.ts      a component through every write that changes it
 src/server/
   index.ts      the graph API (Hono)
 web/
@@ -128,6 +131,7 @@ web/src/            the map, and the client it reads the API through
   palette.ts    validated colour tokens, light and dark
   combobox.ts   a text box that hands back nodes, not text
   join.ts       the panel at the top: two ends, and the writes
+  islands.ts    the panel down the left: every component, as somewhere to go
   main.ts       wiring, accent tracking, the HUD
 scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
@@ -151,10 +155,23 @@ are apart.
 |---|---|---|
 | Both tables | `pk` | `sk` |
 | `connection-graph`, index `label` | `labelBucket` | `labelSort` |
+| `connection-graph`, index `island` | `islandBucket` | `islandSort` |
 | `connection`, index `gsi1` | `gsi1pk` | `gsi1sk` |
 
+An index is the exception to that, and `island` is a new one. `ddb:migrate` creates missing
+tables and never alters an existing one, so a table made before this gains no `island` index
+and `GET /api/graph` fails against it until one arrives. Both routes that build a table carry
+it: export and restore, or re-seed.
+
+```bash
+npm run graph:export && npm run graph:restore -- graph-export.json   # keep what you made
+npm run graph:init                                                    # stamp the components
+```
+
 Only key attributes are declared; every other field is per-item and needs no migration. An
-item that omits an index's keys stays out of it, which is what keeps both indexes sparse.
+item that omits an index's keys stays out of it, which is what keeps all three indexes
+sparse — edge items carry no label, and only a component's root carries the island keys, so
+`island` holds one row per component rather than one per node.
 
 ```ts
 import { PutCommand } from "@aws-sdk/lib-dynamodb"
@@ -183,11 +200,17 @@ npm run graph:seed      # a small-world graph, sized in src/graph/seed.ts
 npm run demo            # the map at :5173
 ```
 
-Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, and how many of its
-nodes are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K` — the defaults, and what each one costs,
-are in [seed.ts](src/graph/seed.ts). Re-seeding drops the graph table and builds it again,
-so it refuses to run against anything but the local emulator unless `GRAPH_SEED_DROP=1`
-says otherwise. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor, and `PORT`
+Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, how many of its nodes
+are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K`, and how many disconnected components it comes
+in with `GRAPH_ISLANDS` — ten by default, halving in size down to a pair and a lone node, so
+the page arrives with graph it cannot walk to. `GRAPH_ISLANDS=1` gives one connected graph,
+which is what every seed before this was. The defaults, and what each one costs,
+are in [seed.ts](src/graph/seed.ts). Re-seeding drops the graph table and builds it again, so
+it refuses twice over: against anything but the local emulator, and — wherever it is pointed
+— against a table holding nodes no seed wrote. The second refusal saves them to a timestamped
+export first, so the answer is recoverable even when you meant it. `GRAPH_SEED_DROP=1` clears
+both. `graph:restore` refuses on the same terms under `GRAPH_RESTORE_DROP`, since writing an
+older export over a table that has moved on loses exactly as much. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor, and `PORT`
 moves the API off `:8787` ([index.ts](src/server/index.ts)).
 
 Two commands write outside the seed. Each is one transaction, because `degree` and the
@@ -217,8 +240,10 @@ one graph command that needs no guard.
 
 ### Keeping what you made
 
-A seed run replaces the graph, so anything created since the last one goes with it. Two
-commands carry it across:
+A seed run replaces the graph, so anything created since the last one goes with it — but
+neither `graph:seed` nor `graph:restore` will let that happen silently. Each reads the table
+first, writes whatever no seed wrote to a timestamped export, and then stops. Doing it on
+purpose is the two commands below; the guard is for the times you were doing something else.
 
 ```bash
 npm run graph:export                             # only nodes made by hand → graph-export.json
@@ -259,6 +284,7 @@ Pan around an undirected cyclic graph like a map. Whatever you stop on is what l
 | wheel | Zoom toward the cursor |
 | click a node | Glide it to the middle |
 | click a ghost | Fly to the node it stands in for |
+| click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
 
 The node nearest the middle of the screen is the **centre**, which is what gliding a node
@@ -267,6 +293,26 @@ route you walked. Reading runs a hop past that: arriving somewhere fetches the r
 it too and holds the reply, unspent and undrawn, until somebody walks there. Panning itself
 does no work — no simulation, no layout, every node seated once and never moved, and no
 read until the camera goes still.
+
+Which is exactly why **islands** exists. A graph in pieces has components no walk from here
+can reach, however long you look — and a node you make is one until you join it to something.
+That list is every component, biggest first, and picking one sets it down in open water
+rather than in the nearest gap, so the island it grows into stays its own
+([ADR 0019](docs/decisions/0019-every-island-has-an-address.md)).
+
+Rows do not leave when you use them, which is what makes the list an *index of places* rather
+than a list of errands: crossing back is a click, not a name typed from memory
+([ADR 0020](docs/decisions/0020-the-islands-list-is-an-index.md)). The marked row is the
+island you are standing in. A dim one is not on the map yet — clicking it seats a whole
+island that was never there; clicking any other row only moves the camera. The list changes
+only when the graph's components do, which is a join, a split, or a node made from the box
+at the top.
+
+How many components a graph has is a property of the data and has no ceiling — 688 nodes of
+vocabulary arrived as 267 of them. So the list is a page of twenty and says which page it is:
+the heading reads `20 of 267` until it holds them all, and scrolling to the foot fetches the
+next twenty. Pages already loaded are left alone by a write, because a join changes an
+island's size and size is what the list is ordered by; only the first page is re-read.
 
 The box at the top is one box until you name something in it, and then it is an edge: two
 ends and the line between them. Naming a node takes you there. Name one in the other end and

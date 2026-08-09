@@ -18,11 +18,13 @@
  * docs/decisions/0003-graph-exploration-demo-stack.md.
  */
 import {
+  LONG_EDGE,
   Occupancy,
   SEAT_SEP,
   SQUEEZE_SEP,
   distance,
   ringSlots,
+  rotationFor,
   seat,
   type Placed,
   type Point,
@@ -49,6 +51,21 @@ export interface Absorbed {
 
 /** A fresh empty result each time: callers own what they are handed. */
 const nothing = (): Absorbed => ({ nodes: [], edges: [], unseated: [] })
+
+/**
+ * Water around an island: how far a berth keeps from anything already placed.
+ *
+ * Sized against `LONG_EDGE` rather than against a node, because that is the distance at
+ * which the renderer gives up drawing a line and stubs it instead. Anything closer and an
+ * edge could be drawn between two islands that share no edge at all — not a wrong line, but
+ * a picture in which the reader cannot tell there is a gap.
+ */
+const CLEARANCE = LONG_EDGE
+
+/** How far out each candidate berth steps, and how far around. Rough on purpose. */
+const BERTH_STEP = CLEARANCE * 0.55
+const BERTH_TURN = 2.399963 // the golden angle: successive berths never share a bearing
+const BERTH_STEPS = 96
 
 /**
  * Canonical key for an undirected pair. The separator is a character no id contains,
@@ -148,6 +165,41 @@ export class World {
    */
   landing(near: Point, seed: string): Point {
     return seat(near, 1, this.occupancy, seed, SEAT_SEP)[0] ?? near
+  }
+
+  /**
+   * Open water: somewhere a whole component can be set down without touching another.
+   *
+   * `landing` is the answer for a node arriving alone — it takes the first clear spot near
+   * the camera, which is right for something searched for and read one hop at a time. An
+   * island is not that. It is the first node of a neighbourhood that will grow as it is
+   * walked, and grown from a seat wedged between two nodes of somewhere else it would
+   * interleave with them: two unconnected regions occupying one patch of ground, and no way
+   * to tell by looking which node belongs to which. Positions are never reassigned, so that
+   * is not a picture that tidies itself up later.
+   *
+   * So this asks for room rather than for a gap. Candidates go outward along a spiral from
+   * the origin and the first with `CLEARANCE` of nothing around it wins, which puts each
+   * island in its own water and leaves the space its ring will need. Failing that — a map
+   * so full that no berth exists — it lands beyond everything placed, because an island
+   * drawn far away is still readable and an island drawn on top of another is not.
+   */
+  berth(seed: string): Point {
+    const rotation = rotationFor(seed)
+    for (let step = 0; step < BERTH_STEPS; step++) {
+      // Angle and radius grow together, so candidates spread around the origin instead of
+      // marching out along one bearing.
+      const angle = rotation + step * BERTH_TURN
+      const radius = CLEARANCE + step * BERTH_STEP
+      const point = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }
+      if (!this.occupancy.within(point.x, point.y, CLEARANCE).length) return point
+    }
+
+    let far = CLEARANCE
+    for (const node of this.nodes.values()) {
+      far = Math.max(far, Math.hypot(node.x, node.y))
+    }
+    return { x: Math.cos(rotation) * (far + CLEARANCE), y: Math.sin(rotation) * (far + CLEARANCE) }
   }
 
   /** Placed nodes inside a radius. Answers "what is the centre crowded by?". */

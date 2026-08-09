@@ -17,11 +17,15 @@ import { PutCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget, isLocal } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
 import { guardDrop, recreateTable, writeAll, type Item } from "./bulk.js"
+import { guardHandmade } from "./export.js"
+import { pickRoot } from "./restore.js"
 import {
   INDEX_PK,
   LABEL_OWNER_SK,
   META_SK,
   edgeSk,
+  islandBucket,
+  islandSort,
   labelBucket,
   labelPk,
   labelSort,
@@ -29,6 +33,7 @@ import {
   nodePk,
 } from "./keys.js"
 import { degrees, generate } from "./generate.js"
+import { components } from "./islands.js"
 
 const num = (name: string, fallback: number): number => {
   const raw = process.env[name]?.trim()
@@ -47,16 +52,34 @@ async function main(): Promise<void> {
   // seeing. Raising GRAPH_N must not bring that back.
   const hubs = num("GRAPH_HUBS", Math.max(1, Math.round(n / 5)))
   const hubK = num("GRAPH_HUB_K", 20)
+  // Ten, because one is the case the page had no answer for. A demo of a map that can only
+  // show you what you can walk to should arrive with somewhere it cannot — including the two
+  // smallest, which is where the halving in `shares` ends up and what a hand-made component
+  // actually looks like. Set it to 1 for a single connected graph.
+  const islands = num("GRAPH_ISLANDS", 10)
 
   guardDrop(isLocal, "GRAPH_SEED_DROP")
 
   console.log(`→ ${describeTarget(GRAPH_TABLE_NAME)}`)
+
+  // Before anything is generated, because the answer can be "do not run this at all". The
+  // guard above asks whether the *target* may be dropped; this asks whether what is in it
+  // can be rebuilt, which is the question that matters on a local table.
+  await guardHandmade("GRAPH_SEED_DROP")
   console.log(
-    `  generating n=${n} k=${k} p=${p} seed=${seed} hubs=${hubs} hubK=${hubK}`,
+    `  generating n=${n} k=${k} p=${p} seed=${seed} hubs=${hubs} hubK=${hubK} ` +
+      `islands=${islands}`,
   )
 
-  const graph = generate({ n, k, p, seed, hubs, hubK })
+  const graph = generate({ n, k, p, seed, hubs, hubK, islands })
   const degree = degrees(graph)
+  // Components, from the edge list already in hand — no store access, and the answer is
+  // exact rather than maintained. A rewired ring lattice comes out as one, but nothing here
+  // assumes that: the generator is free to change, and the reckoning would find it anyway.
+  const { parent, sizes } = components(
+    graph.nodes.map((node) => node.id),
+    graph.edges,
+  )
 
   // Every label claims a partition, so two nodes sharing one would leave a claim pointing
   // at whichever was written last and the other unreachable by name. BatchWrite cannot
@@ -73,6 +96,7 @@ async function main(): Promise<void> {
     }
     claimed.set(normaliseLabel(node.label), node.id)
 
+    const size = sizes.get(node.id)
     items.push({
       [KEYS.pk]: nodePk(node.id),
       [KEYS.sk]: META_SK,
@@ -82,6 +106,15 @@ async function main(): Promise<void> {
       // index to one entry per node.
       [KEYS.labelBucket]: labelBucket(node.label),
       [KEYS.labelSort]: labelSort(node.label, node.id),
+      parent: parent.get(node.id) ?? node.id,
+      // And only a root carries these, which is what keeps the island index to one entry
+      // per component. `sizes` holds a count for roots alone, so its own keys are the test.
+      ...(size === undefined
+        ? {}
+        : {
+            [KEYS.islandBucket]: islandBucket(),
+            [KEYS.islandSort]: islandSort(size, node.id),
+          }),
     })
     items.push({
       [KEYS.pk]: labelPk(node.label),
@@ -100,15 +133,17 @@ async function main(): Promise<void> {
   if (!isLocal) console.log("  recreating the table (tens of seconds against AWS)…")
   await recreateTable()
 
-  console.log(`  ${graph.nodes.length} nodes, ${graph.edges.length} edges`)
+  console.log(
+    `  ${graph.nodes.length} nodes, ${graph.edges.length} edges, ` +
+      `${sizes.size} island(s): ${[...sizes.values()].sort((a, b) => b - a).join(", ")}`,
+  )
   await writeAll(items, "wrote")
 
   // The best-connected node makes the most interesting centre, and the client should
   // not have to Scan to find one. Written last, so it also marks a completed run.
-  const rootId = [...degree.entries()].reduce(
-    (best, entry) => (entry[1] > best[1] ? entry : best),
-    ["", -1] as [string, number],
-  )[0]
+  // `pickRoot` rather than a copy of it: the reckoning uses the same function, and until it
+  // did, the two picked different nodes out of a tie and drifted apart every seed run.
+  const rootId = pickRoot(degree)
 
   await db.send(
     new PutCommand({

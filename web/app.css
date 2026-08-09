@@ -68,13 +68,85 @@ body {
   padding: 12px 14px;
 }
 
-#hud { top: 16px; left: 16px; min-width: 232px; }
-#hud h1 {
-  margin: 0 0 2px;
+/* The left column, as one flow.
+
+   Everything down this side used to be fixed to the viewport on its own, which makes two
+   things unwritable: folding the HUD cannot lift what is under it, and three boxes anchored
+   to two corners can only overlap on a window short enough. One column with the legend on
+   `margin-top: auto` says both — what folds lifts the rest, and what runs out of room is the
+   list, which is the only thing here that can give some back and stay useful. */
+#left-rail {
+  position: fixed;
+  z-index: 2;
+  top: 16px;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  /* Sized by its widest panel, the way each of these sized itself before there was a rail —
+     the HUD's numbers grow with the graph, and a column pinned to a round number wraps
+     "603 nodes · 2958 edges" onto a second line the moment the store gets interesting. The
+     ceiling is for the island names, which are data and have no width anyone chose. */
+  width: max-content;
+  min-width: 232px;
+  max-width: 320px;
+  /* The rail is a layout, not a surface: only its panels take the pointer, so the map is
+     still draggable through the gaps between them. */
+  pointer-events: none;
+}
+#left-rail > .panel { position: static; pointer-events: auto; }
+#legend { margin-top: auto; }
+
+#hud h1 { margin: 0; }
+#hud-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  /* Pulled out to the panel's padding edge so the hover fills the width the title has,
+     rather than a box inset inside it. */
+  margin: -3px -6px 2px;
+  padding: 3px 6px;
+  width: calc(100% + 12px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  text-align: left;
+  cursor: pointer;
 }
+#hud-toggle:hover,
+#hud-toggle:focus-visible { background: var(--plane); }
+
+/* A triangle rather than a glyph, so it turns rather than swaps: the shut state and the open
+   one are the same mark under a rotation, which is what says the panel went somewhere and
+   did not go away. */
+.chevron {
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 120ms ease;
+}
+#hud-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+
+/* Shut, the panel is a title and a chevron — and the status line is inside what it hides.
+   The tone rides out here so a failed read is still a colour on screen. It is not the
+   message, but it is the difference between quiet and silent. */
+#hud-toggle[data-tone="busy"],
+#hud-toggle[data-tone="error"] { color: var(--accent); }
+#hud:has(#hud-toggle[aria-expanded="true"]) #hud-toggle[data-tone] { color: inherit; }
+
+#hud:has(#hud-toggle[aria-expanded="false"]) #hud-body { display: none; }
+#hud:has(#hud-toggle[aria-expanded="false"]) h1 { margin-bottom: -2px; }
+
 #hud .sub { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; }
 
 dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
@@ -91,7 +163,94 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 #status[data-tone="busy"] { color: var(--accent); }
 #status[data-tone="error"] { color: var(--accent); font-weight: 500; }
 
-#legend { bottom: 16px; left: 16px; }
+/* Every component of the graph, as an index of places. Capped and scrollable for the same
+   reason the ends' list is: the server caps the query, and a graph in pieces should not push
+   the panel off the screen.
+
+   The cap is a whole number of rows, which is why the row height is stated rather than
+   left to the font. A cap in round pixels lands wherever it lands — at 168px it cut the
+   eighth row through the middle, and a half-drawn name reads as a broken panel and not
+   as an invitation to scroll. Nine rows, because a default seed is ten islands. */
+#islands {
+  --island-row: 22px;
+  /* `min-height: 0` is what lets the rail shrink this rather than run the column off the
+     window: a flex item's floor is its content otherwise, and the content is the whole list. */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#islands h2 {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 5px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+/* Pushed to the far side, where the ends' list puts its number. Muted, because it is a fact
+   about the list rather than one about the graph — and it is empty most of the time. */
+#islands-count { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
+/* The foot of the list, which asks for the next page by coming into view. A row rather than
+   a spinner: it is where the rows it is about to become will be, so nothing jumps when they
+   land, and it is clickable, which is the retry when a read fails. */
+.island-more {
+  padding: 3px 6px;
+  line-height: 16px;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.island-more:hover { color: var(--ink-2); }
+#islands ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: calc(var(--island-row) * 9);
+  overflow-y: auto;
+}
+/* The same row the ends' list uses, less the number: two lists of things to pick in one
+   interface, so they are picked the same way.
+
+   `line-height` is load-bearing: it plus the padding is `--island-row`, and the cap above
+   is a multiple of that. Left to the font, the row lands on a fraction of a pixel and the
+   cap cuts a name in half. */
+.island {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 6px;
+  line-height: 16px;
+  text-align: left;
+}
+.island:hover,
+.island:focus-visible { background: var(--plane); }
+.island-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* An island whose naming node is not seated yet. The dim is the one thing a row says beyond
+   its name, and it is worth saying: clicking this one sets a whole island down on the map,
+   in water, permanently — `World` never reassigns a position. Clicking any other row only
+   moves the camera to graph that is already there. */
+.island.off-map { color: var(--ink-muted); }
+
+/* Where you are standing.
+
+   Every row carries the dot and only one row fills it in. Drawing it on the marked row alone
+   would either indent that row past its neighbours or hang the dot outside the list — and
+   outside is not available, because `overflow-y: auto` above clips the other axis with it. */
+.island::before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: transparent;
+}
+.island[aria-current]::before { background: var(--accent); }
+.island[aria-current] { font-weight: 500; }
 #legend .row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
 #legend .row:first-of-type { margin-top: 0; }
 #legend .label { color: var(--ink-2); font-size: 11px; }
@@ -350,13 +509,23 @@ kbd {
   #controls { top: auto; bottom: 16px; }
 
   /* 16 at the foot, the controls' own 46 — one row of 11px buttons, and nothing about
-     that moves — and 10 between. */
-  #hud {
+     that moves — and 10 between. The rail moves whole rather than the HUD alone: what is
+     in it is a column, and splitting a column between two corners is how panels come to
+     overlap on the window after next.
+
+     `top: auto` with a height left to the content, so the column grows upward from the
+     foot and the list is what stops it — capped shorter here, since the room it is
+     growing into is room #ends and the map are using. */
+  #left-rail {
     top: auto;
     bottom: 72px;
     left: 16px;
     right: 16px;
+    width: auto;
+    max-width: none;
   }
+  #islands ul { max-height: calc(var(--island-row) * 5); }
+
   /* The two columns become a run of text. A grid needs room for its widest value in
      every row; a run needs only the line it is on, and the colon carries what the
      second column used to say by being one. */
@@ -373,14 +542,23 @@ kbd {
 }
 
 /* A phone holding the page upright. The insets are worth more as room than as margin
-   here, and the title and the line under it are the two things on screen that say
-   nothing the map does not. */
+   here, and the line under the title says nothing the map does not.
+
+   The title itself stays, unlike before: it is the chevron now, and the chevron is how the
+   seven rows of numbers get out of the way of a small screen. */
 @media (max-width: 460px) {
   #ends,
-  #hud { left: 8px; right: 8px; }
+  #left-rail { left: 8px; right: 8px; }
   #controls { right: 8px; }
-  #hud h1,
   #hud .sub { display: none; }
+}
+
+/* A window too short for the whole column. The legend goes first and alone: it is the only
+   thing in the rail that says nothing about where you are, and it is read once where the list
+   above it is read all afternoon. Height only — the rail is a column now, and how much room a
+   column has is a question about height whatever the window's width. */
+@media (max-height: 620px) {
+  #legend { display: none; }
 }
 
 /* A phone on its side: the strip is nearly all there is. The HUD keeps the one line
@@ -390,8 +568,17 @@ kbd {
   #hud h1,
   #hud .sub,
   #hud dl { display: none; }
+  /* The chevron goes with the title, so the fold has to be undone here rather than left
+     wherever it was last put — folded and with no chevron to unfold it, the status line
+     would be unreachable on a window it is the only thing left on. */
+  #hud:has(#hud-toggle[aria-expanded="false"]) #hud-body { display: block; }
   #status { margin: 0; padding: 0; border-top: 0; }
   /* The list is what runs off the bottom of a short window, being the one thing here
      that opens downward into space it never asked for. */
   .end ul { max-height: 40vh; }
+  /* Shortened rather than hidden, which is the reverse of what this said while the list
+     was somewhere to go: it is the index of the whole graph now, and the only thing on
+     screen that says which part of it you are in. Three rows and a scrollbar answer that.
+     None does not — and the box at the top only reaches a node whose name you already know. */
+  #islands ul { max-height: calc(var(--island-row) * 3); }
 }

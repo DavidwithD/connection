@@ -13,6 +13,9 @@
  *
  *   pk=label#<normalised>  sk=#owner  { nodeId, label }
  *
+ * The meta item carries two index stamps besides: the label keys, and — on a component's
+ * root alone — the island keys, which is how the page finds the graph it cannot walk to.
+ *
  * The meta key is `#meta`, not `meta`: `#` sorts below `e`, so the node itself
  * always comes back ahead of its edges and a Query with a Limit can never return
  * a partition's edges while dropping the node they belong to.
@@ -107,11 +110,45 @@ export const labelBucket = (label: string): string => {
 export const labelSort = (label: string, id: string): string =>
   `${normaliseLabel(label)}#${id}`
 
+/**
+ * Components, as an address — see docs/decisions/0019-every-island-has-an-address.md.
+ *
+ * Every node carries a `parent` pointer and a component is whatever its nodes point at, so
+ * a *root* — a node whose parent is itself — is a component. The two keys below are stamped
+ * on roots alone, which is the whole of what keeps the index to one row per component.
+ *
+ * One bucket for all of them. The access pattern is "every component", so there is nothing
+ * to spread across partitions and a second bucket would only mean a second Query. That does
+ * put every root in one partition, which is affordable because there are as many roots as
+ * components and only a write that merges or splits one ever touches them.
+ */
+const ISLAND_BUCKET = "island"
+
+export const islandBucket = (): string => ISLAND_BUCKET
+
+/**
+ * Size first, so a descending Query offers the largest island first, and zero-padded so it
+ * sorts as a number rather than as text — without the padding "9" lands after "100". Six
+ * digits is past any graph this demo will hold, and the id breaks ties so two islands of
+ * equal size both keep a row.
+ */
+export const islandSort = (size: number, id: string): string =>
+  `${String(Math.max(0, Math.trunc(size))).padStart(6, "0")}#${id}`
+
+/** The size back out of a sort key, for a union that has to add two of them. */
+export const islandSize = (sort: string): number => Number(sort.slice(0, sort.indexOf("#")))
+
 export interface NodeMeta {
   id: string
   label: string
   /** True degree in the stored graph, not the count currently loaded. */
   degree: number
+}
+
+/** A component, named by its root. What the page offers as somewhere else to go. */
+export interface IslandMeta extends NodeMeta {
+  /** Nodes in the component, maintained by the union and repaired by the reckoning. */
+  size: number
 }
 
 export interface GraphIndex {

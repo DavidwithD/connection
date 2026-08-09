@@ -59,6 +59,20 @@ lets a `Limit` drop edges but never the node.
 that matters is a condition inside the transaction rather than a check in the route. Reads
 stay `GET` and stay free of all this.
 
+That holds of the *graph*, and since [0019](../decisions/0019-every-island-has-an-address.md)
+no longer of the call: joining or parting is followed by a second write that maintains the
+island index and is allowed to fail. It is inside `edge.ts` rather than in either caller, so
+the API and the terminal cannot drift on it — and it can fail precisely because it changes
+no graph, only what is derived from one.
+
+**A root is a component, and the island index over-lists rather than under-lists.** Every
+node carries a `parent`; a node pointing at itself is a root, and only roots carry the index
+keys ([islands.ts](../../src/graph/islands.ts)). A merge that does not land leaves two
+addresses for one island, which costs a wasted trip; nothing leaves an island unreachable
+except a part whose repair was interrupted. `npm run graph:init` is the reckoning that
+repairs either, and it compares the partition rather than the pointers — union order decides
+which node names a component, so insisting on one answer would report drift after every join.
+
 **A drawn edge raises both degrees, and a parted one lowers them.** `missing` is degree
 minus the edges loaded, so linking without [`bumpDegree`](../../web/src/world.ts) on both
 ends makes a node with more graph behind it report that it is finished, and unlinking
@@ -87,8 +101,12 @@ summary here is a second copy, and it is the copy that goes stale.
 | [0010](../decisions/0010-writing-to-the-graph-from-the-browser.md) | [node.ts](../../src/graph/node.ts), [server/index.ts](../../src/server/index.ts), [join.ts](../../web/src/join.ts), [world.ts](../../web/src/world.ts) |
 | [0011](../decisions/0011-taking-a-write-back.md) | [edge.ts](../../src/graph/edge.ts), [node.ts](../../src/graph/node.ts), [combobox.ts](../../web/src/combobox.ts), [map-view.ts](../../web/src/map-view.ts) |
 | [0012](../decisions/0012-the-name-is-the-node.md) | [map-view.ts](../../web/src/map-view.ts), [palette.ts](../../web/src/palette.ts), drawn out in [the-centre.md](the-centre.md) |
+| [0019](../decisions/0019-every-island-has-an-address.md) | [islands.ts](../../src/graph/islands.ts), [table.ts](../../src/graph/table.ts), [keys.ts](../../src/graph/keys.ts), [edge.ts](../../src/graph/edge.ts), [init.ts](../../src/graph/init.ts) |
 
-0003 through 0012 are Proposed apart from 0005, so their constraints are live but unsettled
+Every record here is Proposed apart from 0005, so their constraints are live but unsettled
 — 0004 and 0006 each reverse one line of 0003, 0007 is the first time the store's layout was
-argued rather than assumed, and 0012 replaces the mark 0004 chose without touching what it
-chose to draw.
+argued rather than assumed, 0012 replaces the mark 0004 chose without touching what it chose
+to draw, and 0019 qualifies 0009's one-transaction rule rather than breaking it.
+
+Rows for 0013 through 0018 are missing. Each of those records is reachable from the code
+that carries it, which is what findability needs; this table is the slower half.

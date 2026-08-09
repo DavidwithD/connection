@@ -7,8 +7,9 @@
  * table it grew out of.
  *
  * Two consequences fall out of the table being the graph's alone, and both are the point:
- * clearing it is dropping it, and the label index needs no trick to stay sparse — edge
- * items carry no label, so only the node metas are ever in it.
+ * clearing it is dropping it, and neither index needs a trick to stay sparse. Edge items
+ * carry no label, so only the node metas are ever in `label`; and only a component's root
+ * carries the island keys, so `island` holds one row per component rather than per node.
  */
 import type { CreateTableCommandInput } from "@aws-sdk/client-dynamodb"
 import { GRAPH_TABLE_NAME } from "../db/client.js"
@@ -19,10 +20,13 @@ export const GRAPH_KEYS = {
   sk: "sk",
   labelBucket: "labelBucket",
   labelSort: "labelSort",
+  islandBucket: "islandBucket",
+  islandSort: "islandSort",
 } as const
 
-/** Named for what it answers, which a graph-only table can afford. */
+/** Named for what they answer, which a graph-only table can afford. */
 export const LABEL_INDEX = "label"
+export const ISLAND_INDEX = "island"
 
 export const graphTableDefinition: CreateTableCommandInput = {
   TableName: GRAPH_TABLE_NAME,
@@ -37,6 +41,8 @@ export const graphTableDefinition: CreateTableCommandInput = {
     { AttributeName: GRAPH_KEYS.sk, AttributeType: "S" },
     { AttributeName: GRAPH_KEYS.labelBucket, AttributeType: "S" },
     { AttributeName: GRAPH_KEYS.labelSort, AttributeType: "S" },
+    { AttributeName: GRAPH_KEYS.islandBucket, AttributeType: "S" },
+    { AttributeName: GRAPH_KEYS.islandSort, AttributeType: "S" },
   ],
 
   GlobalSecondaryIndexes: [
@@ -48,6 +54,19 @@ export const graphTableDefinition: CreateTableCommandInput = {
       KeySchema: [
         { AttributeName: GRAPH_KEYS.labelBucket, KeyType: "HASH" },
         { AttributeName: GRAPH_KEYS.labelSort, KeyType: "RANGE" },
+      ],
+      Projection: { ProjectionType: "ALL" },
+    },
+    {
+      // Components, one entry per component: only a union-find root carries these two
+      // attributes, so the index holds a row per island rather than per node. One bucket,
+      // because the whole point is a single Query returning all of them and there are as
+      // many as there are components. Sorted by size, so a descending read offers the
+      // largest island first — see docs/decisions/0019-every-island-has-an-address.md.
+      IndexName: ISLAND_INDEX,
+      KeySchema: [
+        { AttributeName: GRAPH_KEYS.islandBucket, KeyType: "HASH" },
+        { AttributeName: GRAPH_KEYS.islandSort, KeyType: "RANGE" },
       ],
       Projection: { ProjectionType: "ALL" },
     },

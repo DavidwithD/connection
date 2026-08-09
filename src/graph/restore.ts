@@ -29,7 +29,7 @@ import { PutCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget, isLocal } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
 import { guardDrop, recreateTable, writeAll, type Item } from "./bulk.js"
-import { EXPORT_VERSION, type GraphExport } from "./export.js"
+import { EXPORT_VERSION, guardHandmade, type GraphExport } from "./export.js"
 import {
   EDGE_PREFIX,
   INDEX_PK,
@@ -39,6 +39,7 @@ import {
   nodeId,
   normaliseLabel,
 } from "./keys.js"
+import { stampIslands } from "./islands.js"
 
 const USAGE = "usage: npm run graph:restore -- <file> [--dry-run]"
 
@@ -159,11 +160,22 @@ export function verify(items: Item[]): { faults: string[]; graph: Graph } {
   return { faults, graph: { items, degree } }
 }
 
-/** The best-connected node makes the most interesting centre, and the page reads this
- * rather than Scanning for somewhere to begin. Same rule the seed uses. */
+/**
+ * The best-connected node makes the most interesting centre, and the page reads this rather
+ * than Scanning for somewhere to begin. The seed calls this too, rather than keeping its own
+ * copy — the two have to agree, and for a while they did not.
+ *
+ * Ties break on the id, and that is the whole reason this is not a one-line reduce. A plain
+ * "strictly greater wins" keeps whichever maximum it met first, so the answer depends on the
+ * order the degrees were counted in — node order in the seed, Scan order in the reckoning.
+ * With a hundred hubs all driven to `hubK` exactly, ties are the common case, and the two
+ * routinely disagreed about a graph neither of them was wrong about. That made
+ * `graph:init --check` report drift it could never clear.
+ */
 export function pickRoot(degree: Map<string, number>): string {
   return [...degree.entries()].reduce(
-    (best, entry) => (entry[1] > best[1] ? entry : best),
+    (best, entry) =>
+      entry[1] > best[1] || (entry[1] === best[1] && entry[0] < best[0]) ? entry : best,
     ["", -1] as [string, number],
   )[0]
 }
@@ -221,6 +233,16 @@ async function main(): Promise<void> {
   }
 
   guardDrop(isLocal, "GRAPH_RESTORE_DROP")
+  // The same hazard from the other direction: an older export written back over a table that
+  // has moved on since. Every check above is about the file; this one is about what the file
+  // is being written on top of.
+  await guardHandmade("GRAPH_RESTORE_DROP")
+
+  // Rebuilt, not restored, and for the same reason as the index item below: the file is
+  // often a subset, and a subset's components are not the ones it was exported from. The
+  // keys carried in from the old table would name roots that are no longer here.
+  const { islands } = stampIslands(payload.items)
+  console.log(`  ${String(islands)} island(s)`)
 
   if (!isLocal) console.log("  recreating the table (tens of seconds against AWS)…")
   await recreateTable()

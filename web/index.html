@@ -9,27 +9,78 @@
   <body>
     <div id="stage"></div>
 
-    <section class="panel" id="hud">
-      <h1>Graph exploration</h1>
-      <p class="sub">one map, panned freely — the middle is where you are</p>
-      <dl>
-        <dt>at centre</dt>
-        <dd id="stat-centre">—</dd>
-        <dt>its degree</dt>
-        <dd id="stat-degree">0</dd>
-        <dt>nodes placed</dt>
-        <dd id="stat-nodes">0</dd>
-        <dt>edges drawn</dt>
-        <dd id="stat-edges">0</dd>
-        <dt>loading</dt>
-        <dd id="stat-pending">0</dd>
-        <dt>read ahead</dt>
-        <dd id="stat-ready" title="neighbourhoods held but not drawn">0</dd>
-        <dt>in store</dt>
-        <dd id="stat-total">—</dd>
-      </dl>
-      <p id="status" data-tone="idle">starting…</p>
-    </section>
+    <!-- The left column, as one flow rather than three boxes that each answer to the corner.
+         Folding the HUD has to lift the islands under it, and a bottom-anchored legend has to
+         give way before either of them runs off a short window — neither is expressible while
+         every panel is fixed to the viewport on its own. -->
+    <div id="left-rail">
+      <section class="panel" id="hud">
+        <!-- The button is inside the heading rather than around it, so the title stays a
+             heading and the whole of it is still the target. The chevron carries the status
+             tone while the panel is shut, which is the price of folding away the one line
+             that can report a failed read. -->
+        <h1>
+          <button id="hud-toggle" type="button" aria-expanded="true" aria-controls="hud-body">
+            <span class="chevron" aria-hidden="true"></span>
+            Graph exploration
+          </button>
+        </h1>
+
+        <div id="hud-body">
+          <p class="sub">one map, panned freely — the middle is where you are</p>
+          <dl>
+            <dt>at centre</dt>
+            <dd id="stat-centre">—</dd>
+            <dt>its degree</dt>
+            <dd id="stat-degree">0</dd>
+            <dt>nodes placed</dt>
+            <dd id="stat-nodes">0</dd>
+            <dt>edges drawn</dt>
+            <dd id="stat-edges">0</dd>
+            <dt>loading</dt>
+            <dd id="stat-pending">0</dd>
+            <dt>read ahead</dt>
+            <dd id="stat-ready" title="neighbourhoods held but not drawn">0</dd>
+            <dt>in store</dt>
+            <dd id="stat-total">—</dd>
+          </dl>
+          <p id="status" data-tone="idle">starting…</p>
+        </div>
+      </section>
+
+      <!-- Every component of the graph, as somewhere to go:
+           docs/decisions/0020-the-islands-list-is-an-index.md. Its own panel, because it is
+           what the map is navigated with and the HUD above it folds away. Hidden only when
+           there is no graph at all — an empty heading would promise a list that never comes. -->
+      <section class="panel" id="islands" hidden>
+        <!-- The count says how many rows there are against how many islands exist. Empty
+             while the list holds all of them — arithmetic the reader can do is not worth a
+             line of chrome — and filled the moment it does not. -->
+        <h2>islands <span id="islands-count"></span></h2>
+        <ul id="islands-list"></ul>
+      </section>
+
+      <!-- Last in the rail and pushed to its foot, so it is what gives way first: a legend is
+           read once and the list above it is read all afternoon. -->
+      <section class="panel" id="legend">
+        <div class="row">
+          <span class="dot accent"></span>
+          <span class="label">nearest the middle</span>
+        </div>
+        <div class="row">
+          <div id="ramp"></div>
+          <span class="label">its neighbours · the rest</span>
+        </div>
+        <div class="row">
+          <span class="dot dashed"></span>
+          <span class="label">more graph behind it</span>
+        </div>
+        <div class="row">
+          <span class="stub-key"></span>
+          <span class="label">edge to somewhere off-map</span>
+        </div>
+      </section>
+    </div>
 
     <!-- Two ends and the line between them: docs/decisions/0013-one-box-that-grows-into-an-edge.md.
          The × sits out of the tab order on purpose — between two inputs, it would otherwise
@@ -71,25 +122,6 @@
       <button id="zoom-in" type="button" title="Zoom in">+</button>
       <button id="home" type="button">Recentre</button>
     </div>
-
-    <section class="panel" id="legend">
-      <div class="row">
-        <span class="dot accent"></span>
-        <span class="label">nearest the middle</span>
-      </div>
-      <div class="row">
-        <div id="ramp"></div>
-        <span class="label">its neighbours · the rest</span>
-      </div>
-      <div class="row">
-        <span class="dot dashed"></span>
-        <span class="label">more graph behind it</span>
-      </div>
-      <div class="row">
-        <span class="stub-key"></span>
-        <span class="label">edge to somewhere off-map</span>
-      </div>
-    </section>
 
     <div class="panel" id="keys">
       <span><kbd>drag</kbd> pan &nbsp; <kbd>wheel</kbd> zoom</span>

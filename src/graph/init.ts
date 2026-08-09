@@ -4,9 +4,16 @@
  *   npm run graph:init            # write it
  *   npm run graph:init -- --check # say what it would write, write nothing
  *
- * The only graph command with no destructive mode. It reads, derives, and puts a single
- * item; it never drops a table and never deletes a row, so unlike its two neighbours it
+ * The only graph command with no destructive mode. It reads, derives, and puts back what it
+ * derived; it never drops a table and never deletes a row, so unlike its two neighbours it
  * needs no guard against being pointed at somewhere real.
+ *
+ * Two derived things live here now. The index item, which is the argument below; and which
+ * component each node belongs to, which is maintained one edge at a time by writes that are
+ * allowed to fail (src/graph/islands.ts) and so needs somewhere it can be recomputed from
+ * the graph rather than from the last thing that happened to it. A split is the case that
+ * makes this necessary rather than merely tidy: union-find has no un-union, so a part that
+ * breaks a component in two can only be recounted, never undone.
  *
  * It exists because `graph#index` is a precondition rather than a summary. Every write is a
  * transaction carrying a conditional update on it (src/graph/edge.ts, src/graph/node.ts), so
@@ -30,8 +37,9 @@ import { pathToFileURL } from "node:url"
 import { PutCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
-import { scanAll, type Item } from "./bulk.js"
+import { scanAll, writeAll, type Item } from "./bulk.js"
 import { pickRoot, verify } from "./restore.js"
+import { stampIslands } from "./islands.js"
 import { INDEX_PK, META_SK, type GraphIndex } from "./keys.js"
 
 const USAGE = "usage: npm run graph:init -- [--check]"
@@ -95,15 +103,22 @@ async function main(): Promise<void> {
   const items = await scanAll()
   const was = current(items)
   const { index, faults } = reckon(items)
+  // Components, derived from every node and edge at once. The incremental path maintains
+  // this one edge at a time and is allowed to lose (src/graph/islands.ts); this is where
+  // whatever it dropped is found, because a walk of the whole graph cannot be wrong.
+  const { islands, changed } = stampIslands(items)
 
   for (const fault of faults.slice(0, 20)) console.log(`  ⚠ ${fault}`)
   if (faults.length > 20) console.log(`  … and ${String(faults.length - 20)} more`)
 
   console.log(
     `  ${String(index.nodeCount)} nodes, ${String(index.edgeCount)} edges, ` +
-      `root ${index.rootId || "(none — the graph is empty)"}`,
+      `${String(islands)} island(s), root ${index.rootId || "(none — the graph is empty)"}`,
   )
   const changes = drift(was, index)
+  if (changed.length) {
+    changes.push(`${String(changed.length)} node(s) in the wrong island`)
+  }
   for (const line of changes) console.log(`  ${line}`)
 
   if (check) {
@@ -114,9 +129,9 @@ async function main(): Promise<void> {
     // Non-zero so this is usable as a gate, and worded for whichever of the two it found.
     throw new Error(
       changes.length && faults.length
-        ? `the index item is out of date, and the graph has ${String(faults.length)} fault(s)`
+        ? `what is derived is out of date, and the graph has ${String(faults.length)} fault(s)`
         : changes.length
-          ? "the index item is out of date — run npm run graph:init"
+          ? "what is derived is out of date — run npm run graph:init"
           : `the graph has ${String(faults.length)} fault(s)`,
     )
   }
@@ -125,6 +140,10 @@ async function main(): Promise<void> {
     console.log("✓ the index item was already true — nothing written")
     return
   }
+
+  // The nodes first, then the item that says where to start. Same ordering the seed and a
+  // restore use: whatever marks a completed run is written last.
+  if (changed.length) await writeAll(changed, "repaired")
 
   await db.send(
     new PutCommand({

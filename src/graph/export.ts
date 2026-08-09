@@ -163,6 +163,60 @@ export function select(items: Item[], keep: (id: string) => boolean): Selection 
 }
 
 /**
+ * Stand between a rebuild and the work it would take with it.
+ *
+ * Called by the two commands that drop the table. Both are documented as destructive and
+ * both were, in practice, one keystroke — `guardDrop` waves through anything pointed at the
+ * local emulator, on the reasoning that an emulator holds nothing anyone minds losing. That
+ * reasoning is wrong the moment somebody uses the demo, which is what the demo is for: on
+ * 2026-08-09 a re-seed run to pick up a new index took several hundred hand-made nodes with
+ * it, and nothing in the repo said a word before it happened.
+ *
+ * So it does both halves. It writes the file first, because a rebuild that was genuinely
+ * wanted should still be recoverable; then it refuses, because one that was not should not
+ * have happened. Timestamped, so a second rescue never lands on the first.
+ *
+ * "Yours" is anything the seed did not write — `!isSeedId`, not `isMadeId`. The difference
+ * only shows for an id of neither shape, and there the safe answer is to keep it: an id this
+ * file has not heard of is a reason to stop, never a reason to delete.
+ *
+ * Silent when the table holds nothing but a seed, which is the common case and the one where
+ * a rebuild costs nothing.
+ */
+export async function guardHandmade(variable: string): Promise<void> {
+  const items = await scanAll("checked")
+  if (!items.length) return
+
+  const selection = select(items, (id) => !isSeedId(id))
+  if (!selection.counts.nodes) return
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  const out = `graph-export-${stamp}.json`
+  const payload: GraphExport = {
+    version: EXPORT_VERSION,
+    table: GRAPH_TABLE_NAME,
+    exportedAt: new Date().toISOString(),
+    items: selection.items,
+    counts: selection.counts,
+  }
+  writeFileSync(out, JSON.stringify(payload, null, 2))
+
+  const { nodes, edges } = selection.counts
+  console.log(
+    `  ⚠ ${String(nodes)} node(s) and ${String(edges)} edge(s) here were not written by a ` +
+      `seed\n     saved to ${out}`,
+  )
+
+  if (process.env[variable] !== "1") {
+    throw new Error(
+      `refusing to drop ${String(nodes)} node(s) the seed cannot rebuild\n` +
+        `  put them back with: npm run graph:restore -- ${out}\n` +
+        `  or set ${variable}=1 to drop them anyway — the file above is your copy`,
+    )
+  }
+}
+
+/**
  * Refuse an id of neither shape rather than sorting it into whichever bucket the
  * predicate happens to answer for. An unrecognised id means something writes nodes that
  * this file has never heard of, and quietly treating it as scaffolding would delete it.

@@ -22,6 +22,8 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0016](0016-the-gates-run-in-ci.md) | The gates run in CI | 🔵 Proposed |
 | [0017](0017-the-second-view-goes.md) | The second view goes | 🔵 Proposed |
 | [0018](0018-the-graph-outlives-the-seed.md) | The graph outlives the seed | 🔵 Proposed |
+| [0019](0019-every-island-has-an-address.md) | Every island has an address | 🔵 Proposed |
+| [0020](0020-the-islands-list-is-an-index.md) | The islands list is an index | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

@@ -5,6 +5,7 @@
  *   wheel           zoom toward the cursor
  *   click a node    glide it to the middle, drawing its ring on the click
  *   arrows          nudge the camera
+ *   click an island cross to it, or go back to one already crossed to
  *
  * The accent is whatever node is nearest the middle of the screen, recomputed at most
  * once per frame. It uses hysteresis — a rival has to be clearly closer before it takes
@@ -25,10 +26,11 @@
 import { fetchIndex, fetchNeighbourhood } from "./api.js"
 import type { GraphIndex, NodeMeta } from "./api.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
+import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
-import { distance } from "./placement.js"
+import { distance, type Point } from "./placement.js"
 import { World } from "./world.js"
 
 /**
@@ -73,13 +75,46 @@ const statPending = el<HTMLSpanElement>("stat-pending")
 const statReady = el<HTMLSpanElement>("stat-ready")
 const statTotal = el<HTMLSpanElement>("stat-total")
 const status = el<HTMLParagraphElement>("status")
+const hudToggle = el<HTMLButtonElement>("hud-toggle")
 
 const world = new World()
 const view = new MapView(stage, world)
 
+/**
+ * Every island in the graph, as an index of places.
+ *
+ * Built here rather than in `boot` because a table with no root at all still has islands in
+ * it, and the list is the only way into any of them — see the `rootId` branch below.
+ */
+const islands = new IslandsPanel(
+  el<HTMLElement>("islands"),
+  el<HTMLUListElement>("islands-list"),
+  el<HTMLSpanElement>("islands-count"),
+  {
+    onCross: (island, seated) => {
+      // Somewhere already on the map: go to the node that is on it, never the island's own
+      // name. They are usually not the same node, and berthing one already drawn would set a
+      // second copy of it down in open water.
+      const known = seated === null ? null : world.get(seated)
+      if (known) {
+        goTo(known)
+        return
+      }
+      // Water, not the nearest gap. An island grows as it is walked, and seating its first
+      // node beside the camera would grow it through whatever is already there.
+      goTo(island, world.berth(island.id))
+    },
+    placed: (id) => world.has(id),
+  },
+)
+
 function setStatus(text: string, tone: "idle" | "busy" | "error"): void {
   status.textContent = text
   status.dataset["tone"] = tone
+  // The HUD folds away to a chevron, and the status line folds away with it. The tone rides
+  // on the chevron so a failed read is still *something* on screen — a colour is not the
+  // message, but it is the difference between quiet and silent.
+  hudToggle.dataset["tone"] = tone
 }
 
 const explorer = new Explorer(world, view, {
@@ -97,6 +132,9 @@ function render(): void {
   // Reported apart from `loading`: nothing on screen is waiting on these, and rolling them
   // into the same count would make an idle map look busy for reads nobody asked for.
   statReady.textContent = String(explorer.ready)
+  // Which islands are on the map changes without the store changing at all — walking across
+  // a bridge seats one — so the dim is repainted here rather than only after a write.
+  islands.paint()
 
   if (status.dataset["tone"] === "error") return
   if (explorer.pending > 0) setStatus(`loading ${explorer.pending}…`, "busy")
@@ -189,10 +227,14 @@ view.cy.on("tap", "node", (event) => {
  * ordinary node, and what draws around it is its own neighbourhood, read on the settle at
  * the end of the flight like anywhere else. The centre still draws; this only changes how a
  * node becomes the centre.
+ *
+ * `at` is what an island arrives on instead. A searched node is one node and answers to the
+ * camera; an island is the first of a neighbourhood that will grow as it is walked, and it
+ * needs water around it rather than the nearest gap — see `World.berth`.
  */
-function goTo(node: NodeMeta): void {
+function goTo(node: NodeMeta, at?: Point): void {
   if (!world.has(node.id)) {
-    view.add([world.place(node, world.landing(view.centre(), node.id))], [])
+    view.add([world.place(node, at ?? world.landing(view.centre(), node.id))], [])
     view.setAccent(node.id)
   }
   // From here on this is the click path: name a destination, read it now rather than on
@@ -300,6 +342,22 @@ el<HTMLButtonElement>("home").addEventListener("click", () => {
   if (view.accent) view.focus(view.accent)
 })
 
+/**
+ * The HUD folds away.
+ *
+ * Everything in it is a number to glance at; the islands below it are what the map is
+ * navigated with, and they should not have to share a panel with seven rows of arithmetic.
+ * Folded, the rail lifts the list to the top corner on its own — which is the whole reason
+ * the left column is one flow rather than three fixed boxes.
+ *
+ * `aria-expanded` is the state, read by CSS as well as by a screen reader, so there is one
+ * place it lives rather than a class saying the same thing a second time.
+ */
+hudToggle.addEventListener("click", () => {
+  const open = hudToggle.getAttribute("aria-expanded") === "true"
+  hudToggle.setAttribute("aria-expanded", String(!open))
+})
+
 function renderedCentre(): { x: number; y: number } {
   return { x: stage.clientWidth / 2, y: stage.clientHeight / 2 }
 }
@@ -339,15 +397,19 @@ function showTotals(index: GraphIndex): void {
 }
 
 /**
- * Re-read how big the graph is.
+ * Re-read how big the graph is, and what its components are.
  *
- * Only the totals: everything else on the map is what somebody walked to, and re-reading
- * that would seat nodes nobody went to. A write is the one thing that can make this number
- * wrong without the camera moving, so it is the only thing that asks again.
+ * Only these: everything else on the map is what somebody walked to, and re-reading that
+ * would seat nodes nobody went to. A write is the one thing that can make either wrong
+ * without the camera moving — a join can merge two islands into one — so it is the only
+ * thing that asks again. Most writes leave the components exactly as they were, and
+ * `setFirstPage` is what notices that and keeps the rows it already has.
  */
 async function refreshTotals(): Promise<void> {
   try {
-    showTotals(await fetchIndex())
+    const index = await fetchIndex()
+    showTotals(index)
+    islands.setFirstPage({ islands: index.islands, cursor: index.islandCursor }, index.islandCount)
   } catch {
     // A stale count is not worth an error state over. The next write asks again.
   }
@@ -357,12 +419,20 @@ async function boot(): Promise<void> {
   setStatus("loading graph…", "busy")
   const index = await fetchIndex()
   showTotals(index)
+  islands.setFirstPage({ islands: index.islands, cursor: index.islandCursor }, index.islandCount)
+  // Only here. After this the mark follows what the reader clicks: an island is knowable from
+  // a node only by asking the store, and a crossing is the one move the page can answer for
+  // on its own. `rootId` goes with it because it is the node of that island the map will be
+  // holding, and the island's own name is a node nothing has seated.
+  islands.here(index.homeIslandId, index.rootId)
 
   // A graph with nowhere to start. Two of these, and only one is a fault: a table that has
   // been prepared and not yet written to is exactly what it should be, and reading its
   // absent root would report `no such node:` for a node nobody has made yet. The panel is
   // built before this runs, so naming the first node is available either way.
   if (!index.rootId) {
+    // Nothing is placed, so every island is off the map — and on a table with no root at all
+    // this list is the only way into any of them.
     setStatus(
       index.nodeCount > 0
         ? `⚠ ${String(index.nodeCount)} nodes and no starting point — run npm run graph:init`
@@ -387,6 +457,8 @@ async function boot(): Promise<void> {
   // neighbour seated too far to draw is still one of these neighbours, and the first
   // frame is the one place with nothing else on screen to stand in for it.
   view.showGhosts()
+  // `render` repaints the list, and it runs after the root is placed, so the island holding
+  // it is drawn as somewhere you have been on the first frame rather than a beat later.
   render()
 }
 
