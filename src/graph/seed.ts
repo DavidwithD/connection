@@ -18,6 +18,7 @@ import { db, GRAPH_TABLE_NAME, describeTarget, isLocal } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
 import { guardDrop, recreateTable, writeAll, type Item } from "./bulk.js"
 import { guardHandmade } from "./export.js"
+import { pickRoot } from "./restore.js"
 import {
   INDEX_PK,
   LABEL_OWNER_SK,
@@ -111,10 +112,9 @@ async function main(): Promise<void> {
 
   // The best-connected node makes the most interesting centre, and the client should
   // not have to Scan to find one. Written last, so it also marks a completed run.
-  const rootId = [...degree.entries()].reduce(
-    (best, entry) => (entry[1] > best[1] ? entry : best),
-    ["", -1] as [string, number],
-  )[0]
+  // `pickRoot` rather than a copy of it: the reckoning uses the same function, and until it
+  // did, the two picked different nodes out of a tie and drifted apart every seed run.
+  const rootId = pickRoot(degree)
 
   await db.send(
     new PutCommand({

@@ -159,11 +159,22 @@ export function verify(items: Item[]): { faults: string[]; graph: Graph } {
   return { faults, graph: { items, degree } }
 }
 
-/** The best-connected node makes the most interesting centre, and the page reads this
- * rather than Scanning for somewhere to begin. Same rule the seed uses. */
+/**
+ * The best-connected node makes the most interesting centre, and the page reads this rather
+ * than Scanning for somewhere to begin. The seed calls this too, rather than keeping its own
+ * copy — the two have to agree, and for a while they did not.
+ *
+ * Ties break on the id, and that is the whole reason this is not a one-line reduce. A plain
+ * "strictly greater wins" keeps whichever maximum it met first, so the answer depends on the
+ * order the degrees were counted in — node order in the seed, Scan order in the reckoning.
+ * With a hundred hubs all driven to `hubK` exactly, ties are the common case, and the two
+ * routinely disagreed about a graph neither of them was wrong about. That made
+ * `graph:init --check` report drift it could never clear.
+ */
 export function pickRoot(degree: Map<string, number>): string {
   return [...degree.entries()].reduce(
-    (best, entry) => (entry[1] > best[1] ? entry : best),
+    (best, entry) =>
+      entry[1] > best[1] || (entry[1] === best[1] && entry[0] < best[0]) ? entry : best,
     ["", -1] as [string, number],
   )[0]
 }
