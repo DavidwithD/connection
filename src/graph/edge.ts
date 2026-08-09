@@ -63,10 +63,18 @@ export function parseArgs(argv: string[]): [string, string] {
   throw new Error(USAGE)
 }
 
+/**
+ * The one refusal a caller may want to treat as an outcome rather than a fault: a bulk
+ * load meets pairs that are already joined and counts them as skipped
+ * (src/graph/load.ts). Named so that comparison is against this string and not a copy of
+ * it — the sentences below are read by people, and one of them is now read by code.
+ */
+export const ALREADY_JOINED = "they are already joined"
+
 /** Positions in the join below, so a cancellation can be read back into English. */
 const JOIN_REASONS = [
-  "they are already joined",
-  "they are already joined",
+  ALREADY_JOINED,
+  ALREADY_JOINED,
   "no such node",
   "no such node",
   "no graph seeded — run npm run graph:seed",

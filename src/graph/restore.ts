@@ -28,6 +28,7 @@ import { pathToFileURL } from "node:url"
 import { PutCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget, isLocal } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
+import { parseFileArgs } from "./args.js"
 import { guardDrop, recreateTable, writeAll, type Item } from "./bulk.js"
 import { EXPORT_VERSION, guardHandmade, type GraphExport } from "./export.js"
 import {
@@ -42,24 +43,6 @@ import {
 import { stampIslands } from "./islands.js"
 
 const USAGE = "usage: npm run graph:restore -- <file> [--dry-run]"
-
-interface Options {
-  file: string
-  dryRun: boolean
-}
-
-export function parseArgs(argv: string[]): Options {
-  let file = ""
-  let dryRun = false
-  for (const arg of argv) {
-    if (arg === "--dry-run") dryRun = true
-    else if (arg.startsWith("-")) throw new Error(`unknown argument: ${arg}\n${USAGE}`)
-    else if (file) throw new Error(`two files given: ${file} and ${arg}\n${USAGE}`)
-    else file = arg
-  }
-  if (!file) throw new Error(USAGE)
-  return { file, dryRun }
-}
 
 /**
  * What joins the two ends of an edge into one lookup key.
@@ -198,7 +181,7 @@ function read(file: string): GraphExport {
 }
 
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2))
+  const options = parseFileArgs(process.argv.slice(2), USAGE)
 
   const payload = read(options.file)
   console.log(`→ ${describeTarget(GRAPH_TABLE_NAME)}`)
