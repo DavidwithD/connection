@@ -117,6 +117,14 @@
       <div id="receipts"></div>
     </section>
 
+    <!-- Raised on the node at the centre, and nowhere else:
+         docs/decisions/0024-taking-a-node-out-with-its-edges.md. The count rides in the row
+         rather than behind a second dialogue, because the row is the asking — this is the
+         one write the page cannot take back, so what it costs belongs in the thing clicked. -->
+    <div class="panel" id="node-menu" hidden>
+      <button id="node-delete" type="button"></button>
+    </div>
+
     <div class="panel" id="controls">
       <button id="zoom-out" type="button" title="Zoom out">−</button>
       <button id="zoom-in" type="button" title="Zoom in">+</button>
@@ -126,6 +134,7 @@
     <div class="panel" id="keys">
       <span><kbd>drag</kbd> pan &nbsp; <kbd>wheel</kbd> zoom</span>
       <span><kbd>click</kbd> glide it to the middle</span>
+      <span><kbd>right-click</kbd> take the middle off the map</span>
       <span><kbd>↑↓←→</kbd> nudge the view</span>
       <!-- The only way to the other page. Down here with the keys because it is the same
            kind of thing: what you can do besides walk around. -->

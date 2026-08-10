@@ -7,7 +7,7 @@
  *   GET    /api/search?q=      nodes whose name starts with q
  *   POST   /api/nodes          create a node by name
  *   POST   /api/edges          join two nodes by id
- *   DELETE /api/nodes/:id      delete a node, for a create being taken back
+ *   DELETE /api/nodes/:id      delete a node — ?edges=1 takes its edges with it
  *   DELETE /api/edges?a=&b=    part two nodes, for a join being taken back
  *   GET    /api/graph/text     the whole graph as lines of names, to download
  *   GET    /api/graph/export   the whole graph as JSON, to download
@@ -47,7 +47,7 @@ import { EXPORT_VERSION, select, type GraphExport } from "../graph/export.js"
 import { find } from "../graph/islands.js"
 import { searchLabels } from "../graph/labels.js"
 import { apply, survey } from "../graph/load.js"
-import { createNode, deleteNode } from "../graph/node.js"
+import { createNode, deleteNode, deleteNodeWithEdges } from "../graph/node.js"
 import { Refused } from "../graph/refused.js"
 import { Unwritable, format, parse, type Shape } from "../graph/text.js"
 import {
@@ -202,16 +202,31 @@ app.post("/api/nodes", async (c) => {
 })
 
 /**
- * Delete a node, for a create being taken back.
+ * Delete a node, bare or with everything it is joined to.
  *
  * The label comes from the node's own item rather than the caller. It is what the name
  * claim's key is built from, and a caller passing the wrong one would delete the node while
  * leaving its name held by nothing — a name nobody could ever use again.
+ *
+ * Two removals behind one path, and the flag is what picks. Unflagged is the strict one an
+ * undo is built on: it refuses a node that has been joined to since, and the panel reads
+ * that refusal as the node having stayed (web/src/join.ts). Flagged parts every edge first
+ * and is refused by nothing but a node that is not there —
+ * docs/decisions/0024-taking-a-node-out-with-its-edges.md for what that costs.
  */
 app.delete("/api/nodes/:id", async (c) => {
   const id = c.req.param("id")
   const node = (await readMetas([id])).get(id)
   if (!node) return c.json({ error: `no such node: ${id}` }, 404)
+
+  if (c.req.query("edges") === "1") {
+    const parted = await write(() => deleteNodeWithEdges(id))
+    if (parted instanceof Refused) return c.json({ error: parted.message }, 409)
+    // Null is the node having gone between the read above and the write, which is the
+    // asked-for state arriving from somewhere else. Nothing was parted here, and the
+    // caller is told exactly that.
+    return c.json({ id, parted: parted ?? [] })
+  }
 
   const gone = await write(() => deleteNode(id, node.label))
   return gone instanceof Refused ? c.json({ error: gone.message }, 409) : c.json({ id })

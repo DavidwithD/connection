@@ -466,6 +466,18 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 }
 .receipt .undo:hover { color: var(--accent); border-color: var(--accent); }
 
+/* Where the pointer was, not a corner the eye has to go and find. `.panel` already fixes it
+   to the viewport, so the click's own client coordinates are the whole of the placement. */
+#node-menu { padding: 4px; }
+#node-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  border-color: transparent;
+}
+#node-menu button:hover { color: var(--accent); border-color: var(--hairline); }
+
 #controls { top: 16px; right: 16px; display: flex; gap: 6px; padding: 8px; }
 button {
   font: inherit;

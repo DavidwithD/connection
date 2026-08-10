@@ -23,10 +23,9 @@ import { addEdge, removeEdge } from "./edge.js"
 import { shares } from "./generate.js"
 import { find } from "./islands.js"
 import { resolveLabels } from "./labels.js"
-import { createNode, deleteNode } from "./node.js"
+import { createNode, deleteNodeWithEdges } from "./node.js"
 import {
   ISLAND_LIMIT,
-  readAdjacency,
   readIndex,
   readIslandCount,
   readIslandPage,
@@ -202,23 +201,20 @@ async function main(): Promise<void> {
 }
 
 /**
- * Part and delete whatever a run made, from any state it left them in.
+ * Remove whatever a run made, from any state it left it in.
  *
- * Every edge first, because the store refuses a node that still has one, and read back
- * rather than assumed: which edges exist depends on how far the run got. Failures are
- * reported and not thrown — this is the path a failure already took, and hiding the check
- * that failed behind a cleanup error helps nobody.
+ * One call does all of it (src/graph/node.ts), which is also the only exercise that write
+ * gets anywhere: what a run leaves behind is a component, and taking one apart is what it is
+ * for. Failures are reported and not thrown: this is the path a failure already took, and
+ * hiding the check that failed behind a cleanup error helps nobody.
  */
 async function tidy(nodes: NodeMeta[]): Promise<void> {
   for (const node of nodes) {
     try {
-      // Null is the node already being gone, which is the ordinary case on the second pass
-      // — the walk tidies up itself so it can check the result, and the `finally` runs
-      // anyway. Silence there, so the only thing this ever prints is a real leftover.
-      const adjacency = await readAdjacency(node.id)
-      if (!adjacency) continue
-      for (const other of adjacency.neighbourIds) await removeEdge(node.id, other)
-      await deleteNode(node.id, node.label)
+      // A node already gone answers null rather than raising, which is the ordinary case on
+      // the second pass — the walk tidies up itself so it can check the result, and the
+      // `finally` runs anyway. So the only thing this ever prints is a real leftover.
+      await deleteNodeWithEdges(node.id)
     } catch (err) {
       console.error(
         `  ⚠ could not remove ${node.label}: ${err instanceof Error ? err.message : String(err)}`,

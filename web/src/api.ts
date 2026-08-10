@@ -88,11 +88,28 @@ export class Refused extends Error {
   }
 }
 
+/**
+ * The graph having no such node — a 404.
+ *
+ * Worth its own type for the reason `Refused` is: a read that finds nothing is an answer to
+ * act on rather than a fault to report. `rootId` is derived and nothing maintains it through
+ * a removal (src/graph/init.ts), so the one node the page reads before it can draw anything
+ * is exactly the one that is allowed to have gone.
+ */
+export class Missing extends Error {
+  constructor(reason: string) {
+    super(reason)
+    this.name = "Missing"
+  }
+}
+
 /** The error body both sides agree on, unwrapped once for every route. */
 async function fail(res: Response): Promise<never> {
   const body = (await res.json().catch(() => ({}))) as { error?: string }
   const reason = body.error ?? `${String(res.status)} ${res.statusText}`
-  throw res.status === 409 ? new Refused(reason) : new Error(reason)
+  if (res.status === 409) throw new Refused(reason)
+  if (res.status === 404) throw new Missing(reason)
+  throw new Error(reason)
 }
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -166,6 +183,16 @@ export const unjoinNodes = (a: string, b: string): Promise<{ a: string; b: strin
 /** Delete a node. Throws `Refused` unless it has no edges left. */
 export const deleteNode = (id: string): Promise<{ id: string }> =>
   del<{ id: string }>(`/api/nodes/${encodeURIComponent(id)}`)
+
+/**
+ * Delete a node and everything joined to it.
+ *
+ * Answers the neighbours it parted, and the map has to be driven from that rather than
+ * from what it has drawn: a read can be `truncated`, so the picture is allowed to hold
+ * fewer edges than the node had.
+ */
+export const deleteNodeWithEdges = (id: string): Promise<{ id: string; parted: string[] }> =>
+  del<{ id: string; parted: string[] }>(`/api/nodes/${encodeURIComponent(id)}?edges=1`)
 
 /**
  * What a text file would do to the graph, read off the table and written nowhere.

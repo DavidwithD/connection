@@ -21,6 +21,8 @@ import { TransactionCanceledException } from "@aws-sdk/client-dynamodb"
 import { TransactWriteCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget } from "../db/client.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
+import { removeEdge } from "./edge.js"
+import { readAdjacency } from "./repo.js"
 import {
   INDEX_PK,
   LABEL_OWNER_SK,
@@ -205,6 +207,48 @@ export async function deleteNode(id: string, label: string): Promise<void> {
       throw new Refused(reasonFor(err.CancellationReasons, DELETE_REASONS, err.message))
     }
     throw err
+  }
+}
+
+/**
+ * Delete a node and everything it is joined to, one edge at a time.
+ *
+ * The delete above will not take a node that still holds an edge, for the reason written
+ * there, so this empties it first. Each edge goes through `removeEdge` (src/graph/edge.ts)
+ * rather than a transaction assembled here: that write already moves both halves and both
+ * degrees together and already repairs the island index behind itself, so every round of
+ * this leaves a graph that is true. None of it is atomic — a run that stops partway leaves
+ * a smaller node, and asking again finishes the job. That trade is
+ * docs/decisions/0024-taking-a-node-out-with-its-edges.md.
+ *
+ * Read again each round rather than once at the top: `readAdjacency` stops at a ceiling
+ * (src/graph/repo.ts), so a node past it hands back an instalment and the rest is still
+ * waiting. It ends because every round parts at least one edge and nothing here adds any;
+ * a join arriving from elsewhere mid-run is more work, not a loop that never closes.
+ *
+ * Null for a node that is not there, as the reads themselves answer, so a caller clearing
+ * up after itself can tell "already gone" from "would not go".
+ */
+export async function deleteNodeWithEdges(id: string): Promise<string[] | null> {
+  const parted: string[] = []
+
+  for (;;) {
+    const adjacency = await readAdjacency(id)
+    // On the first round, a node that was never here. On a later one, one that somebody
+    // else removed while this ran — and the edges already parted still happened.
+    if (!adjacency) return parted.length ? parted : null
+
+    if (!adjacency.neighbourIds.length) {
+      // The label from the read that found it empty: the store's own copy, and the newest
+      // there is. What it keys is the name claim, which a wrong one would strand.
+      await deleteNode(id, adjacency.node.label)
+      return parted
+    }
+
+    for (const other of adjacency.neighbourIds) {
+      await removeEdge(id, other)
+      parted.push(other)
+    }
   }
 }
 

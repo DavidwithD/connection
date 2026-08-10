@@ -117,7 +117,7 @@ src/graph/
   labels.ts     name -> node, exact and by prefix
   islands.ts    which nodes can reach which, as union-find over the graph
   edge.ts       joins two nodes, in one transaction
-  node.ts       creates one node, or deletes an edgeless one
+  node.ts       creates one node, or deletes one with its edges
   load.ts       surveys a reading against the table, then adds it
   refused.ts    the graph declining a write, and the reason it gives back
   smoke.ts      a component through every write that changes it
@@ -135,6 +135,7 @@ web/src/            the two pages, and the client they read the API through
   explore.ts    what the centre reads once the camera settles
   palette.ts    validated colour tokens, light and dark
   combobox.ts   a text box that hands back nodes, not text
+  writes.ts     the line every write stands in, and the receipts it leaves
   join.ts       the panel at the top: two ends, and the writes
   islands.ts    the panel down the left: every component, as somewhere to go
   main.ts       wiring, accent tracking, the HUD
@@ -342,8 +343,10 @@ and a degree must not be raised twice for one edge. Both reverse, and the revers
 constrained from the other side: a degree must not be lowered for an edge that was not
 there, and a node with edges cannot be deleted at all, because each edge is stored twice and
 the other half would be left unreachable
-([ADR 0011](docs/decisions/0011-taking-a-write-back.md)). The map page does all of this from
-the browser; see **join** below.
+([ADR 0011](docs/decisions/0011-taking-a-write-back.md)). A node that has been joined to
+leaves by parting each edge first — a second removal rather than a loosening of that rule
+([ADR 0024](docs/decisions/0024-taking-a-node-out-with-its-edges.md)). The map page does all
+of this from the browser; see **join** below.
 
 ### The map — `/`
 
@@ -355,6 +358,7 @@ Pan around an undirected cyclic graph like a map. Whatever you stop on is what l
 | wheel | Zoom toward the cursor |
 | click a node | Glide it to the middle |
 | click a ghost | Fly to the node it stands in for |
+| right-click the centre | Take it off the map, with everything joined to it |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
 
@@ -404,10 +408,16 @@ what a half-typed name falls into — `ash` is far more often the start of `Asha
 node somebody means to make. The one place they meet is a name matching nothing: there is
 no best match to take, so `↵` creates as well.
 
-**Every write can be taken back.** Each one leaves a receipt carrying `undo`, which parts
-the edge again and deletes the node if that write is what created it. It stays for thirty
-seconds. A node that something else has since been joined to is kept — the edge still
-parts. See [ADR 0011](docs/decisions/0011-taking-a-write-back.md).
+**Every write from the box can be taken back.** Each one leaves a receipt carrying `undo`,
+which parts the edge again and deletes the node if that write is what created it. It stays
+for thirty seconds. A node that something else has since been joined to is kept — the edge
+still parts. See [ADR 0011](docs/decisions/0011-taking-a-write-back.md).
+
+Taking a node off the map is the one write with no way back, since its edges cannot return
+with it. So it asks before rather than offering an undo after, and the row it asks with says
+what is going — `delete Ashanlin and its 3 edges`. It is raised on the centre alone, whose
+degree the page already knows
+([ADR 0024](docs/decisions/0024-taking-a-node-out-with-its-edges.md)).
 
 A receipt names both ends, and clicking either name puts it back in the near end, which is
 how a path costs one name per node. Clicking loads and never writes.
