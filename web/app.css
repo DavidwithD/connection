@@ -1,6 +1,9 @@
-/* The map's chrome: the panels around the stage. Linked from index.html rather than
-   imported by main.ts, so a throw in the bundle costs the page its behaviour and not
-   its styling as well. */
+/* The chrome for both pages: the panels around the map's stage, and the sheets the
+   transfer page stacks down the middle. Linked from the HTML rather than imported by the
+   bundle, so a throw in the script costs a page its behaviour and not its styling as well.
+
+   One stylesheet, because there is one set of tokens and one idea of what a bordered box
+   looks like. Two would be two, and ADR 0017 is the record of what that cost last time. */
 
 /* Tokens from web/src/palette.ts. Both modes are chosen, not flipped: the dark
    column is the same hues re-stepped for the dark surface. */
@@ -44,9 +47,10 @@ body {
   background: var(--surface);
   color: var(--ink);
   font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  overflow: hidden;
-  overscroll-behavior: none;
 }
+/* The map alone. Its stage owns the wheel and the drag, so that page may not scroll —
+   which is the one thing about it the other page must not inherit. */
+body.map { overflow: hidden; overscroll-behavior: none; }
 
 /* The stage owns the wheel and drag: nothing here scrolls or pans. */
 #stage {
@@ -58,14 +62,18 @@ body {
 }
 #stage:active { cursor: grabbing; }
 
-.panel {
-  position: fixed;
-  z-index: 2;
+/* A bordered box, wherever it sits. `.panel` is one anchored to the viewport over the map;
+   `.sheet` is one in the flow of a page that scrolls. */
+.panel, .sheet {
   background: var(--panel);
   backdrop-filter: blur(8px);
   border: 1px solid var(--hairline);
   border-radius: 10px;
   padding: 12px 14px;
+}
+.panel {
+  position: fixed;
+  z-index: 2;
 }
 
 /* The left column, as one flow.
@@ -483,6 +491,9 @@ kbd {
 }
 #keys { bottom: 16px; right: 16px; display: grid; gap: 4px; font-size: 11px; }
 #keys span { color: var(--ink-2); }
+/* The one link out of the map, in the same ink as the lines beside it. The browser's
+   underline is what marks it; the accent is reserved for the graph saying something. */
+#keys a { color: var(--ink-2); }
 
 /* ── The room, when there is less of it ───────────────────────────────────────────
    Five panels at the corners and the centre need no arithmetic while the room is
@@ -582,3 +593,151 @@ kbd {
      None does not — and the box at the top only reaches a node whose name you already know. */
   #islands ul { max-height: calc(var(--island-row) * 3); }
 }
+
+/* ------------------------------------------------------------------ the transfer page
+
+   Not a document. Two cards, three buttons and a drop target, on a page whose whole job is
+   "get a file in or out" — anything that has to be explained in a paragraph here is a thing
+   the controls should have said themselves. */
+
+#transfer {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 22px 16px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#transfer header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+#transfer h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+#transfer header a { color: var(--ink-muted); text-decoration: none; }
+#transfer header a:hover { color: var(--ink); }
+#transfer h2 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* Three across while there is room, stacked when there is not. The labels are two lines —
+   what the file is, then what it costs you to know — so a button is readable at a glance
+   and the section needs no prose under it. */
+.acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+@media (max-width: 520px) { .acts { grid-template-columns: 1fr; } }
+
+.act {
+  display: block;
+  padding: 9px 12px;
+  background: var(--plane);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.act:hover { border-color: var(--ink-muted); }
+.act b { display: block; font-weight: 500; }
+.act span { display: block; color: var(--ink-muted); font-size: 11px; }
+.act:disabled { color: var(--ink-muted); border-color: var(--hairline); cursor: default; }
+
+/* The one thing on the page that writes. Full width and accented, so which button is the
+   commitment is never a question. */
+.act.go {
+  width: 100%;
+  margin-top: 12px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 500;
+  text-align: center;
+}
+.act.go:hover { filter: brightness(1.08); }
+.act.go:disabled { filter: none; opacity: 0.55; }
+
+/* The target, and the only control in the section until a file is in it. Dashed, because
+   the same border says "not filled in yet" on the map's ghosts and its new-name box. */
+#drop {
+  display: block;
+  padding: 22px 16px;
+  border: 1px dashed var(--hairline);
+  border-radius: 8px;
+  text-align: center;
+  cursor: pointer;
+}
+#drop:hover, #drop.over { border-color: var(--accent); background: var(--plane); }
+#drop input { display: none; }
+#drop b { display: block; font-weight: 500; }
+#drop span { color: var(--ink-muted); font-size: 11px; }
+#drop code {
+  display: block;
+  margin-top: 10px;
+  color: var(--ink-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+}
+/* Once a file is chosen the box is a receipt for it, so the invitation and the example go. */
+#drop.filled { padding: 14px 16px; border-style: solid; }
+#drop.filled code { display: none; }
+
+/* Three numbers, which is the whole of what a file does to a graph. */
+#tally {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+#tally div {
+  padding: 10px 12px;
+  background: var(--plane);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+#tally b { display: block; font-size: 19px; font-weight: 500; font-variant-numeric: tabular-nums; }
+#tally span { color: var(--ink-muted); font-size: 11px; }
+
+/* The reading itself — every name and every pair. Shut by default: it is what you open when
+   you doubt the numbers above, which is not most of the time. */
+#detail { margin-top: 10px; }
+#detail summary { color: var(--ink-2); cursor: pointer; font-size: 12px; }
+#detail-body { padding-top: 8px; }
+#detail h3 {
+  margin: 8px 0 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+#detail ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 11rem;
+  overflow-y: auto;
+  color: var(--ink-2);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+}
+
+/* A fault is the one thing here that stops the file, and it takes the accent the map gives
+   a refused write. */
+#faults {
+  margin: 12px 0 0;
+  padding: 10px 12px 10px 30px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+#said { margin: 10px 0 0; color: var(--ink-2); font-size: 12px; }
+#said:empty { display: none; }
+#said[data-tone="error"] { color: var(--accent); }
+#said[data-tone="busy"] { color: var(--ink-muted); }

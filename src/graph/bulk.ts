@@ -32,7 +32,7 @@ export type Item = Record<string, unknown>
  * the exception it was never a rule for: reading the whole table *is* the job, and there is
  * no access pattern to design for because there is no pattern, only all of it.
  */
-export async function scanAll(label = "read"): Promise<Item[]> {
+export async function scanAll(label: string | null = "read"): Promise<Item[]> {
   const items: Item[] = []
   let start: Record<string, unknown> | undefined
   do {
@@ -41,9 +41,13 @@ export async function scanAll(label = "read"): Promise<Item[]> {
     )
     items.push(...((res.Items ?? []) as Item[]))
     start = res.LastEvaluatedKey
-    if (items.length) process.stdout.write(`\r  ${label} ${String(items.length)} items`)
+    // A null label is a caller with nowhere to put a line: the API serves this too, and a
+    // progress line redrawn with \r belongs to a terminal somebody is watching, not to a log.
+    if (label !== null && items.length) {
+      process.stdout.write(`\r  ${label} ${String(items.length)} items`)
+    }
   } while (start)
-  if (items.length) process.stdout.write("\n")
+  if (label !== null && items.length) process.stdout.write("\n")
   return items
 }
 
