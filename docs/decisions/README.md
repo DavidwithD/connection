@@ -25,6 +25,8 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0019](0019-every-island-has-an-address.md) | Every island has an address | 🔵 Proposed |
 | [0020](0020-the-islands-list-is-an-index.md) | The islands list is an index | 🔵 Proposed |
 | [0021](0021-a-graph-in-a-text-file.md) | A graph in a text file | 🔵 Proposed |
+| [0022](0022-a-graph-written-back-out.md) | A graph written back out as text | 🔵 Proposed |
+| [0023](0023-the-graph-moves-through-the-page.md) | The graph moves through the page | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>connection — graph files</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="transfer">
+    <main id="transfer">
+      <header>
+        <h1>Graph files</h1>
+        <a href="/">← map</a>
+      </header>
+
+      <!-- Out. Plain anchors: a download is a URL the browser follows, so these work whether
+           or not the bundle does, and the filename comes back on the response. -->
+      <section class="sheet">
+        <h2>Download</h2>
+        <div class="acts">
+          <a class="act" href="/api/graph/text" download>
+            <b>Names &amp; joins</b><span>.txt · editable</span>
+          </a>
+          <a class="act" href="/api/graph/text?shape=names" download>
+            <b>Names only</b><span>.txt · no edges</span>
+          </a>
+          <a class="act" href="/api/graph/export" download>
+            <b>Backup</b><span>.json · everything</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="sheet">
+        <h2>Upload</h2>
+
+        <!-- The label *is* the target, so the whole box takes a click and the input needs no
+             styling of its own. -->
+        <label id="drop" for="file">
+          <input type="file" id="file" accept=".txt,text/plain" />
+          <b id="drop-name">Drop a .txt file here</b>
+          <span id="drop-hint">or click to choose</span>
+          <!-- The format, as one line rather than a paragraph about it. -->
+          <code>Kavara | Miselin | Vessarin</code>
+        </label>
+
+        <ul id="faults" hidden></ul>
+
+        <div id="tally" hidden>
+          <div><b id="n-nodes">0</b><span>new nodes</span></div>
+          <div><b id="n-edges">0</b><span>new edges</span></div>
+          <div><b id="n-known">0</b><span>already here</span></div>
+        </div>
+
+        <details id="detail" hidden>
+          <summary>What it reads</summary>
+          <div id="detail-body"></div>
+        </details>
+
+        <button class="act go" id="apply" type="button" hidden>Add to the graph</button>
+        <p id="said"></p>
+      </section>
+    </main>
+
+    <script type="module" src="/src/transfer.ts"></script>
+  </body>
+</html>
