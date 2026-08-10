@@ -23,12 +23,8 @@
  * target and again as the next anchor. Loading never writes — a pick inside an end is the
  * only thing that does — so reaching back through the receipts can never cost an edge.
  *
- * Writes are strictly one at a time, however fast the keys come. Every edge from one node
- * updates that node's meta item and the graph's totals item, so two in flight together would
- * meet on both and DynamoDB would cancel one of them — the write hotspot
- * docs/decisions/0009-the-first-write-outside-the-seed.md names. Undos join the same line,
+ * Every write goes down the one line the page keeps (web/src/writes.ts), undos included —
  * behind whatever is already queued, so an undo can never overtake the write it reverses.
- * Serialising costs nothing visible: a receipt sits at `·` until its turn comes.
  *
  * A name that does not exist yet is created first, in its own transaction, and only then
  * joined. Two writes, so a create that lands followed by a join that is refused leaves a
@@ -43,20 +39,7 @@ import {
   type NodeMeta,
 } from "./api.js"
 import { Combobox, norm, type ComboboxHooks, type Picked } from "./combobox.js"
-
-/**
- * How long a receipt stays, and so how long its undo is reachable.
- *
- * Half a minute rather than the five seconds this started as. The panel exists so names can
- * be fired in a row, and at that rate five seconds is gone before the second name is typed
- * — an undo you have already scrolled past is not one. Refusals outlast nothing now; they
- * carry no undo, only a reason, and they are done being read sooner.
- */
-const KEPT_OK_MS = 30000
-const KEPT_REFUSED_MS = 12000
-
-/** Receipts kept on screen. Past this the oldest go, undo and all. */
-const MAX_RECEIPTS = 6
+import type { Receipt, Writes } from "./writes.js"
 
 /**
  * What an end is holding.
@@ -93,7 +76,6 @@ export interface PanelElements {
   near: EndElements
   far: EndElements
   link: HTMLElement
-  receipts: HTMLDivElement
 }
 
 export interface PanelHooks {
@@ -135,13 +117,11 @@ class Side {
 export class JoinPanel {
   private readonly near: Side
   private readonly far: Side
-  /** Writes in flight, end to end. Each link catches, so one failure never stalls it. */
-  private chain: Promise<void> = Promise.resolve()
-  private inFlight = 0
 
   constructor(
     private readonly ui: PanelElements,
     private readonly hooks: PanelHooks,
+    private readonly writes: Writes,
   ) {
     this.near = new Side(ui.near, this.wiring(() => this.near))
     this.far = new Side(ui.far, this.wiring(() => this.far))
@@ -206,9 +186,7 @@ export class JoinPanel {
 
     const pair: [Anchor, Anchor] = side === this.near ? [named, anchor] : [anchor, named]
     const receipt = this.receipt(pair, picked.kind === "create")
-    this.inFlight++
-    this.report()
-    this.enqueue(() => this.write(anchor, named, receipt))
+    this.writes.run(receipt, () => this.write(anchor, named, receipt))
   }
 
   /** Whether a pick names what the other end already holds. */
@@ -219,17 +197,6 @@ export class JoinPanel {
     // Only reachable between two names that do not exist yet: a create row is offered only
     // when nothing already carries the name, so it cannot collide with a resolved node.
     return !anchor.node && norm(anchor.label) === norm(picked.label)
-  }
-
-  /**
-   * Put a write at the back of the line.
-   *
-   * The catch is what keeps the line moving. A rejected link would leave `chain` rejected
-   * for good, and every task appended after it would be skipped in silence — one failed
-   * write turning into every later one never happening.
-   */
-  private enqueue(task: () => Promise<void>): void {
-    this.chain = this.chain.then(task).catch(() => undefined)
   }
 
   /**
@@ -249,8 +216,7 @@ export class JoinPanel {
     return made
   }
 
-  private async write(anchor: Anchor, fired: Anchor, receipt: HTMLElement): Promise<void> {
-    receipt.dataset["state"] = "busy"
+  private async write(anchor: Anchor, fired: Anchor, receipt: Receipt): Promise<void> {
     try {
       // The anchor goes in first, once. It is not part of what an undo reverses: it is the
       // thing being worked from, and taking it away under the box that names it would be a
@@ -261,18 +227,15 @@ export class JoinPanel {
 
       await joinNodes(a.id, b.id)
       this.hooks.onEdge(a, b)
-      this.settle(receipt, "ok", `joined ${a.label} and ${b.label}`)
+      receipt.settle("ok", `joined ${a.label} and ${b.label}`)
       this.offerUndo(receipt, { a, b, created: fresh ? b : null })
       this.hooks.onStatus(`joined ${a.label} and ${b.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       // A refusal is the graph answering; anything else is the write failing. Both stop this
       // pair, neither stops the next one.
-      this.settle(receipt, "warn", reason)
+      receipt.settle("warn", reason)
       this.hooks.onStatus(`⚠ ${reason}`, "error")
-    } finally {
-      this.inFlight--
-      this.report()
     }
   }
 
@@ -284,8 +247,7 @@ export class JoinPanel {
    * else has since been joined to that node the delete is refused, and rightly: the node is
    * no longer only this write's doing. The edge is still gone, which is what was asked for.
    */
-  private async revert(receipt: HTMLElement, done: Done): Promise<void> {
-    receipt.dataset["state"] = "busy"
+  private async revert(receipt: Receipt, done: Done): Promise<void> {
     try {
       await unjoinNodes(done.a.id, done.b.id)
 
@@ -300,22 +262,14 @@ export class JoinPanel {
       }
 
       this.hooks.onUndone(done.a, done.b, removed)
-      receipt.dataset["state"] = "undone"
-      receipt.title = removed ? `${done.b.label} removed` : `${done.b.label} left in place`
-      setTimeout(() => receipt.remove(), KEPT_REFUSED_MS)
+      const fate = removed ? `${done.b.label} removed` : `${done.b.label} left in place`
+      receipt.settle("undone", fate)
       this.hooks.onStatus(`undid ${done.a.label} and ${done.b.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      this.settle(receipt, "warn", reason)
+      receipt.settle("warn", reason)
       this.hooks.onStatus(`⚠ ${reason}`, "error")
-    } finally {
-      this.inFlight--
-      this.report()
     }
-  }
-
-  private report(): void {
-    if (this.inFlight > 0) this.hooks.onStatus(`writing ${String(this.inFlight)}…`, "busy")
   }
 
   private paint(): void {
@@ -343,24 +297,16 @@ export class JoinPanel {
     side.ui.input.focus()
   }
 
-  private receipt(pair: [Anchor, Anchor], isNew: boolean): HTMLElement {
-    const chip = document.createElement("span")
-    chip.className = "receipt"
-    chip.dataset["state"] = "waiting"
-    if (isNew) chip.dataset["new"] = "true"
+  private receipt(pair: [Anchor, Anchor], isNew: boolean): Receipt {
+    const chip = this.writes.open()
+    if (isNew) chip.el.dataset["new"] = "true"
 
     const sep = document.createElement("i")
     sep.className = "sep"
     sep.textContent = "·"
     // Both names, because a receipt outlives the pair that made it: the widget is showing
     // something else by the time this is read.
-    chip.append(this.reuse(chip, pair[0]), sep, this.reuse(chip, pair[1]))
-
-    this.ui.receipts.append(chip)
-    // Oldest first, so what goes is what has been readable longest.
-    while (this.ui.receipts.childElementCount > MAX_RECEIPTS) {
-      this.ui.receipts.firstElementChild?.remove()
-    }
+    chip.el.append(this.reuse(chip, pair[0]), sep, this.reuse(chip, pair[1]))
     return chip
   }
 
@@ -371,14 +317,14 @@ export class JoinPanel {
    * (0011 removes a created node along with its edge), and a refused one can name a node
    * that was never made — a dead name loaded into an end is a trap.
    */
-  private reuse(chip: HTMLElement, anchor: Anchor): HTMLButtonElement {
+  private reuse(chip: Receipt, anchor: Anchor): HTMLButtonElement {
     const button = document.createElement("button")
     button.type = "button"
     button.className = "pick"
     button.textContent = anchor.label
     button.title = `start from ${anchor.label}`
     button.addEventListener("click", () => {
-      if (chip.dataset["state"] !== "ok" || !anchor.node) return
+      if (!chip.landed || !anchor.node) return
       // Always the near end, whichever name was clicked and whatever the far end holds. A
       // rule you can predict beats one that guesses which end you meant. A fresh anchor, so
       // a queued write still holds the one it was fired at.
@@ -392,7 +338,7 @@ export class JoinPanel {
     return button
   }
 
-  private offerUndo(receipt: HTMLElement, done: Done): void {
+  private offerUndo(receipt: Receipt, done: Done): void {
     const undo = document.createElement("button")
     undo.type = "button"
     undo.className = "undo"
@@ -403,16 +349,8 @@ export class JoinPanel {
     undo.addEventListener("click", () => {
       // Gone at the click, so a second one cannot queue the same reversal twice.
       undo.remove()
-      this.inFlight++
-      this.report()
-      this.enqueue(() => this.revert(receipt, done))
+      this.writes.run(receipt, () => this.revert(receipt, done))
     })
-    receipt.append(undo)
-  }
-
-  private settle(receipt: HTMLElement, state: "ok" | "warn", why: string): void {
-    receipt.dataset["state"] = state
-    receipt.title = why
-    setTimeout(() => receipt.remove(), state === "ok" ? KEPT_OK_MS : KEPT_REFUSED_MS)
+    receipt.el.append(undo)
   }
 }

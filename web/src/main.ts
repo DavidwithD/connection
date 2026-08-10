@@ -4,6 +4,7 @@
  *   drag            pan the map
  *   wheel           zoom toward the cursor
  *   click a node    glide it to the middle, drawing its ring on the click
+ *   right-click     take the middle off the map, edges and all
  *   arrows          nudge the camera
  *   click an island cross to it, or go back to one already crossed to
  *
@@ -23,8 +24,8 @@
  *
  * See docs/decisions/0003-graph-exploration-demo-stack.md.
  */
-import { fetchIndex, fetchNeighbourhood } from "./api.js"
-import type { GraphIndex, NodeMeta } from "./api.js"
+import { Missing, deleteNodeWithEdges, fetchIndex, fetchNeighbourhood } from "./api.js"
+import type { GraphIndex, Neighbourhood, NodeMeta } from "./api.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
@@ -32,6 +33,7 @@ import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { distance, type Point } from "./placement.js"
 import { World } from "./world.js"
+import { Writes } from "./writes.js"
 
 /**
  * Camera stillness before the centre is drawn from.
@@ -79,6 +81,14 @@ const hudToggle = el<HTMLButtonElement>("hud-toggle")
 
 const world = new World()
 const view = new MapView(stage, world)
+
+/**
+ * The one line every write to the graph stands in.
+ *
+ * Built here because two things write now — the panel below, and the map itself. Either one
+ * holding the queue would be the one the other could not reach.
+ */
+const writes = new Writes(el<HTMLDivElement>("receipts"), setStatus)
 
 /**
  * Every island in the graph, as an index of places.
@@ -188,6 +198,9 @@ const settle = debounce(() => {
 let nudged = false
 
 view.cy.on("viewport", () => {
+  // The menu was raised over a node at a point on the screen. Move the map underneath it and
+  // it is pointing at whatever has drifted under the pointer instead.
+  closeMenu()
   trackAccent()
   settle(nudged ? NUDGE_SETTLE_MS : SETTLE_MS)
   nudged = false
@@ -215,6 +228,109 @@ view.cy.on("tap", "node", (event) => {
   // picture instead of completing one a beat after it stops.
   explorer.prefetch(id)
   view.focus(id)
+})
+
+/**
+ * Taking the centre off the map, edges and all.
+ *
+ * Right-click, and only on the node the map is already holding. That one is the centre for a
+ * reason — it is what the reader walked to, and it is the only node whose degree is on the
+ * page — so it is the only one the row can honestly price. A ghost is never it.
+ *
+ * The count is in the row because this is the one write nothing can take back
+ * (docs/decisions/0022-taking-a-node-out-with-its-edges.md). Everywhere else the panel lets
+ * `↵` write and offers the way back afterwards; here there is no way back, so the asking
+ * happens first and says how much graph is going.
+ */
+const menu = el<HTMLDivElement>("node-menu")
+const menuDelete = el<HTMLButtonElement>("node-delete")
+
+/** What the row would remove, and null whenever the menu is down. */
+let doomed: string | null = null
+
+function closeMenu(): void {
+  // Cheap when there is nothing to shut, because a pan calls this on every frame of itself.
+  if (menu.hidden) return
+  doomed = null
+  menu.hidden = true
+}
+
+/** "and its 3 edges", or nothing at all for a node standing on its own. */
+function priced(node: NodeMeta): string {
+  if (!node.degree) return `delete ${node.label}`
+  const edges = node.degree === 1 ? "1 edge" : `${String(node.degree)} edges`
+  return `delete ${node.label} and its ${edges}`
+}
+
+// The browser's own menu would open on top of this one.
+stage.addEventListener("contextmenu", (event) => event.preventDefault())
+
+// Anywhere but the menu itself. The row is inside it, so this never eats its own click.
+window.addEventListener("pointerdown", (event) => {
+  if (!menu.hidden && !menu.contains(event.target as Node)) closeMenu()
+})
+
+view.cy.on("cxttap", "node", (event) => {
+  const id = String(event.target.id())
+  if (id !== view.accent) return
+  const node = world.get(id)
+  if (!node) return
+
+  doomed = id
+  menuDelete.textContent = priced(node)
+  const at = event.originalEvent as MouseEvent | undefined
+  menu.style.left = `${String(at?.clientX ?? 0)}px`
+  menu.style.top = `${String(at?.clientY ?? 0)}px`
+  menu.hidden = false
+})
+
+menuDelete.addEventListener("click", () => {
+  const id = doomed
+  closeMenu()
+  if (id === null) return
+  const node = world.get(id)
+  if (!node) return
+
+  // Down the same line as every other write, behind whatever the panel has already queued.
+  const receipt = writes.open()
+  receipt.el.textContent = node.label
+  writes.run(receipt, async () => {
+    try {
+      const { parted } = await deleteNodeWithEdges(id)
+
+      // The union, because neither list covers the other. A truncated read leaves the picture
+      // holding fewer edges than the node had, so `parted` names some that were never drawn;
+      // an empty `parted` is somebody else having removed the node between the read and the
+      // write, which parts the drawn ones without this call hearing which. Either way the
+      // reply says the node is gone, and a node that is gone holds no edges.
+      const dropped: [string, string][] = []
+      for (const other of new Set([...parted, ...world.neighbours(id)])) {
+        if (world.unlink(id, other)) dropped.push([id, other])
+        world.lowerDegree(other)
+      }
+      // Unlink before forgetting: a node may only leave once nothing is joined to it, which
+      // is the rule the store's own delete enforces.
+      const gone = world.forget(id) ? [id] : []
+      view.drop(gone, dropped)
+      // `drop` clears an accent that has gone and leaves the caller to re-pick. Nothing else
+      // asks until the camera next moves, and until then the HUD would name a gap.
+      trackAccent()
+
+      receipt.settle("ok", `removed ${node.label}`)
+      void refreshTotals()
+      // After the repaint, never before: `render` writes the idle hint over whatever the
+      // status line is holding, so a message set ahead of it is one nobody reads.
+      render()
+      setStatus(`removed ${node.label}`, "idle")
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      // A run that stopped partway has parted edges the map is still drawing, and the reply
+      // carries no list of them. Nor can a fresh read recover it: reads stop at a ceiling, so
+      // an edge missing from one is not proof it has gone. The state is said, not repaired.
+      receipt.settle("warn", reason)
+      setStatus(`⚠ ${reason} — edges may already have gone; ask again to finish`, "error")
+    }
+  })
 })
 
 /**
@@ -271,7 +387,6 @@ new JoinPanel(
       clear: el<HTMLButtonElement>("far-clear"),
     },
     link: el<HTMLSpanElement>("link"),
-    receipts: el<HTMLDivElement>("receipts"),
   },
   {
     note,
@@ -313,9 +428,14 @@ new JoinPanel(
       render()
     },
   },
+  writes,
 )
 
 window.addEventListener("keydown", (event) => {
+  // Above the guard below: the menu is raised over the map, and Escape shuts it wherever the
+  // focus happens to be sitting.
+  if (event.key === "Escape") closeMenu()
+
   // The arrows below pan the camera. Inside an end of the panel they belong to the text.
   if (event.target instanceof HTMLInputElement) return
 
@@ -415,6 +535,22 @@ async function refreshTotals(): Promise<void> {
   }
 }
 
+/**
+ * The node the map opens on, or null if it is not there any more.
+ *
+ * Only `Missing` is swallowed. A read that fails for any other reason is a read that failed,
+ * and reporting it as an empty graph would turn a broken API into a table that merely looks
+ * unprepared — the one wrong answer this could give.
+ */
+async function startingPoint(id: string): Promise<Neighbourhood | null> {
+  try {
+    return await fetchNeighbourhood(id)
+  } catch (err) {
+    if (err instanceof Missing) return null
+    throw err
+  }
+}
+
 async function boot(): Promise<void> {
   setStatus("loading graph…", "busy")
   const index = await fetchIndex()
@@ -426,11 +562,20 @@ async function boot(): Promise<void> {
   // holding, and the island's own name is a node nothing has seated.
   islands.here(index.homeIslandId, index.rootId)
 
-  // A graph with nowhere to start. Two of these, and only one is a fault: a table that has
-  // been prepared and not yet written to is exactly what it should be, and reading its
-  // absent root would report `no such node:` for a node nobody has made yet. The panel is
-  // built before this runs, so naming the first node is available either way.
-  if (!index.rootId) {
+  // A graph with nowhere to start. Three ways in now, and only one of them is a fault.
+  //
+  // A table prepared and not yet written to is exactly what it should be, and reading its
+  // absent root would report `no such node:` for a node nobody has made yet. A `rootId`
+  // naming a node that has gone is the same picture from the other end: nothing maintains it
+  // through a removal (src/graph/init.ts), and taking a node off the map is the quickest way
+  // there is to make it stale — so this is a state the page reaches by being used, not one
+  // anybody has to have damaged the table to see. Either way the reckoning is `graph:init`
+  // and the islands below are the way back in.
+  //
+  // The panel is built before this runs, so naming the first node is available either way.
+  const root = index.rootId ? await startingPoint(index.rootId) : null
+
+  if (!root) {
     // Nothing is placed, so every island is off the map — and on a table with no root at all
     // this list is the only way into any of them.
     setStatus(
@@ -442,7 +587,6 @@ async function boot(): Promise<void> {
     return
   }
 
-  const root = await fetchNeighbourhood(index.rootId)
   world.place(root.node, { x: 0, y: 0 })
   const absorbed = world.absorb(root.node.id, root.neighbours)
 
