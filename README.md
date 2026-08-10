@@ -110,14 +110,15 @@ src/graph/
   args.ts       the command line, for the two commands that take a file
   init.ts       makes what is derived match the table; writes nothing else
   seed.ts       drops the table, writes a new graph
-  export.ts     copies the graph out to JSON; read-only
+  export.ts     copies the graph out, as JSON or as text; read-only
   restore.ts    checks an export, then rebuilds the table from it
+  text.ts       the graph as lines of names, read and written
   repo.ts       the reads: adjacency Query + metas BatchGet
   labels.ts     name -> node, exact and by prefix
   islands.ts    which nodes can reach which, as union-find over the graph
   edge.ts       joins two nodes, in one transaction
   node.ts       creates one node, or deletes an edgeless one
-  load.ts       reads a text file of names and joins, and adds it
+  load.ts       surveys a reading against the table, then adds it
   refused.ts    the graph declining a write, and the reason it gives back
   smoke.ts      a component through every write that changes it
 src/server/
@@ -252,6 +253,35 @@ writes nothing the second time — both "already there" refusals are counted rat
 raised, which is what makes the file editable. A misspelling is therefore a new node and not
 an error, so the plan prints every name it is about to create, and `--dry-run` prints the
 pairs too: nothing in the file says whether a line was meant as a star or a chain.
+
+The way back out is the same command that writes the JSON
+([ADR 0022](docs/decisions/0022-a-graph-written-back-out.md)):
+
+```bash
+npm run graph:export -- --text    # names and joins → graph-export.txt
+npm run graph:export -- --names   # every name, one per line, and no joins
+```
+
+Both write the whole graph, whoever made it — "what a seed would not rebuild" is a question
+about a backup, and this is the graph written down. Each edge is written from its busier
+end, so a hub gathers its neighbours onto one line; a node with no edges gets a line of its
+own; islands are paragraphs, largest first. Nothing is ordered by id and nothing is dated,
+so the file is stable enough to commit and diff — and a graph that has not changed exports
+to the same bytes twice, which is what makes the whole trip checkable:
+
+```bash
+npm run graph:export -- --text --out a.txt
+npm run ddb:reset && npm run ddb:migrate && npm run graph:init
+npm run graph:load -- a.txt
+npm run graph:export -- --text --out b.txt   # no diff against a.txt
+```
+
+The second file matches the first though every id in the table changed on the way through,
+which is the whole reason nothing in the format is ordered by one.
+
+What it drops is everything a reload derives: ids, degrees, `rootId`, the index item. A name
+holding `|` or `#` cannot be written down at all, and the export refuses rather than
+producing a file that quietly reads back as a different graph.
 
 Each node and each edge is its own transaction and they run in series, at roughly a round
 trip per name and four per pair — seconds for a small file locally, minutes for a large one

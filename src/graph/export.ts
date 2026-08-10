@@ -1,19 +1,25 @@
 /**
- * Take a copy of the graph out of the table, as JSON.
+ * Take a copy of the graph out of the table.
  *
- *   npm run graph:export                       # only what was made by hand
+ *   npm run graph:export                       # only what was made by hand, as JSON
  *   npm run graph:export -- --all              # the seed as well
  *   npm run graph:export -- --out mine.json    # somewhere other than graph-export.json
+ *   npm run graph:export -- --text             # the whole graph, as lines of names
+ *   npm run graph:export -- --names            # the whole graph's names and nothing else
  *
  * Read-only, and the half of a rebuild that can be run as often as you like. Nothing here
  * touches the table; `graph:restore` is what puts the file back, and it drops the table to
  * do it. Splitting them that way means the destructive step reads a file rather than a
  * database, so it can check what it is about to write before anything is gone.
  *
- * The whole point is the default: a seed run replaces the graph, so nodes made since the
- * last one have to leave before it and come back after. Which items those are is read from
- * the id shape alone — `n-<uuid>` against the seed's `n0000` — and nothing else in the table
- * records where an item came from (src/graph/keys.ts).
+ * The whole point of the JSON is its default: a seed run replaces the graph, so nodes made
+ * since the last one have to leave before it and come back after. Which items those are is
+ * read from the id shape alone — `n-<uuid>` against the seed's `n0000` — and nothing else in
+ * the table records where an item came from (src/graph/keys.ts).
+ *
+ * `--text` and `--names` take no view on any of that. They write the graph as somebody would
+ * have typed it (src/graph/text.ts), which is every node there is: the split above is a
+ * question about surviving a re-seed, and a file of names is not a backup.
  *
  * A subset of a graph is not automatically a graph, and that is what most of this file is
  * about. Three things are corrected on the way out, because each of them is an inconsistency
@@ -45,8 +51,12 @@ import {
   isSeedId,
   nodeId,
 } from "./keys.js"
+import { format, type Shape } from "./text.js"
 
 const DEFAULT_OUT = "graph-export.json"
+
+/** Where a `--text` or `--names` run goes instead, since it is not JSON and should not say so. */
+const DEFAULT_TEXT_OUT = "graph-export.txt"
 
 /** What a restore reads back. Versioned so a file from an older shape is refused, not
  * misread — there is exactly one version so far, and this is where a second one would
@@ -64,20 +74,39 @@ export interface GraphExport {
 
 interface Options {
   all: boolean
+  /** Null for the JSON dump; a shape for one of the two text files. */
+  shape: Shape | null
   out: string
 }
 
+const USAGE =
+  "usage: npm run graph:export -- [--all] [--text | --names] [--out <path>]"
+
 export function parseArgs(argv: string[]): Options {
-  const options: Options = { all: false, out: DEFAULT_OUT }
+  const options: Options = { all: false, shape: null, out: "" }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
     if (arg === "--all") options.all = true
+    else if (arg === "--text") options.shape = "joins"
+    else if (arg === "--names") options.shape = "names"
     else if (arg === "--out") {
       const value = argv[++i]
       if (!value) throw new Error("--out needs a path")
       options.out = value
-    } else throw new Error(`unknown argument: ${arg}\nusage: npm run graph:export -- [--all] [--out <path>]`)
+    } else throw new Error(`unknown argument: ${arg}\n${USAGE}`)
   }
+
+  // Refused rather than ignored. A text file is the whole graph either way, so accepting
+  // `--all` here would be accepting a flag that changes nothing — and the reader of that
+  // command line would go on believing it had asked for something.
+  if (options.shape && options.all) {
+    throw new Error(
+      "--all is what a text file always is: every node, whether a seed wrote it or not\n" +
+        "  drop --all, or drop --text to take the graph out as JSON",
+    )
+  }
+
+  options.out ||= options.shape ? DEFAULT_TEXT_OUT : DEFAULT_OUT
   return options
 }
 
@@ -241,23 +270,37 @@ function classify(items: Item[]): void {
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2))
+  const whole = options.all || options.shape !== null
 
   console.log(`→ ${describeTarget(GRAPH_TABLE_NAME)}`)
 
   const items = await scanAll()
   if (!items.length) throw new Error("the table is empty — nothing to export")
-  // Only the default run has to tell the two apart, so only the default run can be stopped
-  // by an id it cannot place. `--all` keeps every node whatever its shape, which is the
-  // escape this refusal names.
-  if (!options.all) classify(items)
+  // Only a run that has to tell the two apart can be stopped by an id it cannot place.
+  // Keeping every node whatever its shape — `--all`, or any text run — is the escape this
+  // refusal names.
+  if (!whole) classify(items)
 
-  const selection = select(items, options.all ? () => true : isMadeId)
+  const selection = select(items, whole ? () => true : isMadeId)
   if (!selection.counts.nodes) {
     throw new Error(
-      options.all
+      whole
         ? "no nodes in the table"
         : "no nodes were made by hand — there is nothing here the seed would not rebuild",
     )
+  }
+
+  if (options.shape) {
+    writeFileSync(options.out, format(selection.items, options.shape))
+    const { nodes, edges } = selection.counts
+    console.log(
+      options.shape === "names"
+        ? `  wrote ${String(nodes)} name(s) — the nodes, and none of the ${String(edges)} edge(s)`
+        : `  wrote ${String(nodes)} node(s) and ${String(edges)} edge(s)`,
+    )
+    console.log(`✓ wrote ${options.out}`)
+    console.log(`  put it back with: npm run graph:load -- ${options.out}`)
+    return
   }
 
   const payload: GraphExport = {

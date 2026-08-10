@@ -1,31 +1,20 @@
 /**
- * Read a graph out of a text file and add it to the one already in the table.
+ * Add a graph read out of a text file to the one already in the table.
  *
  *   npm run graph:load -- graph.txt
  *   npm run graph:load -- graph.txt --dry-run   # say what it would write, write nothing
  *
- * A line names a node and whoever it joins:
+ * The file is lines of names — a node and whoever it joins — and what one means is
+ * src/graph/text.ts, which reads them and writes them back out. This is what is done with a
+ * reading: survey it against the table, then apply it one write at a time.
  *
- *   # a comment, and a blank line, both say nothing
- *   Thorne                        # a node and no edges — an island of one
- *   Kavara | Miselin | Vessarin   # Kavara joins Miselin, and Kavara joins Vessarin
+ * A line's reading is not visible in the line, which is why `--dry-run` prints the pairs it
+ * read rather than leaving them to be assumed.
  *
- * The first name on a line is the one the rest are joined to. A star, not a chain:
- * `a | b | c` is two edges out of `a`, not a path through `b`. That is how a graph is
- * thought about while it is being typed — this node, and what it connects to — it puts a
- * hub on one line, and it gives a line of one name the meaning it should have: a node with
- * no edges, which is the component ADR 0019 exists for and the case a chain reading would
- * have to bolt on as a special one. A path is still a path, one line per step.
- *
- * Nothing in the file says which of those two rules is in force, so `--dry-run` prints the
- * pairs it read rather than leaving them to be assumed.
- *
- * Names, not ids, because a label already owns a partition and resolves in one read
- * (src/graph/keys.ts, docs/decisions/0008-finding-a-node-by-name.md) — a node *is* its name
- * here (docs/decisions/0012-the-name-is-the-node.md), so a file of names needs no id column
- * and no header. What that costs is the one failure this cannot catch: a misspelled name is
- * a new node, not an error, and it looks exactly like a node you meant to add. Which is why
- * the plan prints every name it is about to create, and why `--dry-run` exists.
+ * Names are the identity (docs/decisions/0012-the-name-is-the-node.md), and what that costs
+ * is the one failure this cannot catch: a misspelled name is a new node, not an error, and
+ * it looks exactly like a node you meant to add. Which is why the plan prints every name it
+ * is about to create, and why `--dry-run` exists.
  *
  * Two things it deliberately is not:
  *
@@ -63,93 +52,15 @@ import { NAME_TAKEN, createNode } from "./node.js"
 import { Refused } from "./refused.js"
 import { batchGet } from "./repo.js"
 import { GRAPH_KEYS as KEYS } from "./table.js"
+import { pairKey, parse, type Reading } from "./text.js"
 
 const USAGE = "usage: npm run graph:load -- <file> [--dry-run]"
-
-/** What separates the names on a line, and what starts a comment. A name can hold neither. */
-const SEPARATOR = "|"
-const COMMENT = "#"
 
 /** How many names or faults are printed before the rest become a count. */
 const SHOWN = 20
 
-/**
- * One pair, either way round, as one key.
- *
- * `\u0000` joins the two because no name can hold one, so the key needs no escaping — and
- * it is written as an escape rather than the byte for the reason src/graph/restore.ts
- * gives: a NUL early in a file makes git call the whole thing binary. Not `edgeKey` from
- * keys.ts, which canonicalises a pair of *ids* with a character a name is free to contain.
- */
-const pairKey = (a: string, b: string): string =>
-  [normaliseLabel(a), normaliseLabel(b)].sort().join("\u0000")
-
-export interface Reading {
-  /** Every distinct name, in the order the file first spells it. */
-  names: string[]
-  /** Every distinct pair, by those same spellings. */
-  pairs: [string, string][]
-  faults: string[]
-  /** Lines that said something, comments and blanks not counted. */
-  lines: number
-}
-
-/**
- * The file, as names and pairs. Pure: it reads no table and asks nothing of one.
- *
- * Every fault is collected rather than thrown at the first, which is the habit
- * src/graph/restore.ts sets for the same reason — a hand-typed file repaired one complaint
- * at a time is an afternoon.
- *
- * Names are deduplicated by their normalised form and kept in the spelling the file uses
- * first, because that is the spelling `createNode` will store and the one every later line
- * has to agree with. `normaliseLabel` folds case and runs of whitespace and nothing else
- * (src/graph/keys.ts), so `Kavara` and `kavara` are one node while `Zoë` and `Zoe` are two.
- */
-export function parse(text: string): Reading {
-  const faults: string[] = []
-  const names = new Map<string, string>() // normalised -> the spelling that came first
-  const pairs = new Map<string, [string, string]>()
-  let lines = 0
-
-  text.split(/\r?\n/).forEach((raw, index) => {
-    const at = index + 1
-    const hash = raw.indexOf(COMMENT)
-    const line = (hash < 0 ? raw : raw.slice(0, hash)).trim()
-    if (!line) return
-    lines++
-
-    const named: string[] = []
-    for (const field of line.split(SEPARATOR)) {
-      // The same tidy `createNode` performs, so what is checked here is what is written.
-      const name = field.trim().replace(/\s+/g, " ")
-      const key = normaliseLabel(name)
-      if (!key) {
-        faults.push(`line ${String(at)}: "${line}" has an empty name`)
-        continue
-      }
-      if (!names.has(key)) names.set(key, name)
-      named.push(names.get(key)!)
-    }
-
-    // Everything on the line was empty; the fault above already says so.
-    const [anchor, ...rest] = named
-    if (anchor === undefined) return
-
-    for (const other of rest) {
-      // Both are first spellings, so equal strings are the one node — and the store has no
-      // self-edges (src/graph/edge.ts), so this is the file's mistake rather than a write's.
-      if (other === anchor) {
-        faults.push(`line ${String(at)}: "${anchor}" is joined to itself`)
-        continue
-      }
-      const key = pairKey(anchor, other)
-      if (!pairs.has(key)) pairs.set(key, [anchor, other])
-    }
-  })
-
-  return { names: [...names.values()], pairs: [...pairs.values()], faults, lines }
-}
+/** How many writes go by between one word about them and the next. */
+const REPORT_EVERY = 25
 
 export interface Plan {
   /** Names the table does not hold yet, in the file's order. */
@@ -224,6 +135,15 @@ function some(items: string[]): string {
 }
 
 /**
+ * How far along a load is, for a caller with somewhere to put it.
+ *
+ * Called at the same moments the terminal redraws its line, so the throttle is here rather
+ * than in each caller — a run that reported every write would spend real time on the
+ * reporting.
+ */
+export type Progress = (done: number, total: number, what: "name" | "pair") => void
+
+/**
  * Write the plan. Nodes first, because an edge needs both its ends.
  *
  * The two refusals that mean "already here" are counted rather than raised: this is what
@@ -231,8 +151,15 @@ function some(items: string[]): string {
  * one wrote. Every other refusal is real — "no graph seeded" is not something to skip past
  * five hundred times — and stops the run where it stands, having written whatever came
  * before it. There is no transaction over the file, and there could not be one.
+ *
+ * Exported, and saying nothing on its own, because the API serves this file too
+ * (src/server/index.ts). A write loop copied to sit behind a route is a write loop that
+ * stops counting the refusals the moment one of them is reworded.
  */
-async function write(plan: Plan): Promise<{ created: number; joined: number }> {
+export async function apply(
+  plan: Plan,
+  onProgress: Progress = () => undefined,
+): Promise<{ created: number; joined: number }> {
   const nodes = new Map(plan.known)
   let created = 0
 
@@ -251,11 +178,10 @@ async function write(plan: Plan): Promise<{ created: number; joined: number }> {
     // Position, not `created` — a name claimed underneath the run would otherwise leave the
     // line short of its own total, and what was created is the line at the end.
     const done = index + 1
-    if (done % 25 === 0 || done === plan.fresh.length) {
-      process.stdout.write(`\r  ${String(done)}/${String(plan.fresh.length)} name(s)`)
+    if (done % REPORT_EVERY === 0 || done === plan.fresh.length) {
+      onProgress(done, plan.fresh.length, "name")
     }
   }
-  if (plan.fresh.length) process.stdout.write("\n")
 
   let joined = 0
   for (const [index, [a, b]] of plan.joins.entries()) {
@@ -272,11 +198,10 @@ async function write(plan: Plan): Promise<{ created: number; joined: number }> {
       if (!(err instanceof Refused) || err.message !== ALREADY_JOINED) throw err
     }
     const done = index + 1
-    if (done % 25 === 0 || done === plan.joins.length) {
-      process.stdout.write(`\r  ${String(done)}/${String(plan.joins.length)} pair(s)`)
+    if (done % REPORT_EVERY === 0 || done === plan.joins.length) {
+      onProgress(done, plan.joins.length, "pair")
     }
   }
-  if (plan.joins.length) process.stdout.write("\n")
 
   return { created, joined }
 }
@@ -334,7 +259,12 @@ async function main(): Promise<void> {
     return
   }
 
-  const done = await write(plan)
+  // One line, redrawn, and a newline once each stage is through — which only the terminal
+  // wants, so only the terminal asks for it.
+  const done = await apply(plan, (at, total, what) => {
+    process.stdout.write(`\r  ${String(at)}/${String(total)} ${what}(s)`)
+    if (at === total) process.stdout.write("\n")
+  })
   console.log(
     `✓ loaded ${String(done.created)} node(s) and ${String(done.joined)} edge(s). ` +
       `Run npm run graph:init to move the root and settle the islands`,
