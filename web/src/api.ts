@@ -1,5 +1,12 @@
 /**
- * The API client, and the only place that knows the wire shape.
+ * The API client: every call a page makes, and the shape of what comes back.
+ *
+ * With one exception, and it is worth knowing about. The two downloads on
+ * web/transfer.html are `href`s in the markup, because a download is a URL the browser
+ * follows rather than a call anything here makes — which also means they are the only
+ * paths in the client that nothing checks. The docs gate reads this file against the
+ * routes (docs/checks.md); a route renamed out from under those two anchors breaks them
+ * quietly.
  *
  * Reads are cancellable so a node that has been panned away from stops being paid for.
  * Writes are not, and the asymmetry is deliberate: abandoning a read costs a reply nobody
@@ -117,11 +124,18 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await res.json()) as T
 }
 
+/**
+ * A body that is already a string is a file, and goes as one.
+ *
+ * The alternative is multipart, which would mean a parser on the other side for a request
+ * that carries one thing and no metadata about it.
+ */
 async function post<T>(path: string, body: unknown): Promise<T> {
+  const text = typeof body === "string"
   const res = await fetch(path, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    headers: { "content-type": text ? "text/plain; charset=utf-8" : "application/json" },
+    body: text ? body : JSON.stringify(body),
   })
   if (!res.ok) await fail(res)
   return (await res.json()) as T
@@ -179,3 +193,30 @@ export const deleteNode = (id: string): Promise<{ id: string }> =>
  */
 export const deleteNodeWithEdges = (id: string): Promise<{ id: string; parted: string[] }> =>
   del<{ id: string; parted: string[] }>(`/api/nodes/${encodeURIComponent(id)}?edges=1`)
+
+/**
+ * What a text file would do to the graph, read off the table and written nowhere.
+ *
+ * `faults` is a file that cannot be applied at all; everything else describes one that can.
+ * The pairs ride along because a line's reading is not visible in the line — src/graph/text.ts.
+ */
+export interface LoadPlan {
+  /** Lines that said something — comments and blanks are not counted. */
+  lines: number
+  faults: string[]
+  /** Names the graph does not hold yet. Every one is a node, and a misspelling looks the same. */
+  fresh: string[]
+  joins: [string, string][]
+  /** Pairs already joined, which a second run of the same file would skip. */
+  joined: number
+  /** True when applying it would be more writes than one request will hold. */
+  over: boolean
+  limit: number
+}
+
+export const previewGraphText = (text: string): Promise<LoadPlan> =>
+  post<LoadPlan>("/api/graph/text?dry=1", text)
+
+/** Add the file. Throws `Refused` if the graph declines a write it has to make. */
+export const loadGraphText = (text: string): Promise<{ created: number; joined: number }> =>
+  post<{ created: number; joined: number }>("/api/graph/text", text)

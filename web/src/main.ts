@@ -238,7 +238,7 @@ view.cy.on("tap", "node", (event) => {
  * page — so it is the only one the row can honestly price. A ghost is never it.
  *
  * The count is in the row because this is the one write nothing can take back
- * (docs/decisions/0022-taking-a-node-out-with-its-edges.md). Everywhere else the panel lets
+ * (docs/decisions/0024-taking-a-node-out-with-its-edges.md). Everywhere else the panel lets
  * `↵` write and offers the way back afterwards; here there is no way back, so the asking
  * happens first and says how much graph is going.
  */

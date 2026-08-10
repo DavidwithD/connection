@@ -355,7 +355,7 @@ export class World {
    * What would break the rule is *reusing* the id later at a different spot, so the node
    * has to be genuinely gone from the store too. Both callers have removed it there first:
    * an undone create, and a node taken off the map with its edges
-   * (docs/decisions/0022-taking-a-node-out-with-its-edges.md).
+   * (docs/decisions/0024-taking-a-node-out-with-its-edges.md).
    *
    * Refuses a node with edges. Removing one would leave adjacency in its neighbours
    * pointing at nothing, and `pairs` counting an edge with one end missing.

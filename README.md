@@ -110,22 +110,24 @@ src/graph/
   args.ts       the command line, for the two commands that take a file
   init.ts       makes what is derived match the table; writes nothing else
   seed.ts       drops the table, writes a new graph
-  export.ts     copies the graph out to JSON; read-only
+  export.ts     copies the graph out, as JSON or as text; read-only
   restore.ts    checks an export, then rebuilds the table from it
+  text.ts       the graph as lines of names, read and written
   repo.ts       the reads: adjacency Query + metas BatchGet
   labels.ts     name -> node, exact and by prefix
   islands.ts    which nodes can reach which, as union-find over the graph
   edge.ts       joins two nodes, in one transaction
   node.ts       creates one node, or deletes one with its edges
-  load.ts       reads a text file of names and joins, and adds it
+  load.ts       surveys a reading against the table, then adds it
   refused.ts    the graph declining a write, and the reason it gives back
   smoke.ts      a component through every write that changes it
 src/server/
   index.ts      the graph API (Hono)
 web/
   index.html    the map
-  app.css       the chrome around it
-web/src/            the map, and the client it reads the API through
+  transfer.html a graph out as a file, and a file in as a graph
+  app.css       the chrome around both
+web/src/            the two pages, and the client they read the API through
   api.ts        the wire shape
   placement.ts  seating geometry + spatial index — pure, no renderer
   world.ts      the store: frozen positions, adjacency, degrees
@@ -137,6 +139,7 @@ web/src/            the map, and the client it reads the API through
   join.ts       the panel at the top: two ends, and the writes
   islands.ts    the panel down the left: every component, as somewhere to go
   main.ts       wiring, accent tracking, the HUD
+  transfer.ts   the file page: survey first, write on the second click
 scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
   adr-gate.py          the decision gate — shape, budgets, wiring
@@ -195,8 +198,11 @@ up front.
 
 ## The graph demo
 
-One page, backed by the graph API. A second page answering the same question one node
-at a time was retired — [ADR 0017](docs/decisions/0017-the-second-view-goes.md).
+Two pages, backed by the graph API. The map is the only *view* of the graph — a second one
+answering the same question a node at a time was retired,
+[ADR 0017](docs/decisions/0017-the-second-view-goes.md). The other draws nothing at all: it
+is where a graph arrives as a file and leaves as one,
+[ADR 0023](docs/decisions/0023-the-graph-moves-through-the-page.md).
 
 ```bash
 npm run dev:db          # local DynamoDB + tables
@@ -254,6 +260,35 @@ raised, which is what makes the file editable. A misspelling is therefore a new 
 an error, so the plan prints every name it is about to create, and `--dry-run` prints the
 pairs too: nothing in the file says whether a line was meant as a star or a chain.
 
+The way back out is the same command that writes the JSON
+([ADR 0022](docs/decisions/0022-a-graph-written-back-out.md)):
+
+```bash
+npm run graph:export -- --text    # names and joins → graph-export.txt
+npm run graph:export -- --names   # every name, one per line, and no joins
+```
+
+Both write the whole graph, whoever made it — "what a seed would not rebuild" is a question
+about a backup, and this is the graph written down. Each edge is written from its busier
+end, so a hub gathers its neighbours onto one line; a node with no edges gets a line of its
+own; islands are paragraphs, largest first. Nothing is ordered by id and nothing is dated,
+so the file is stable enough to commit and diff — and a graph that has not changed exports
+to the same bytes twice, which is what makes the whole trip checkable:
+
+```bash
+npm run graph:export -- --text --out a.txt
+npm run ddb:reset && npm run ddb:migrate && npm run graph:init
+npm run graph:load -- a.txt
+npm run graph:export -- --text --out b.txt   # no diff against a.txt
+```
+
+The second file matches the first though every id in the table changed on the way through,
+which is the whole reason nothing in the format is ordered by one.
+
+What it drops is everything a reload derives: ids, degrees, `rootId`, the index item. A name
+holding `|` or `#` cannot be written down at all, and the export refuses rather than
+producing a file that quietly reads back as a different graph.
+
 Each node and each edge is its own transaction and they run in series, at roughly a round
 trip per name and four per pair — seconds for a small file locally, minutes for a large one
 against AWS. A load leaves `rootId` where it was, so `npm run graph:init` afterwards is what
@@ -310,7 +345,7 @@ there, and a node with edges cannot be deleted at all, because each edge is stor
 the other half would be left unreachable
 ([ADR 0011](docs/decisions/0011-taking-a-write-back.md)). A node that has been joined to
 leaves by parting each edge first — a second removal rather than a loosening of that rule
-([ADR 0022](docs/decisions/0022-taking-a-node-out-with-its-edges.md)). The map page does all
+([ADR 0024](docs/decisions/0024-taking-a-node-out-with-its-edges.md)). The map page does all
 of this from the browser; see **join** below.
 
 ### The map — `/`
@@ -382,7 +417,7 @@ Taking a node off the map is the one write with no way back, since its edges can
 with it. So it asks before rather than offering an undo after, and the row it asks with says
 what is going — `delete Ashanlin and its 3 edges`. It is raised on the centre alone, whose
 degree the page already knows
-([ADR 0022](docs/decisions/0022-taking-a-node-out-with-its-edges.md)).
+([ADR 0024](docs/decisions/0024-taking-a-node-out-with-its-edges.md)).
 
 A receipt names both ends, and clicking either name puts it back in the near end, which is
 how a path costs one name per node. Clicking loads and never writes.
@@ -395,6 +430,26 @@ How the map is put together, and what has to stay true, is in [design](docs/desi
 [ADR 0004](docs/decisions/0004-the-centre-and-its-neighbourhood.md) and
 [ADR 0006](docs/decisions/0006-only-the-centre-reads.md) hold the reasoning, and what each
 choice cost.
+
+### Graph files — `/transfer.html`
+
+Linked from the foot of the map. Downloads first — the whole graph as names and joins, as
+names alone, or as the JSON `graph:restore` reads — then the way in.
+
+Choosing a file does not write it. It is surveyed against the table and the reading is shown
+back: three numbers, and under them every new name and every pair it read. Those pairs are
+the point, for the reason **Writing a graph down** gives above. **Add to the graph** appears
+once there is something to add.
+
+A file with a fault in it — a name joined to itself, an empty field — is refused whole, and
+the faults are what the page shows instead of the numbers. A file the graph already holds
+says so and offers no button.
+
+Two things it will not do. Restoring a JSON export stays `npm run graph:restore`, because
+what guards that command cannot be carried onto a page
+([ADR 0023](docs/decisions/0023-the-graph-moves-through-the-page.md)). A load past what one
+request will hold is refused, naming `npm run graph:load`, which has no ceiling because
+nothing is waiting on a socket.
 
 ## Docs
 

@@ -2,8 +2,10 @@ import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
 
 /**
- * `web/index.html` is the map — pan an accumulating world (ADR 0003, ADR 0004). It talks
- * to the Hono API in `src/server/`.
+ * `web/index.html` is the map — pan an accumulating world (ADR 0003, ADR 0004).
+ * `web/transfer.html` is where a graph arrives as a file and leaves as one (ADR 0023). Both
+ * talk to the Hono API in `src/server/`, and the second draws nothing, which is what keeps
+ * it from being the second view ADR 0017 deleted.
  *
  * Dev proxies `/api` rather than enabling CORS, so the browser sees a single origin and
  * the API needs no knowledge of the page's host.
@@ -26,8 +28,8 @@ export default defineConfig({
     outDir: "../dist/web",
     emptyOutDir: true,
     rollupOptions: {
-      // Named rather than left to default, so the bundle carries the page's own name.
-      input: { map: page("index") },
+      // Named rather than left to default, so each bundle carries its page's own name.
+      input: { map: page("index"), transfer: page("transfer") },
     },
   },
 })

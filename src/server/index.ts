@@ -9,6 +9,9 @@
  *   POST   /api/edges          join two nodes by id
  *   DELETE /api/nodes/:id      delete a node — ?edges=1 takes its edges with it
  *   DELETE /api/edges?a=&b=    part two nodes, for a join being taken back
+ *   GET    /api/graph/text     the whole graph as lines of names, to download
+ *   GET    /api/graph/export   the whole graph as JSON, to download
+ *   POST   /api/graph/text     add a file of names, or say what it would add
  *
  * The client seats new nodes itself, so a read only ever answers "who is next to this?" —
  * one Query plus one BatchGet. Vite proxies /api here in development, so there is one
@@ -24,17 +27,29 @@
  * node through the search box, and resolving it again here would reintroduce exactly the
  * ambiguity that box exists to remove.
  *
- * See docs/decisions/0003-graph-exploration-demo-stack.md and
- * docs/decisions/0010-writing-to-the-graph-from-the-browser.md.
+ * The last three move whole graphs rather than one node, and they are the only routes here
+ * that read the table with a Scan — the exception src/graph/bulk.ts already names, now
+ * reachable by a click rather than by a command. What is *not* here is the other half of
+ * that: restoring a JSON export drops the table, and its guard is an environment variable
+ * and a rescue file written next to whoever ran it (src/graph/export.ts). Neither survives
+ * being turned into a button, so that one stays a command.
+ *
+ * See docs/decisions/0003-graph-exploration-demo-stack.md,
+ * docs/decisions/0010-writing-to-the-graph-from-the-browser.md and
+ * docs/decisions/0023-the-graph-moves-through-the-page.md.
  */
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { GRAPH_TABLE_NAME, describeTarget } from "../db/client.js"
+import { scanAll } from "../graph/bulk.js"
 import { addEdge, removeEdge } from "../graph/edge.js"
+import { EXPORT_VERSION, select, type GraphExport } from "../graph/export.js"
 import { find } from "../graph/islands.js"
 import { searchLabels } from "../graph/labels.js"
+import { apply, survey } from "../graph/load.js"
 import { createNode, deleteNode, deleteNodeWithEdges } from "../graph/node.js"
 import { Refused } from "../graph/refused.js"
+import { Unwritable, format, parse, type Shape } from "../graph/text.js"
 import {
   ISLAND_LIMIT,
   isIslandCursor,
@@ -197,7 +212,7 @@ app.post("/api/nodes", async (c) => {
  * undo is built on: it refuses a node that has been joined to since, and the panel reads
  * that refusal as the node having stayed (web/src/join.ts). Flagged parts every edge first
  * and is refused by nothing but a node that is not there —
- * docs/decisions/0022-taking-a-node-out-with-its-edges.md for what that costs.
+ * docs/decisions/0024-taking-a-node-out-with-its-edges.md for what that costs.
  */
 app.delete("/api/nodes/:id", async (c) => {
   const id = c.req.param("id")
@@ -253,6 +268,147 @@ app.delete("/api/edges", async (c) => {
   return parted instanceof Refused
     ? c.json({ error: parted.message }, 409)
     : c.json({ a: ids[0], b: ids[1] })
+})
+
+/**
+ * How much of a file one request will write.
+ *
+ * A load is one round trip per new name and four per new pair, in series and by design
+ * (docs/decisions/0021-a-graph-in-a-text-file.md), so a large file is not slow here in the
+ * way a slow query is slow — it is a request that stays open for minutes and cannot be
+ * resumed if the browser gives up on it. The command has no such ceiling: it prints as it
+ * goes, and nobody is waiting on a socket.
+ */
+const LOAD_LIMIT = 500
+
+/**
+ * And how much text is taken in at all.
+ *
+ * Checked after the body is in memory, which is where a limit this side of a reverse proxy
+ * can be checked at all — what it saves is the parse and the survey, not the read.
+ */
+const MAX_CHARS = 1_000_000
+
+/** Both downloads name their file here, so a saved graph is not called `text`. */
+const attachment = (name: string): Record<string, string> => ({
+  "content-disposition": `attachment; filename="${name}"`,
+})
+
+/**
+ * The whole graph as lines of names.
+ *
+ * Every node, not only the ones made by hand: which items a *backup* should hold is a
+ * question about surviving a re-seed, and this is the graph written down
+ * (src/graph/text.ts). `select` still runs, because a subset of a graph is not automatically
+ * one and its half-edge rule is the reason.
+ *
+ * A name holding `|` or `#` cannot be written at all, and that comes back as a 409 — the
+ * graph declining, which the page already knows how to show, rather than a fault.
+ */
+app.get("/api/graph/text", async (c) => {
+  const asked = c.req.query("shape") ?? "joins"
+  if (asked !== "joins" && asked !== "names") {
+    return c.json({ error: "shape must be joins or names" }, 400)
+  }
+  const shape: Shape = asked
+
+  const items = await scanAll(null)
+  if (!items.length) return c.json({ error: "the table is empty — nothing to export" }, 404)
+
+  try {
+    const selection = select(items, () => true)
+    return c.text(format(selection.items, shape), 200, {
+      "content-type": "text/plain; charset=utf-8",
+      ...attachment(shape === "names" ? "graph-names.txt" : "graph.txt"),
+    })
+  } catch (err) {
+    if (!(err instanceof Unwritable)) throw err
+    return c.json({ error: err.message }, 409)
+  }
+})
+
+/**
+ * The whole graph as JSON — the file `graph:restore` reads.
+ *
+ * The same payload the command writes, from the same `select`, so a graph taken out here
+ * goes back in there. Putting it back is still a command: see the header.
+ */
+app.get("/api/graph/export", async (c) => {
+  const items = await scanAll(null)
+  if (!items.length) return c.json({ error: "the table is empty — nothing to export" }, 404)
+
+  const selection = select(items, () => true)
+  const payload: GraphExport = {
+    version: EXPORT_VERSION,
+    table: GRAPH_TABLE_NAME,
+    exportedAt: new Date().toISOString(),
+    items: selection.items,
+    counts: selection.counts,
+  }
+  return c.json(payload, 200, attachment("graph-export.json"))
+})
+
+/**
+ * Add a file of names to the graph, or say what adding it would do.
+ *
+ * `?dry=1` is the whole reason this is two calls rather than one. The command has a dry run
+ * because a misspelled name is a new node and looks exactly like one you meant
+ * (docs/decisions/0021-a-graph-in-a-text-file.md); a page needs it more, not less, since
+ * there is no file on disk to read back afterwards.
+ *
+ * The file arrives as a plain text body — `await file.text()` in the browser — so there is
+ * no multipart parser here and nothing new to depend on. It is parsed and surveyed again on
+ * every call: a plan the page hands back is a plan the page could have edited, and the two
+ * reads it costs are batched.
+ */
+app.post("/api/graph/text", async (c) => {
+  const text = await c.req.text()
+  if (text.length > MAX_CHARS) {
+    return c.json({ error: `that file is over ${String(MAX_CHARS)} characters`, big: true }, 413)
+  }
+
+  const reading = parse(text)
+  // A file with a fault in it is refused whole, so there is no plan to make and no reason to
+  // read the table for one — which is the order the command puts them in as well.
+  const plan = reading.faults.length ? null : await survey(reading)
+  const writes = plan ? plan.fresh.length + plan.joins.length : 0
+  const over = writes > LOAD_LIMIT
+
+  if (c.req.query("dry") === "1") {
+    return c.json({
+      lines: reading.lines,
+      faults: reading.faults,
+      fresh: plan?.fresh ?? [],
+      // The pairs as they were read, for the reason src/graph/text.ts gives: a line's
+      // reading is not visible in the line.
+      joins: plan?.joins ?? [],
+      joined: plan?.joined ?? 0,
+      // Said before the button is pressed rather than after, so the answer to a file too
+      // big is not a request that has already been running for a minute.
+      over,
+      limit: LOAD_LIMIT,
+    })
+  }
+
+  if (!plan) {
+    return c.json({ error: `${String(reading.faults.length)} fault(s) — nothing written` }, 400)
+  }
+  if (over) {
+    return c.json(
+      {
+        error:
+          `${String(writes)} writes is past what one request will hold — ` +
+          `load it with: npm run graph:load -- <file>`,
+        big: true,
+      },
+      413,
+    )
+  }
+
+  const done = await write(() => apply(plan))
+  return done instanceof Refused
+    ? c.json({ error: done.message }, 409)
+    : c.json({ created: done.created, joined: done.joined })
 })
 
 app.onError((err, c) => {

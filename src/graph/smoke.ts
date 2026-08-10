@@ -23,7 +23,6 @@ import { addEdge, removeEdge } from "./edge.js"
 import { shares } from "./generate.js"
 import { find } from "./islands.js"
 import { resolveLabels } from "./labels.js"
-import { parse } from "./load.js"
 import { createNode, deleteNodeWithEdges } from "./node.js"
 import {
   ISLAND_LIMIT,
@@ -32,13 +31,48 @@ import {
   readIslandPage,
   type IslandCursor,
 } from "./repo.js"
-import { normaliseLabel, type GraphIndex, type NodeMeta } from "./keys.js"
+import {
+  META_SK,
+  edgeSk,
+  nodePk,
+  normaliseLabel,
+  type GraphIndex,
+  type NodeMeta,
+} from "./keys.js"
+import { GRAPH_KEYS as KEYS } from "./table.js"
+import { format, parse } from "./text.js"
+import type { Item } from "./bulk.js"
 
 const run = `smoke-${String(process.pid)}`
 
 function check(label: string, ok: boolean): void {
   console.log(`  ${ok ? "✓" : "✗"} ${label}`)
   if (!ok) throw new Error(`graph smoke failed: ${label}`)
+}
+
+/**
+ * A handful of items shaped the way the table holds them, for a check that wants a graph
+ * rather than a database.
+ *
+ * Built with the same key functions the writes use, so it cannot drift into a second idea
+ * of the layout. Every `degree` is wrong on purpose, and wrong for every node rather than
+ * only some: the writer counts the edges it was handed instead of believing a stored count,
+ * and a number no node could have is what holds it to that.
+ */
+function itemsFor(names: string[], pairs: [string, string][]): Item[] {
+  const id = (name: string): string => `n-${name.toLowerCase()}`
+  const items: Item[] = names.map((label) => ({
+    [KEYS.pk]: nodePk(id(label)),
+    [KEYS.sk]: META_SK,
+    label,
+    degree: 99,
+  }))
+  for (const [a, b] of pairs) {
+    // Both directions, as one transaction writes them (src/graph/edge.ts).
+    items.push({ [KEYS.pk]: nodePk(id(a)), [KEYS.sk]: edgeSk(id(b)) })
+    items.push({ [KEYS.pk]: nodePk(id(b)), [KEYS.sk]: edgeSk(id(a)) })
+  }
+  return items
 }
 
 /** The component a node is in, or a sentence about why there is not one. */
@@ -93,7 +127,7 @@ async function main(): Promise<void> {
 
   // --- what a line of a text graph means -----------------------------------
   // Pure as well, and here for the same reason: the reading of a line is decided in one
-  // function and nowhere else (src/graph/load.ts), and the star is the half of it a file
+  // function and nowhere else (src/graph/text.ts), and the star is the half of it a file
   // cannot state. A chain reading — `a | b | c` as a path through b — would pass every
   // other check in this repo and quietly build a different graph.
   const reading = parse(
@@ -119,6 +153,30 @@ async function main(): Promise<void> {
   check(
     `and refuses a self-join and an empty name (found ${String(reading.faults.length)})`,
     reading.faults.length === 2,
+  )
+
+  // --- and that writing one back out says the same thing --------------------
+  // The property the export rests on: a graph written down and read again is the graph it
+  // started as. Checked over items rather than a table, because the writer is pure and the
+  // failure it guards against is a writer that has stopped agreeing with its reader — which
+  // no amount of round-tripping through DynamoDB would show any more clearly.
+  const hub = itemsFor(
+    ["Alder", "Birch", "Cedar", "Dogwood"],
+    [
+      ["Alder", "Birch"],
+      ["Alder", "Cedar"],
+    ],
+  )
+  const written = parse(format(hub, "joins"))
+  check(
+    `a graph written out reads back as itself (${String(written.names.length)} names, ` +
+      `${String(written.pairs.length)} pairs)`,
+    written.names.length === 4 &&
+      written.pairs.length === 2 &&
+      written.faults.length === 0 &&
+      // The hub anchors both of its edges, so its neighbours arrive on one line and the
+      // node with none arrives on its own.
+      written.pairs.every(([a]) => a === "Alder"),
   )
 
   const before = await readIndex()

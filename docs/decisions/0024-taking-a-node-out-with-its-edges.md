@@ -1,4 +1,4 @@
-# 0022 — Taking a node out with its edges
+# 0024 — Taking a node out with its edges
 
 **Status:** 🔵 Proposed
 **Date:** 2026-08-10

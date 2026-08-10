@@ -15,7 +15,7 @@
  *
  * Here rather than in the panel because the map writes too: taking a node out is fired from
  * the centre and never touches an end of the panel
- * (docs/decisions/0022-taking-a-node-out-with-its-edges.md). A queue that a second writer
+ * (docs/decisions/0024-taking-a-node-out-with-its-edges.md). A queue that a second writer
  * cannot reach is a queue that does not do its job.
  *
  * What a chip *says* is left to whoever opened it. A join names both its ends and carries an

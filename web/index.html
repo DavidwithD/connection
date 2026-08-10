@@ -6,7 +6,7 @@
     <title>connection — graph exploration demo</title>
     <link rel="stylesheet" href="/app.css" />
   </head>
-  <body>
+  <body class="map">
     <div id="stage"></div>
 
     <!-- The left column, as one flow rather than three boxes that each answer to the corner.
@@ -118,7 +118,7 @@
     </section>
 
     <!-- Raised on the node at the centre, and nowhere else:
-         docs/decisions/0022-taking-a-node-out-with-its-edges.md. The count rides in the row
+         docs/decisions/0024-taking-a-node-out-with-its-edges.md. The count rides in the row
          rather than behind a second dialogue, because the row is the asking — this is the
          one write the page cannot take back, so what it costs belongs in the thing clicked. -->
     <div class="panel" id="node-menu" hidden>
@@ -136,6 +136,9 @@
       <span><kbd>click</kbd> glide it to the middle</span>
       <span><kbd>right-click</kbd> take the middle off the map</span>
       <span><kbd>↑↓←→</kbd> nudge the view</span>
+      <!-- The only way to the other page. Down here with the keys because it is the same
+           kind of thing: what you can do besides walk around. -->
+      <span><a href="/transfer.html">a graph in or out, as a file</a></span>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

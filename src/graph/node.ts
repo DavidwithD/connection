@@ -219,7 +219,7 @@ export async function deleteNode(id: string, label: string): Promise<void> {
  * degrees together and already repairs the island index behind itself, so every round of
  * this leaves a graph that is true. None of it is atomic — a run that stops partway leaves
  * a smaller node, and asking again finishes the job. That trade is
- * docs/decisions/0022-taking-a-node-out-with-its-edges.md.
+ * docs/decisions/0024-taking-a-node-out-with-its-edges.md.
  *
  * Read again each round rather than once at the top: `readAdjacency` stops at a ceiling
  * (src/graph/repo.ts), so a node past it hands back an instalment and the rest is still

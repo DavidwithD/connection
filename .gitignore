@@ -14,8 +14,10 @@ vendor/
 *.log
 __pycache__/
 
-# Graph exports. `npm run graph:export` writes one; it is your data, not the repo's.
+# Graph exports, in either format. `npm run graph:export` writes one; it is your data, not
+# the repo's. A text graph worth keeping goes in under a name you chose.
 graph-export*.json
+graph-export*.txt
 
 # Screenshots from `node scripts/drive-map.mjs`. Evidence for one change, not the repo's.
 .shots/
