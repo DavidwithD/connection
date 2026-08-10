@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Review the working tree and write the commit. Use when the user asks to commit, stage, or draft a commit message, or says "commit this" / "/commit". Scans the diff for half-finished work, unverified tests, leftover debug code, secrets, approach drift, and unrecorded decisions; blocks on the serious ones; then generates a message in this repo's style. Also covers splitting one dirty tree into a series of commits, and amend/fixup.
+description: Review the working tree and write the commit. Use when the user asks to commit, stage, or draft a commit message, or says "commit this" / "/commit". Scans the diff for half-finished work, unverified tests, leftover debug code, secrets, approach drift, unrecorded decisions, and writing discipline in comments and docs — placement, single source, duplication, phrasing, unsourced claims; blocks on the serious ones; then generates a message in this repo's style. Also covers splitting one dirty tree into a series of commits, and amend/fixup.
 ---
 
 # Commit gate
@@ -66,6 +66,12 @@ the user. **Warnings** go in the report and the user decides. **Notes** are one 
 Report only what this diff introduces. Pre-existing mess in a touched file is not this
 commit's problem — mention it once, never block on it.
 
+Before reading the hunks, state each modified file's role in one line — what only it
+holds, and what each section it touches is for. Prefer the repo's own declaration where
+one exists (`README.md`, `docs/README.md`, a record) over your reading of the filename.
+`W020`, `W021` and `W024` need that baseline; without it every new line looks like it
+belongs.
+
 ### Blocks
 
 `B001` a secret in the diff — key, token, password, connection string, real AWS
@@ -102,7 +108,9 @@ table rename — with no migration path for existing data.
 
 **Scope** — `W015` two unrelated concerns in one commit → propose the split (§5) · `W016`
 formatting or rename churn mixed into a behavioural change → separate commits · `W017` a
-deleted or renamed file still referenced by code, docs, or a link.
+deleted or renamed file still referenced by code, docs, or a link — the same for a renamed
+identifier, or content moved between sections or documents. Grep the whole repo for the
+old name; the definition site is never the whole sweep.
 
 **Record** — `W018` this change *is* a decision — a fork with a road not taken, a
 constraint future work must obey — and no ADR is open. The value is at write time, so the
@@ -112,6 +120,32 @@ document — reasoning in `design/`, a component or table named in `requirements
 copied instead of cited once, a fact true only this week written into a living doc
 (`docs/README.md`). The content is right, the file is wrong, and this is the last moment
 moving it is free.
+
+**Writing** — `W021` a fact landed one level short of its topic: right file, wrong
+section, or a rule wedged into a figure, tree, or example cell whose job is to illustrate ·
+`W022` a value copied instead of taken from the one place that owns it — imported in code,
+cited by name in a doc (`W020`). Grep the diff for `= \d` and check each against its
+source · `W023` an ad-hoc `python -c` or shell one-off for
+something a repo script or `npm` entry already does; extend the tool · `W024` a sentence a
+reader of the section above already knows — especially a negative aside ("X is unaffected",
+"same pattern as Y") that elaborates a topic outside their current thread · `W025` one
+rationale restated across files, sections, or comments; within a function, a docstring and
+an inline comment carrying the same content — the docstring owns the contract, the comment
+owns why this implementation · `W026` a comment restating what the code says, running
+multi-line where a pointer would do, or measuring the code against an alternative absent
+from the repo, which no reader can check · `W027` provenance outside its home — "confirmed
+by X on date Y", a threshold derived from one sample sitting in a general algorithm
+comment, or first-person narrative in a doc ("my guess was wrong"). The rationale stays;
+the log goes to a record · `W028` "not A but B" and its disguises: "A isn't enough — you
+need B", `Aではなく`, `Aではない` trailed by the positive. Grep for `ではなく`, `ではない`,
+`rather than`, `isn't`, then read the sentence that follows. Write only B · `W029` a
+struck-through list item (`~~#2~~ — resolved: …`) or a gap left by an earlier deletion —
+delete resolved items outright, renumber from 1, keep it contiguous · `W030` a paragraph
+or bullet breaking the section's established pattern — inline formula where the section
+uses code blocks, outputs mixed into a list of inputs, an item wedged between two
+paragraphs that belong together · `W031` a claim about a schema, column, API shape, config
+value, or enum meaning asserted with no primary source — verify it, or mark it unverified.
+A guess in the body reads as a fact forever.
 
 ### Notes
 
@@ -134,6 +168,13 @@ Ask these yourself, on the hunks:
 - **Does each file still hold only what it monopolises?** Not "is this true" — `W019` asks
   that. Ask whether the code, the design doc, the record, and this commit message are each
   carrying only the part no other one can.
+- **Does this comment belong *here*?** A comment earns its place by explaining a
+  non-obvious why at the point of confusion, or by stating a contract a caller depends on.
+  Anything else moves or goes, however accurate it is.
+- **Could someone read this section alone and follow it?** And could a maintainer keep it
+  accurate without hunting? A title, an opener, and a first table row saying one thing
+  three times; related facts split between a table and a trailing paragraph — every line
+  correct, the whole harder to keep true.
 
 ## 4. Message
 
@@ -177,6 +218,11 @@ possible without editing the code.
 ## 6. Confirm
 
 Show the report and the full message, then wait. Don't commit through an unresolved block.
+
+Name the checks you applied alongside the findings, and the file roles §3 assumed. A check
+you skipped leaves no trace in a clean report, and that list is what lets the user catch
+the gap. Once fixes land, review the new diff again — placement, structure, and a disguised
+`W028` surface on a second pass far more often than a first.
 
 Then: `git commit` with the message via a heredoc or `-F`, and report the resulting
 `git log -1 --stat`.
