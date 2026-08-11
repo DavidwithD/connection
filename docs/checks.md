@@ -4,6 +4,7 @@ What the living documents must clear before they land.
 
 ```
 npm run docs                    # every check
+npm run docs:selftest           # prove the checks still compare something
 scripts/docs-gate.py --json     # for a hook or CI
 scripts/docs-gate.py --strict   # warnings fail too
 scripts/docs-gate.py --only env # one check, while fixing it
@@ -48,6 +49,23 @@ variable documented but never read — somebody will set that one and wait.
 `engines` is the exception, and runs one way only: the prerequisites also name a JRE and
 a shell, which npm knows nothing about and a reverse check would call undeclared.
 
+## Where a bound document lives
+
+The right-hand column above is a *decision*, and it is declared in one place:
+`BOUND_DOCS` in [docs-gate.py](../scripts/docs-gate.py). Five of these checks used to
+name the README inside their own function, so moving a bound section out of it failed as
+a broken extractor rather than as the consequence of a choice nobody had written down.
+Moving one is now a one-line edit, and where each fact is meant to live is readable
+without reading the checks.
+
+More than one document may be listed, searched in order — for a section mid-move, or a
+fact that legitimately lives twice. The first that carries it wins, and the rest are not
+consulted: two documents holding one table is the stale copy this gate exists to prevent.
+
+`routes` and `paths` are absent from it on purpose. Routes bind to the API's own header
+comment, beside the code; paths bind to every markdown file there is. Neither nominates a
+document, so neither has anything to declare.
+
 ## Rules
 
 **Bindings** — `E001` a knob read and documented nowhere · `E002` documented and read by
@@ -61,7 +79,31 @@ a path nothing serves · `K001` a key attribute or index absent from the data mo
 **Extraction** — `E000`, `N000`, `G000`, `R000`, `K000`, `L000`, `M000`: the check found nothing
 at all to compare. Every extractor is a pattern over how this repo happens to write
 things, so each one is required to match something. A gate that quietly stops looking
-reports PASS for ever, and is worse than no gate because it is believed.
+reports PASS for ever, and is worse than no gate because it is believed. For the five
+bound checks the message names both cures, because either will do it: a pattern that has
+stopped matching, or a `BOUND_DOCS` entry pointing at the wrong document.
+
+## What proves the checks still work
+
+`npm run docs:selftest` ([docs-gate-selftest.py](../scripts/docs-gate-selftest.py)). The
+rules above are the gate's defence against going silent, and nothing tested the rules.
+It copies the tree, takes one fact away, and asserts the gate notices — three ways per
+bound check:
+
+| Case | The tree it builds | Expects |
+|---|---|---|
+| missing | the bound document deleted | that check's `X000` |
+| hollow | the document present, the fact gone | that check's `X000` |
+| drift | the fact present and disagreeing | `N001`, `K001` |
+
+`drift` is the half that matters most: `X000` only proves a check is still *looking*,
+never that it is still *comparing*. It asserts the unmutated tree passes first, so a
+mutation that quietly does nothing cannot read as a gate finding no fault.
+
+Which document each case mutates comes from `BOUND_DOCS`, imported rather than restated,
+so a binding that moves takes its own test with it. Everything else in there is a
+deliberate reimplementation — a test sharing its subject's table parser agrees with it
+bug for bug.
 
 ## Where a check cannot reach
 

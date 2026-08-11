@@ -15,6 +15,7 @@
     "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: gates installed'",
     "adr": "python3 scripts/adr-gate.py",
     "docs": "python3 scripts/docs-gate.py",
+    "docs:selftest": "python3 scripts/docs-gate-selftest.py",
     "ddb:install": "./scripts/dynamodb-local.sh install",
     "ddb:start": "./scripts/dynamodb-local.sh start",
     "ddb:stop": "./scripts/dynamodb-local.sh stop",

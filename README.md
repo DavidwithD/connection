@@ -49,6 +49,7 @@ npm run ddb:smoke       # verify it all works
 | `npm test` | `typecheck` + `ddb:smoke` |
 | `npm run adr` | Run the decision gate over `docs/decisions/` |
 | `npm run docs` | Run the docs gate: the living documents against the code |
+| `npm run docs:selftest` | Prove each bound check still compares something — mutates a throwaway copy |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 | `npm run graph:init` | Make the index item match the table — starts an empty graph, repairs a stale root |
 | `npm run graph:seed` | ⚠️ Drop the graph table and write a generated small-world graph |
@@ -144,6 +145,7 @@ scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
   adr-gate.py          the decision gate — shape, budgets, wiring
   docs-gate.py         the docs gate — the living docs against the code
+  docs-gate-selftest.py  proves each bound check still compares something
   hooks/pre-commit     runs both gates on the staged tree
 .github/workflows/
   ci.yml               the same gates, where they cannot be skipped

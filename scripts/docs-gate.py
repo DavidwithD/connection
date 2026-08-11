@@ -39,6 +39,30 @@ API_FILE = "src/server/index.ts"
 CLIENT_FILE = "web/src/api.ts"
 TABLE_FILES = ["src/db/tables.ts", "src/graph/table.ts"]
 
+# Which document carries each check's half of the comparison.
+#
+# ADR 0014 binds a fact in the code to "the document describing it". Which document
+# that is was hardcoded to the README in five separate functions, so moving a bound
+# section out of it failed as an X000 — a broken extractor — rather than as the
+# ordinary consequence of a decision nobody had recorded. Declaring it here makes
+# the location reviewable, and moving a section a one-line edit.
+#
+# More than one document is allowed, searched in order: the first that carries the
+# fact wins. That is for a section mid-move, and for a fact that legitimately lives
+# in two places. None of them carrying it is still X000, because a check that
+# compares nothing reports PASS for ever.
+#
+# `routes` and `paths` are absent on purpose. Routes bind to the API's own header
+# comment beside the code, and paths bind to every markdown file there is; neither
+# nominates a document, so neither has anything to declare.
+BOUND_DOCS = {
+    "env": [README],            # the variable table; .env.example is read as well
+    "commands": [README],       # the command table
+    "engines": [README],        # the prerequisites table
+    "keys": [README],           # the data model table
+    "layout": [README],         # the layout tree, as a fenced block
+}
+
 # Records have their own gate, with rules this one would only duplicate.
 DECISIONS_DIR = "docs/decisions"
 
@@ -185,6 +209,59 @@ def table_with(text: str, *headers: str) -> tuple[int, list[list[str]]] | None:
     return None
 
 
+# --------------------------------------------------------------------- bindings
+
+
+@dataclass
+class Bound:
+    """Where a check found its half of the comparison."""
+
+    path: str
+    line: int
+    rows: list[list[str]]
+
+
+def bound_doc(gate: Gate, check: str) -> tuple[str, str] | None:
+    """The first declared document for this check that can be read, and its text."""
+    for rel in BOUND_DOCS[check]:
+        text = gate.read(rel)
+        if text is not None:
+            return rel, text
+    return None
+
+
+def bound_table(gate: Gate, check: str, *headers: str) -> Bound | None:
+    """This check's table, from whichever declared document carries it.
+
+    Searched in declared order rather than merged: two documents holding the same
+    table is the stale copy this gate exists to prevent, so the first one wins and
+    the second is simply not consulted.
+    """
+    for rel in BOUND_DOCS[check]:
+        text = gate.read(rel)
+        if text is None:
+            continue
+        found = table_with(text, *headers)
+        if found:
+            lineno, rows = found
+            return Bound(rel, lineno, rows)
+    return None
+
+
+def unbound(gate: Gate, code: str, check: str, what: str) -> None:
+    """No declared document carries the fact, so this check compares nothing.
+
+    Distinct from `Gate.empty` in what it tells you to fix: an extractor that has
+    stopped matching, *or* a binding pointing at the wrong document. Both produce
+    a check that certifies agreement it never looked for.
+    """
+    candidates = BOUND_DOCS[check]
+    gate.error(code, candidates[0], 1,
+               f"found no {what} in {' or '.join(candidates)} — this check is no "
+               "longer comparing anything. Fix the extractor, or point "
+               f"BOUND_DOCS[{check!r}] at the document that carries it now.")
+
+
 def backticked(text: str) -> set[str]:
     return {m.group(1).strip() for m in BACKTICK_RE.finditer(text)}
 
@@ -323,28 +400,29 @@ def check_env(gate: Gate) -> None:
                        f"{name} is read here and no document mentions it — an "
                        "undocumented knob is an unusable one")
 
-    documented: dict[str, int] = {}
-    readme = gate.read(README) or ""
-    table = table_with(readme, "Variable")
-    if table:
-        lineno, rows = table
-        for offset, row in enumerate(rows, start=1):
+    # Where each name was documented, not only which line: a variable that appears
+    # solely in .env.example used to be reported against the README at that file's
+    # line number, which sends a reader to the wrong document.
+    documented: dict[str, tuple[str, int]] = {}
+    found = bound_table(gate, "env", "Variable")
+    if found:
+        for offset, row in enumerate(found.rows, start=1):
             for token in backticked(row[0]):
                 name = token.split("=", 1)[0].strip()
                 if re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
-                    documented[name] = lineno + 1 + offset
+                    documented[name] = (found.path, found.line + 1 + offset)
     else:
-        gate.empty("E000", README, "table of environment variables")
+        unbound(gate, "E000", "env", "table of environment variables")
 
     for lineno, line in outside_code(gate.read(ENV_EXAMPLE) or ""):
         m = ENV_ASSIGN_RE.match(line)
         if m:
-            documented.setdefault(m.group(1), lineno)
+            documented.setdefault(m.group(1), (ENV_EXAMPLE, lineno))
 
-    for name, lineno in sorted(documented.items()):
+    for name, (where, lineno) in sorted(documented.items()):
         if name in read or name in EXTERNAL_ENV:
             continue
-        gate.warn("E002", README, lineno,
+        gate.warn("E002", where, lineno,
                   f"{name} is documented but nothing reads it — delete the row, or "
                   "name it in EXTERNAL_ENV if a library reads it for us")
 
@@ -364,25 +442,23 @@ def check_commands(gate: Gate) -> None:
         gate.empty("N000", PACKAGE_JSON, "npm scripts")
         return
 
-    readme = gate.read(README) or ""
-    table = table_with(readme, "Command")
-    if not table:
-        gate.empty("N000", README, "table of commands")
+    found = bound_table(gate, "commands", "Command")
+    if not found:
+        unbound(gate, "N000", "commands", "table of commands")
         return
-    lineno, rows = table
 
     listed: dict[str, int] = {}
-    for offset, row in enumerate(rows, start=1):
+    for offset, row in enumerate(found.rows, start=1):
         for token in backticked(row[0]):
             m = SCRIPT_IN_DOC_RE.match(token)
             if m:
-                listed[m.group(1)] = lineno + 1 + offset
+                listed[m.group(1)] = found.line + 1 + offset
 
     for name in sorted(scripts - set(listed)):
-        gate.error("N001", README, lineno,
+        gate.error("N001", found.path, found.line,
                    f"`npm run {name}` exists but the command table does not list it")
     for name in sorted(set(listed) - scripts):
-        gate.error("N002", README, listed[name],
+        gate.error("N002", found.path, listed[name],
                    f"the table lists `npm run {name}`, which {PACKAGE_JSON} "
                    "does not define")
 
@@ -418,17 +494,15 @@ def check_engines(gate: Gate) -> None:
         gate.empty("G000", PACKAGE_JSON, "version numbers in engines.node")
         return
 
-    readme = gate.read(README) or ""
-    table = table_with(readme, "Why")
-    if not table:
-        gate.empty("G000", README, "prerequisites table")
+    found = bound_table(gate, "engines", "Why")
+    if not found:
+        unbound(gate, "G000", "engines", "prerequisites table")
         return
-    lineno, rows = table
-    prose = " ".join(cell for row in rows for cell in row)
+    prose = " ".join(cell for row in found.rows for cell in row)
 
     for version in sorted(wanted):
         if version not in prose:
-            gate.error("G001", README, lineno,
+            gate.error("G001", found.path, found.line,
                        f"engines.node requires {version} and the prerequisites do "
                        f"not mention it — `{declared}` is what a reader has to meet")
 
@@ -518,19 +592,17 @@ def check_keys(gate: Gate) -> None:
         gate.empty("K000", TABLE_FILES[0], "key attributes or index names")
         return
 
-    readme = gate.read(README) or ""
-    table = table_with(readme, "Partition key", "Sort key")
-    if not table:
-        gate.empty("K000", README, "data model table")
+    found = bound_table(gate, "keys", "Partition key", "Sort key")
+    if not found:
+        unbound(gate, "K000", "keys", "data model table")
         return
-    lineno, rows = table
     present: set[str] = set()
-    for row in rows:
+    for row in found.rows:
         for cell in row:
             present |= backticked(cell)
 
     for name in sorted(set(names) - present):
-        gate.error("K001", README, lineno,
+        gate.error("K001", found.path, found.line,
                    f"`{name}` is a key attribute or index in {names[name]} and the "
                    "data model table does not mention it")
 
@@ -541,14 +613,15 @@ def check_layout(gate: Gate) -> None:
     A file missing from the tree is how a reader ends up believing a directory is
     smaller than it is, which is the failure this block exists to prevent.
     """
-    readme = gate.read(README)
-    if readme is None:
-        gate.error("L000", README, 1, "missing")
+    doc = bound_doc(gate, "layout")
+    if doc is None:
+        unbound(gate, "L000", "layout", "layout tree")
         return
+    where, text = doc
 
     tree: dict[str, tuple[int, set[str]]] = {}  # directory -> (line, filenames)
     current: str | None = None
-    for start, lines in code_blocks(readme):
+    for start, lines in code_blocks(text):
         for offset, line in enumerate(lines):
             lineno = start + offset
             if not line.strip():
@@ -566,19 +639,19 @@ def check_layout(gate: Gate) -> None:
                 current = None  # some other code block; stop collecting
 
     if not tree:
-        gate.empty("L000", README, "layout tree")
+        unbound(gate, "L000", "layout", "layout tree")
         return
 
     for directory, (lineno, files) in sorted(tree.items()):
         if directory in MAY_BE_ABSENT:
             continue
         if not gate.exists(directory):
-            gate.error("L001", README, lineno,
+            gate.error("L001", where, lineno,
                        f"the tree names {directory}, which does not exist")
             continue
         for name in sorted(files):
             if not gate.exists(directory + name):
-                gate.error("L001", README, lineno,
+                gate.error("L001", where, lineno,
                            f"the tree names {directory}{name}, which does not exist")
 
         if not files:
@@ -590,7 +663,7 @@ def check_layout(gate: Gate) -> None:
         # Entries like `hooks/pre-commit` name a file one level down; they are
         # checked above and do not belong in this directory's own comparison.
         for name in sorted(actual - {f for f in files if "/" not in f}):
-            gate.error("L002", README, lineno,
+            gate.error("L002", where, lineno,
                        f"{directory}{name} exists and the tree omits it — a reader "
                        "will believe this directory is smaller than it is")
 
