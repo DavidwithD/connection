@@ -29,6 +29,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0023](0023-the-graph-moves-through-the-page.md) | The graph moves through the page | 🔵 Proposed |
 | [0024](0024-taking-a-node-out-with-its-edges.md) | Taking a node out with its edges | 🔵 Proposed |
 | [0025](0025-when-a-ghost-stands.md) | When a ghost stands | 🔵 Proposed |
+| [0026](0026-a-fourth-kind-of-document.md) | A fourth kind of document | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
