@@ -3,10 +3,15 @@
 **There is no product scope yet.** This file exists to say so. An empty directory reads as
 an oversight; a missing one reads as a decision nobody made.
 
-The one capability written up here is the demo's, not the product's:
-[exploring a graph](exploring-a-graph.md). It is scoped by
+The capabilities written up here are the demo's, not the product's:
+[exploring a graph](exploring-a-graph.md), [building a graph](building-a-graph.md), and
+[moving a graph](moving-a-graph.md). All three are scoped by
 [ADR 0003](../decisions/0003-graph-exploration-demo-stack.md), which fixed the page as
 something that exercises the store rather than something anyone asked for.
+
+Exploring came first and says *Not required: writing anything*, which was true when it was
+written. Building and moving are the capabilities that picked that up, and each says what it
+is worth rather than restating the other.
 
 ## What is fixed
 
