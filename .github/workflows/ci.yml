@@ -49,6 +49,12 @@ jobs:
       - run: npm run adr
       - run: npm run docs
 
+      # The docs gate's own failure mode is silence, so the thing that proves it still
+      # compares anything belongs where it cannot be skipped either — same argument as
+      # docs/decisions/0016-the-gates-run-in-ci.md. It is not on the pre-commit hook:
+      # it copies the tree once per case, which is a second of work a commit need not pay.
+      - run: npm run docs:selftest
+
       # Bundling fails in ways typecheck cannot see, and it is the step most likely
       # to be the thing that objects to the older runtime.
       - run: npm run build

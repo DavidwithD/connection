@@ -7,6 +7,16 @@
 
 A DynamoDB-backed service. TypeScript on Node, AWS SDK v3.
 
+**What this page is for.** Getting the project running, and the reference tables you need
+while it is. Everything here is either something you want before you can use the repo at
+all — prerequisites, commands, the one variable that picks a backend — or a table the
+[docs gate](docs/checks.md) holds the code to, so that a rename cannot quietly falsify it.
+
+Anything that explains how the thing works, why it works that way, or how to drive it lives
+under [docs/](docs/) and is linked from the foot of this page. The test is the reader: this
+page is for somebody who has just cloned the repo, and it stops where their questions stop
+being about setup.
+
 [![CI](https://github.com/DavidwithD/connection/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidwithD/connection/actions/workflows/ci.yml)
 
 ## Prerequisites
@@ -49,6 +59,7 @@ npm run ddb:smoke       # verify it all works
 | `npm test` | `typecheck` + `ddb:smoke` |
 | `npm run adr` | Run the decision gate over `docs/decisions/` |
 | `npm run docs` | Run the docs gate: the living documents against the code |
+| `npm run docs:selftest` | Prove each bound check still compares something — mutates a throwaway copy |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 | `npm run graph:init` | Make the index item match the table — starts an empty graph, repairs a stale root |
 | `npm run graph:seed` | ⚠️ Drop the graph table and write a generated small-world graph |
@@ -144,6 +155,7 @@ scripts/
   dynamodb-local.sh    start/stop/status/reset the local server
   adr-gate.py          the decision gate — shape, budgets, wiring
   docs-gate.py         the docs gate — the living docs against the code
+  docs-gate-selftest.py  proves each bound check still compares something
   hooks/pre-commit     runs both gates on the staged tree
 .github/workflows/
   ci.yml               the same gates, where they cannot be skipped
@@ -198,263 +210,16 @@ up front.
 
 ## The graph demo
 
-Two pages, backed by the graph API. The map is the only *view* of the graph — a second one
-answering the same question a node at a time was retired,
-[ADR 0017](docs/decisions/0017-the-second-view-goes.md). The other draws nothing at all: it
-is where a graph arrives as a file and leaves as one,
-[ADR 0023](docs/decisions/0023-the-graph-moves-through-the-page.md).
-
-```bash
-npm run dev:db          # local DynamoDB + tables
-npm run graph:seed      # a small-world graph, sized in src/graph/seed.ts
-npm run demo            # the map at :5173
-```
-
-Size the graph with `GRAPH_N`, `GRAPH_K`, `GRAPH_P` and `GRAPH_SEED`, how many of its nodes
-are hubs with `GRAPH_HUBS` and `GRAPH_HUB_K`, and how many disconnected components it comes
-in with `GRAPH_ISLANDS` — ten by default, halving in size down to a pair and a lone node, so
-the page arrives with graph it cannot walk to. `GRAPH_ISLANDS=1` gives one connected graph,
-which is what every seed before this was. The defaults, and what each one costs,
-are in [seed.ts](src/graph/seed.ts). Re-seeding drops the graph table and builds it again, so
-it refuses twice over: against anything but the local emulator, and — wherever it is pointed
-— against a table holding nodes no seed wrote. The second refusal saves them to a timestamped
-export first, so the answer is recoverable even when you meant it. `GRAPH_SEED_DROP=1` clears
-both. `graph:restore` refuses on the same terms under `GRAPH_RESTORE_DROP`, since writing an
-older export over a table that has moved on loses exactly as much. `GRAPH_API_DELAY_MS` sets the API's artificial latency floor, and `PORT`
-moves the API off `:8787` ([index.ts](src/server/index.ts)).
-
-Two commands write outside the seed. Each is one transaction, because `degree` and the
-edges it counts must never disagree
-([ADR 0009](docs/decisions/0009-the-first-write-outside-the-seed.md)):
-
-```bash
-npm run graph:node -- "Vessarin"              # a node with no edges yet
-npm run graph:edge -- "Vessarin" "Ashanlin"   # join two that exist
-```
-
-### Writing a graph down
-
-One line per node and whoever it joins, in a file you can edit
-([ADR 0021](docs/decisions/0021-a-graph-in-a-text-file.md)):
-
-```
-# The towns, and a lighthouse nobody can reach
-Kavara | Miselin | Vessarin | Thorne
-Miselin | Ashanlin
-Lighthouse
-```
-
-The first name on a line joins each of the rest — `a | b | c` is two edges out of `a`, not a
-path through `b` — so a hub is one line, and a line of one name is a node with no edges. The
-name is the identity, so nothing carries an id; case and runs of whitespace fold, so
-`ashanlin` and `Ashanlin` are the same node. A name cannot hold `|` or `#`.
-
-```bash
-npm run graph:load -- towns.txt --dry-run   # what it would add, written nowhere
-npm run graph:load -- towns.txt             # add it
-```
-
-It only ever adds. Deleting a line does not part an edge, and loading the same file twice
-writes nothing the second time — both "already there" refusals are counted rather than
-raised, which is what makes the file editable. A misspelling is therefore a new node and not
-an error, so the plan prints every name it is about to create, and `--dry-run` prints the
-pairs too: nothing in the file says whether a line was meant as a star or a chain.
-
-The way back out is the same command that writes the JSON
-([ADR 0022](docs/decisions/0022-a-graph-written-back-out.md)):
-
-```bash
-npm run graph:export -- --text    # names and joins → graph-export.txt
-npm run graph:export -- --names   # every name, one per line, and no joins
-```
-
-Both write the whole graph, whoever made it — "what a seed would not rebuild" is a question
-about a backup, and this is the graph written down. Each edge is written from its busier
-end, so a hub gathers its neighbours onto one line; a node with no edges gets a line of its
-own; islands are paragraphs, largest first. Nothing is ordered by id and nothing is dated,
-so the file is stable enough to commit and diff — and a graph that has not changed exports
-to the same bytes twice, which is what makes the whole trip checkable:
-
-```bash
-npm run graph:export -- --text --out a.txt
-npm run ddb:reset && npm run ddb:migrate && npm run graph:init
-npm run graph:load -- a.txt
-npm run graph:export -- --text --out b.txt   # no diff against a.txt
-```
-
-The second file matches the first though every id in the table changed on the way through,
-which is the whole reason nothing in the format is ordered by one.
-
-What it drops is everything a reload derives: ids, degrees, `rootId`, the index item. A name
-holding `|` or `#` cannot be written down at all, and the export refuses rather than
-producing a file that quietly reads back as a different graph.
-
-Each node and each edge is its own transaction and they run in series, at roughly a round
-trip per name and four per pair — seconds for a small file locally, minutes for a large one
-against AWS. A load leaves `rootId` where it was, so `npm run graph:init` afterwards is what
-moves the map's starting point onto the graph you just added.
-
-### Starting a graph without seeding one
-
-`graph#index` is a precondition, not a summary: every write carries a conditional update on
-it, so a table without one refuses the first node as readily as the ten-thousandth. It also
-holds `rootId`, which is where the map starts, and nothing maintains that after a write.
-
-```bash
-npm run graph:init            # write the index item from what is in the table
-npm run graph:init -- --check # say what it would write, write nothing, fail if it differs
-```
-
-On an empty table that is the bootstrap — no generated nodes needed. On a graph that already
-exists it recomputes `rootId` and the counts, which is the repair for a root that was deleted
-or a count that drifted. It reads and puts one item; it never drops or deletes, so it is the
-one graph command that needs no guard.
-
-### Keeping what you made
-
-A seed run replaces the graph, so anything created since the last one goes with it — but
-neither `graph:seed` nor `graph:restore` will let that happen silently. Each reads the table
-first, writes whatever no seed wrote to a timestamped export, and then stops. Doing it on
-purpose is the two commands below; the guard is for the times you were doing something else.
-
-```bash
-npm run graph:export                             # only nodes made by hand → graph-export.json
-npm run graph:restore -- graph-export.json --dry-run   # check the file, touch nothing
-npm run graph:restore -- graph-export.json       # ⚠️ drop the table, rebuild from the file
-```
-
-The export tells the two apart by id shape alone — `n-<uuid>` for a node made one at a time
-against the seed's `n0000` ([keys.ts](src/graph/keys.ts)) — and refuses anything of neither
-shape rather than guessing. A subset of a graph is not automatically a graph, so it drops
-edges with one end outside the export, drops claims on names not coming, and rewrites
-`degree` to match what it kept, saying so each time.
-
-Restoring drops the table and builds it again, because DynamoDB has no rename and no way to
-copy a table onto an existing name. Every check happens before the drop: both halves of every
-edge, degrees matching the edges they count, one live claim per name. A file that fails any
-of them leaves the table exactly as it was, and `--dry-run` stops after the checks. Like the
-seed, it refuses to drop anything but the local emulator unless `GRAPH_RESTORE_DROP=1` says
-otherwise. The index item is rebuilt rather than restored, since `rootId` usually named a
-node the export left behind
-([ADR 0018](docs/decisions/0018-the-graph-outlives-the-seed.md)).
-
-Running either write a second time is refused rather than repeated — a name is owned by one node,
-and a degree must not be raised twice for one edge. Both reverse, and the reversal is
-constrained from the other side: a degree must not be lowered for an edge that was not
-there, and a node with edges cannot be deleted at all, because each edge is stored twice and
-the other half would be left unreachable
-([ADR 0011](docs/decisions/0011-taking-a-write-back.md)). A node that has been joined to
-leaves by parting each edge first — a second removal rather than a loosening of that rule
-([ADR 0024](docs/decisions/0024-taking-a-node-out-with-its-edges.md)). The map page does all
-of this from the browser; see **join** below.
-
-### The map — `/`
-
-Pan around an undirected cyclic graph like a map. Whatever you stop on is what loads.
-
-| Gesture | Does |
-|---|---|
-| drag | Pan |
-| wheel | Zoom toward the cursor |
-| click a node | Glide it to the middle |
-| click a ghost | Fly to the node it stands in for |
-| right-click the centre | Take it off the map, with everything joined to it |
-| click under **islands** | Cross to a component, or go back to one you crossed to before |
-| `↑↓←→` | Nudge the view |
-
-The node nearest the middle of the screen is the **centre**, which is what gliding a node
-to the middle is for. It is also the only node the map draws around, so what you see is the
-route you walked. Reading runs a hop past that: arriving somewhere fetches the ring around
-it too and holds the reply, unspent and undrawn, until somebody walks there. Panning itself
-does no work — no simulation, no layout, every node seated once and never moved, and no
-read until the camera goes still.
-
-Which is exactly why **islands** exists. A graph in pieces has components no walk from here
-can reach, however long you look — and a node you make is one until you join it to something.
-That list is every component, biggest first, and picking one sets it down in open water
-rather than in the nearest gap, so the island it grows into stays its own
-([ADR 0019](docs/decisions/0019-every-island-has-an-address.md)).
-
-Rows do not leave when you use them, which is what makes the list an *index of places* rather
-than a list of errands: crossing back is a click, not a name typed from memory
-([ADR 0020](docs/decisions/0020-the-islands-list-is-an-index.md)). The marked row is the
-island you are standing in. A dim one is not on the map yet — clicking it seats a whole
-island that was never there; clicking any other row only moves the camera. The list changes
-only when the graph's components do, which is a join, a split, or a node made from the box
-at the top.
-
-How many components a graph has is a property of the data and has no ceiling — 688 nodes of
-vocabulary arrived as 267 of them. So the list is a page of twenty and says which page it is:
-the heading reads `20 of 267` until it holds them all, and scrolling to the foot fetches the
-next twenty. Pages already loaded are left alone by a write, because a join changes an
-island's size and size is what the list is ordered by; only the first page is re-read.
-
-The box at the top is one box until you name something in it, and then it is an edge: two
-ends and the line between them. Naming a node takes you there. Name one in the other end and
-they are joined — either end, since the graph has no direction to tell them apart. Whichever
-end you leave alone is the anchor, so the same widget fans out from one node or fans in to
-one, and the end you fired empties for the next name.
-
-| Key | In an end |
-|---|---|
-| `↑` `↓` | Move the highlight, wrapping at both ends |
-| `↵` | Take the highlighted row — with the other end filled, that writes the edge |
-| `⇧↵` | Create exactly what is typed, whatever the list shows |
-| `Esc` | Close the list; again, let the name go |
-
-The two Enters are the shape of it. `↵` takes the best match, so a prefix and one key
-reaches a node that already exists. Creating is a different act with its own key, and never
-what a half-typed name falls into — `ash` is far more often the start of `Ashanlin` than a
-node somebody means to make. The one place they meet is a name matching nothing: there is
-no best match to take, so `↵` creates as well.
-
-**Every write from the box can be taken back.** Each one leaves a receipt carrying `undo`,
-which parts the edge again and deletes the node if that write is what created it. It stays
-for thirty seconds. A node that something else has since been joined to is kept — the edge
-still parts. See [ADR 0011](docs/decisions/0011-taking-a-write-back.md).
-
-Taking a node off the map is the one write with no way back, since its edges cannot return
-with it. So it asks before rather than offering an undo after, and the row it asks with says
-what is going — `delete Ashanlin and its 3 edges`. It is raised on the centre alone, whose
-degree the page already knows
-([ADR 0024](docs/decisions/0024-taking-a-node-out-with-its-edges.md)).
-
-A receipt names both ends, and clicking either name puts it back in the near end, which is
-how a path costs one name per node. Clicking loads and never writes.
-See [ADR 0013](docs/decisions/0013-one-box-that-grows-into-an-edge.md).
-
-How the map is put together, and what has to stay true, is in [design](docs/design/) —
-[architecture.md](docs/design/architecture.md) for the layers and the invariants, and
-[the-centre.md](docs/design/the-centre.md) for what the map draws around the centre.
-[ADR 0003](docs/decisions/0003-graph-exploration-demo-stack.md),
-[ADR 0004](docs/decisions/0004-the-centre-and-its-neighbourhood.md) and
-[ADR 0006](docs/decisions/0006-only-the-centre-reads.md) hold the reasoning, and what each
-choice cost.
-
-### Graph files — `/transfer.html`
-
-Linked from the foot of the map. Downloads first — the whole graph as names and joins, as
-names alone, or as the JSON `graph:restore` reads — then the way in.
-
-Choosing a file does not write it. It is surveyed against the table and the reading is shown
-back: three numbers, and under them every new name and every pair it read. Those pairs are
-the point, for the reason **Writing a graph down** gives above. **Add to the graph** appears
-once there is something to add.
-
-A file with a fault in it — a name joined to itself, an empty field — is refused whole, and
-the faults are what the page shows instead of the numbers. A file the graph already holds
-says so and offers no button.
-
-Two things it will not do. Restoring a JSON export stays `npm run graph:restore`, because
-what guards that command cannot be carried onto a page
-([ADR 0023](docs/decisions/0023-the-graph-moves-through-the-page.md)). A load past what one
-request will hold is refused, naming `npm run graph:load`, which has no ceiling because
-nothing is waiting on a socket.
+Two pages backed by the graph API: a map you pan around, and a page a graph arrives at
+as a file and leaves as one. Seeding one, driving both, and every command that changes a
+graph are in **[docs/using-the-demo.md](docs/using-the-demo.md)**.
 
 ## Docs
 
-- [docs/](docs/) — the map: which document answers which question, and which ones get
-  edited rather than appended to
+- [docs/](docs/) — the map: every capability across the four kinds of document, and which
+  ones get edited rather than appended to
+- [Using the demo](docs/using-the-demo.md) — how to drive it: the commands, the gestures,
+  the keys
 - [Requirements](docs/requirements/) — no product scope yet, and what the demo has to do
 - [Design](docs/design/) — layers, boundaries, and the invariants the code protects
 - [Architecture decisions](docs/decisions/) — the "why" behind these choices
