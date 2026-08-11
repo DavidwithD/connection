@@ -14,12 +14,19 @@
  * on it, which is O(degree) rather than per frame. A continuous falloff would mean
  * restyling every node per frame.
  *
- * Ghosts are the one exception to all of the above, and the exception is deliberate.
+ * Ghosts are the one exception to all of the above, and the exception is deliberate. They are
+ * also the one thing here the camera decides: a ghost stands for a neighbour of the centre
+ * while that neighbour is off screen, so zooming and panning raise and lower them. That costs
+ * a handful of measurements once the camera stops, never per frame, and it is what keeps a
+ * name from being readable at its own seat and stood in for in the ring at the same time.
+ *
  * Tiers, ghosts and the flight are drawn out in docs/design/the-centre.md; the reasoning
- * is docs/decisions/0004-the-centre-and-its-neighbourhood.md, and
+ * is docs/decisions/0004-the-centre-and-its-neighbourhood.md, with the viewport rule above
+ * in docs/decisions/0025-when-a-ghost-stands.md, and
  * docs/decisions/0003-graph-exploration-demo-stack.md for the world model underneath.
  */
 import cytoscape, {
+  type BoundingBox12,
   type Core,
   type Css,
   type ElementDefinition,
@@ -34,11 +41,32 @@ import type { World, WorldNode } from "./world.js"
 const STUB_REACH = 44
 
 /**
- * Most ghosts a centre will show. Past this the ring stops being readable, and the
- * remainder keep the stub they would have had. At mean degree 6 this should never fire;
- * it is here so a hub cannot produce a wheel of hollow circles.
+ * Most ghosts a centre will show. Past this the ring stops being readable, and the remainder
+ * keep whatever the map already showed of them — a line running off the edge of the screen,
+ * or the stub of a long edge.
+ *
+ * A readability bound, and it is reached routinely: zoomed in, most of a neighbourhood is off
+ * screen, so any node past this degree hits the cap — which is the right way round, because
+ * zoomed in there are fewer real nodes on screen and more room for the ring. Zoomed out,
+ * where a wheel of hollow circles would be worst, nothing is off screen and no ghost is
+ * raised at all.
  */
 const MAX_GHOSTS = 8
+
+/**
+ * How far past the edge of the screen a seat must sit before a ghost is raised for it, in
+ * screen pixels, divided by the zoom to reach world units.
+ *
+ * A length rather than a ratio: `ACCENT_HYSTERESIS` in main.ts compares two distances to the
+ * middle, so a proportion is what it measures, but here there is one distance and what needs
+ * bounding is how far the reader's hand moved. Wider than main.ts's keyboard pan step, so a
+ * nudge and the nudge back land on the same picture.
+ *
+ * A ghost comes down the moment its target shows at all, with no margin at that end, so this
+ * whole distance is dead band on the way up — which is what stops the ring holding a name
+ * that is also readable at its own seat.
+ */
+const GHOST_MARGIN = 160
 
 /**
  * Flight speed across the screen, in pixels per millisecond. Chosen by eye against the
@@ -104,6 +132,31 @@ const RANKED_Z = "data(lift)" as unknown as number
 const RING_Z = { top: 24, bottom: 10 } as const
 
 const pairKey = (a: string, b: string): string => (a < b ? `${a} ${b}` : `${b} ${a}`)
+
+/** A ghost on the map: its element, the centre that raised it, and the node it stands for. */
+interface Ghost {
+  ghost: string
+  centre: string
+  target: string
+}
+
+/**
+ * Where one centre's ghosts stand, for as long as it is the centre.
+ *
+ * Cut once and handed out for keeps: `at` is only ever added to, so a ghost never moves. A
+ * neighbour arriving mid-visit takes a spare rather than anyone's seat, and one that goes out
+ * of view and comes back finds its own still reserved. `slotsFor` is where this is maintained,
+ * and says why it has to be.
+ */
+interface Doorways {
+  centre: string
+  /** Every slot this centre offers, in the order they are handed out. */
+  pool: Point[]
+  /** The slot each neighbour holds. */
+  at: Map<string, Point>
+  /** How many neighbours the plan was last extended for. */
+  seen: number
+}
 
 /** A ghost belongs to the centre that raised it, and names the node it stands in for. */
 const ghostId = (centre: string, target: string): string => `g:${centre}:${target}`
@@ -224,9 +277,9 @@ function buildStyle(p: Palette): StylesheetJson {
         "border-opacity": 0.55,
       },
     },
-    // A ghost: a neighbour of the centre whose real seat is too far away to draw. Hollow
-    // and dashed, because it must never be mistaken for the node itself — there is only
-    // ever one of those, somewhere else on the map.
+    // A ghost: a neighbour of the centre whose real seat is off screen. Hollow and dashed,
+    // because it must never be mistaken for the node itself — there is only ever one of
+    // those, somewhere else on the map, and while this stands it is somewhere you cannot see.
     {
       selector: "node[?ghost]",
       style: {
@@ -248,7 +301,14 @@ function buildStyle(p: Palette): StylesheetJson {
         "z-index": 25,
       },
     },
-    { selector: "edge[?ghost]", style: { "line-color": p.edgeActive, opacity: 0.9, width: 2 } },
+    // Dashed, because the edge a ghost stands for may still be drawn as a line: a neighbour
+    // off screen at close zoom keeps the line that runs to the edge of the viewport. That
+    // line says which way the connection goes; this one says here is the door to it. Two
+    // marks meaning different things cannot be painted the same.
+    {
+      selector: "edge[?ghost]",
+      style: { "line-color": p.edgeActive, "line-style": "dashed", opacity: 0.9, width: 2 },
+    },
     {
       selector: "node[?stub]",
       style: {
@@ -283,8 +343,10 @@ export class MapView {
   private stubbed = 0
   /** Set while a ghost is travelling. Nothing may take the accent until it lands. */
   private flying = false
-  /** The ghosts the current centre has raised, and the stubs each one stands in for. */
-  private ghosts: { ghost: string; centre: string; target: string }[] = []
+  /** The ghosts the current centre has raised, and the node each one stands in for. */
+  private ghosts: Ghost[] = []
+  /** Where this centre's ghosts stand. Cut on the first pass of a visit, then only extended. */
+  private doorways: Doorways | null = null
 
   constructor(
     container: HTMLElement,
@@ -324,10 +386,16 @@ export class MapView {
     return { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 }
   }
 
-  /** Half the viewport's smaller span, in world units — the search reach for the accent. */
+  /**
+   * Half the viewport's smaller span, in world units — the search reach for the accent.
+   *
+   * The smaller span and halved, so a node within reach of the middle is a node on screen. A
+   * wider reach hands the accent to something the reader cannot see, and the ring and its
+   * ghosts are drawn around wherever the accent is.
+   */
   reach(): number {
     const box = this.cy.extent()
-    return Math.max(box.w, box.h)
+    return Math.min(box.w, box.h) / 2
   }
 
   /**
@@ -341,9 +409,14 @@ export class MapView {
    * Ghosts come down first when a node they stand for is leaving. A ghost holds a reference
    * to a target, and one pointing at a node that no longer exists would survive every
    * later `clearGhosts` looking for a stub that is not there either.
+   *
+   * The test is against the slot plan rather than the ghosts standing, because the plan is the
+   * wider of the two: a slot is held for a neighbour whose ghost is currently down. Rebuilding
+   * it also lets the surviving slots take account of the ground the removal just freed.
    */
   drop(nodeIds: readonly string[], edges: readonly [string, string][]): void {
-    if (nodeIds.some((id) => this.ghosts.some((g) => g.target === id || g.centre === id))) {
+    const plan = this.doorways
+    if (plan && nodeIds.some((id) => id === plan.centre || plan.at.has(id))) {
       this.clearGhosts()
     }
 
@@ -452,14 +525,21 @@ export class MapView {
         this.setTiers(accent, true)
       }
     })
+    // No ghost pass here, deliberately. A reply does leave arrivals off screen with nothing
+    // standing in for them, but this is also reached from `trackAccent` for a late seating, so
+    // raising elements here would put them on the frame budget of a pan. Ghosts stay on the
+    // settle gate, and main.ts schedules one when a read lands.
   }
 
   /**
    * How far out the centre's own ring reaches, which is how far the backdrop extends.
    *
-   * Measured from the neighbours that are actually drawn as a ring: a neighbour seated
-   * half a screen away is represented by a ghost, not by a node out there, so letting it
-   * set the radius would dim half the map to make room for something already in the ring.
+   * Measured from the neighbours joined by a drawn line, and so from the world rather than
+   * from the screen. A radius that answered to the camera would dim a different set of nodes
+   * at every zoom, which turns each settle into a restyle over everything near the centre —
+   * and what the backdrop is asking is what this centre *crowds*, which is a fact about where
+   * the seats are. A neighbour reached by two stubs is far enough that letting it set the
+   * radius would dim half the map for one node.
    */
   private ringReach(id: string): number {
     let reach = 0
@@ -486,14 +566,98 @@ export class MapView {
       .map((node) => node.id)
   }
 
-  /** Neighbours seated too far away to draw a line to. Nearest first, so a cap keeps
-   *  the ones most likely to be worth walking to. */
-  private farNeighbours(id: string): string[] {
-    return this.world
-      .neighbours(id)
-      .filter((other) => this.world.span(id, other) > LONG_EDGE)
-      .sort((a, b) => this.world.span(id, a) - this.world.span(id, b))
-      .slice(0, MAX_GHOSTS)
+  /**
+   * The neighbours a centre may raise a ghost for, in the order slots are handed out.
+   *
+   * Unlined first. A neighbour off screen whose edge is drawn still shows the reader which way
+   * the connection goes; one drawn as two stubs shows almost nothing, so the ghost is worth
+   * more there. `add` already decided which pairs got a line, and asking the map is what keeps
+   * this from drifting from that decision.
+   *
+   * Then nearest first, so the cap keeps the ones most likely to be worth walking to — and the
+   * ones `Explorer` is already holding a reply for, so the door opens without a read. Degree
+   * settles a tie, as it does for the ring's paint order, and ties are the common case because
+   * a parent's neighbours are seated at one radius. Id settles the rest, so nothing depends on
+   * which edge happened to be linked first.
+   *
+   * Camera-independent throughout: a rank that moved with the viewport would reshuffle the
+   * slots underneath the ghosts already standing in them.
+   */
+  private ghostable(known: readonly string[], centre: string): string[] {
+    const ranked = known.map((other) => ({
+      id: other,
+      unlined: this.cy.$id(pairKey(centre, other)).empty() ? 0 : 1,
+      span: this.world.span(centre, other),
+      degree: this.world.get(other)?.degree ?? 0,
+    }))
+    ranked.sort(
+      (a, b) =>
+        a.unlined - b.unlined ||
+        a.span - b.span ||
+        b.degree - a.degree ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    )
+    return ranked.slice(0, MAX_GHOSTS).map((entry) => entry.id)
+  }
+
+  /**
+   * How far a node's drawn box lies outside the viewport, in world units. Zero or less if any
+   * part of it is on screen.
+   *
+   * The box and not the position, because a ring node draws as its name: a seat just past the
+   * edge still has half its label readable, and a ghost raised for it would be the same name
+   * twice — the thing this measurement exists to prevent, only narrower.
+   *
+   * The largest of the four axis gaps rather than the distance to a corner. Negative on all
+   * four axes is what overlapping the viewport means, and where it is positive the value is
+   * how far one axis has to travel to bring the node in, which is what the margin is about.
+   */
+  private outsideBy(id: string, view: BoundingBox12): number {
+    const node = this.cy.$id(id)
+    // Cytoscape gives an empty collection a box at the origin, which would read as on screen
+    // whenever the origin is. A ghost is a door to a node, and there is no node here, so the
+    // answer that raises nothing is the honest one.
+    if (node.empty()) return -Infinity
+    const box = node.boundingBox()
+    return Math.max(view.x1 - box.x2, box.x1 - view.x2, view.y1 - box.y2, box.y1 - view.y2)
+  }
+
+  /**
+   * Where each of a centre's ghosts stands. Cut once per visit, then only ever extended.
+   *
+   * The slots cannot simply be asked for again each pass. `seat` spreads what it is given
+   * evenly, so the same neighbours in a different number come back on different bearings; and
+   * a ghost holds no ground, so asking for one slot twice returns the same point twice and the
+   * second ghost lands on the first. Either way a set that moved with the camera would walk
+   * the standing ghosts around the ring, and nothing on this map moves except a ghost in
+   * flight.
+   *
+   * Sized from the degree the store reports rather than from the neighbours drawn so far, so a
+   * reply landing later finds a slot waiting instead of shifting what is already standing. A
+   * write that links a neighbour beyond that size leaves it without one for the rest of the
+   * visit, which is the same answer the cap gives: it keeps its line or its stub.
+   *
+   * Cut here rather than in `setAccent`, because `trackAccent` moves the accent on every frame
+   * of a pan and `seat` must not be on that budget.
+   */
+  private slotsFor(centre: string, known: readonly string[]): ReadonlyMap<string, Point> {
+    let plan = this.doorways
+    if (!plan || plan.centre !== centre) {
+      const room = Math.min(MAX_GHOSTS, Math.max(known.length, this.world.get(centre)?.degree ?? 0))
+      plan = { centre, pool: this.world.slotsAround(centre, room), at: new Map(), seen: -1 }
+      this.doorways = plan
+    }
+    // Only when the neighbourhood grew: the rank is the one thing here that costs a sort.
+    if (plan.seen !== known.length) {
+      plan.seen = known.length
+      for (const target of this.ghostable(known, centre)) {
+        if (plan.at.has(target)) continue
+        // The lowest slot not yet handed out, because none is ever given back.
+        const at = plan.pool[plan.at.size]
+        if (at) plan.at.set(target, at)
+      }
+    }
+    return plan.at
   }
 
   /** A long edge's stub at one end, with its lead. */
@@ -503,30 +667,56 @@ export class MapView {
   }
 
   /**
-   * Stand a ghost in the ring for every neighbour too far away to draw.
+   * Stand a ghost in the ring for every neighbour off screen, and take down every one whose
+   * neighbour has come into view.
    *
-   * Slots come from `World.slotsAround`, which dodges every placed node and is seeded so
-   * that a node raises its ghosts in the same places on every visit. Nothing is written
-   * to the occupancy grid — a ghost holds no ground, which is also what stops
-   * `nearestTo` ever returning one and making a ghost the centre.
+   * Idempotent, and run on a settled camera rather than per frame: a ghost is an element, and
+   * elements arriving and leaving during a fast pan would strobe.
    *
-   * Raised on a settled camera rather than on every accent change: tiers are data writes
-   * and cheap, but elements coming and going during a fast pan would strobe.
+   * The two tests are deliberately not each other's negation. A ghost comes down the moment
+   * any part of its target shows, and goes up only once the target is `GHOST_MARGIN` clear of
+   * the edge. So one pass can never both drop and raise the same neighbour, and no name is
+   * ever readable at its own seat and stood in for at the same time.
+   *
+   * Nothing is written to the occupancy grid — a ghost holds no ground, which is also what
+   * stops `nearestTo` ever returning one and making a ghost the centre.
    */
-  showGhosts(): void {
-    const id = this.accentId
-    if (!id || this.flying || this.ghosts.length) return
-    const targets = this.farNeighbours(id)
-    if (!targets.length) return
+  reviseGhosts(): void {
+    const centre = this.accentId
+    if (!centre || this.flying) return
 
-    const slots = this.world.slotsAround(id, targets.length)
+    const known = this.world.neighbours(centre)
+    const slots = this.slotsFor(centre, known)
+    const view = this.cy.extent()
+    const margin = GHOST_MARGIN / this.cy.zoom()
+    // Measured before the batch opens: a box sized from a label needs the style pass, and a
+    // batch holds that back until the outermost one closes.
+    const outside = new Map<string, number>()
+    for (const target of slots.keys()) outside.set(target, this.outsideBy(target, view))
+
+    const neighbours = new Set(known)
+    const standing = new Set<string>()
+    const down: Ghost[] = []
+    for (const ghost of this.ghosts) {
+      // A ghost whose target is no longer a neighbour goes too. Undoing a join leaves the edge
+      // gone and both nodes in place, so nothing else would ever take it down.
+      const gap = outside.get(ghost.target) ?? -Infinity
+      if (neighbours.has(ghost.target) && gap > 0) standing.add(ghost.target)
+      else down.push(ghost)
+    }
+
+    const up: Ghost[] = []
     const elements: ElementDefinition[] = []
-    targets.forEach((target, i) => {
-      const at = slots[i]
+    for (const [target, at] of slots) {
+      // The plan keeps a slot for a neighbour that has since stopped being one, because it is
+      // only ever added to. Without this test the pass above would take that ghost down and
+      // this one would put it straight back, leaving it claiming an edge that is gone.
+      if (!neighbours.has(target)) continue
+      if (standing.has(target) || (outside.get(target) ?? -Infinity) <= margin) continue
       const node = this.world.get(target)
-      if (!at || !node) return
-      const ghost = ghostId(id, target)
-      this.ghosts.push({ ghost, centre: id, target })
+      if (!node) continue
+      const ghost = ghostId(centre, target)
+      up.push({ ghost, centre, target })
       elements.push({
         group: "nodes",
         data: { id: ghost, label: node.label, ghost: true },
@@ -534,21 +724,39 @@ export class MapView {
       })
       elements.push({
         group: "edges",
-        data: { id: `e:${ghost}`, source: id, target: ghost, ghost: true },
+        data: { id: `e:${ghost}`, source: centre, target: ghost, ghost: true },
       })
-      // The stub at this end was saying the same thing, less clearly.
-      this.stubAt(id, target).addClass("hidden")
+    }
+
+    // The settle fires on every camera stop, so a picture that has crossed no threshold must
+    // cost the boxes above and nothing more: no batch, no style pass, no redraw.
+    if (!down.length && !up.length) return
+
+    this.cy.batch(() => {
+      for (const ghost of down) this.lower(ghost)
+      // A long edge's stub at this end was saying the same thing, less clearly. A short edge
+      // has no stub and its line stays up, saying the one thing a ghost in the ring cannot:
+      // where the neighbour actually is.
+      for (const ghost of up) this.stubAt(centre, ghost.target).addClass("hidden")
+      this.cy.add(elements)
     })
-    this.cy.add(elements)
+    this.ghosts = [...this.ghosts.filter((ghost) => standing.has(ghost.target)), ...up]
   }
 
-  /** Take the ghosts down and give each replaced stub its meaning back. */
+  /** One ghost down, and whatever it was standing in front of gets its meaning back. */
+  private lower(ghost: Ghost): void {
+    this.stubAt(ghost.centre, ghost.target).removeClass("hidden")
+    this.cy.$id(ghost.ghost).remove()
+  }
+
+  /** Take every ghost down and forget where they stood. */
   private clearGhosts(): void {
+    // Ahead of the early return, because a plan outlives its ghosts: a centre whose
+    // neighbours are all on screen has its slots cut and none of them handed out, and a stale
+    // plan surviving an accent change is the one way the slots can come out wrong.
+    this.doorways = null
     if (!this.ghosts.length) return
-    for (const { ghost, centre, target } of this.ghosts) {
-      this.stubAt(centre, target).removeClass("hidden")
-      this.cy.$id(ghost).remove()
-    }
+    for (const ghost of this.ghosts) this.lower(ghost)
     this.ghosts = []
   }
 
@@ -692,10 +900,13 @@ export class MapView {
       // one is mid-dissolve and outlives them by exactly that long. Its removal is booked
       // before anything that could throw, so a ghost cannot be stranded on the map.
       this.ghosts = this.ghosts.filter((g) => g.ghost !== ghost)
-      setTimeout(() => this.cy.$id(ghost).remove(), DISSOLVE_MS)
+      // The element, not its id. Ghosts are raised and lowered as the camera moves, so
+      // walking straight back the way you came can put a *new* ghost under this same id
+      // before the dissolve is out, and a removal by id would delete that one instead.
+      setTimeout(() => flier.remove(), DISSOLVE_MS)
       if (from) this.stubAt(from, target).removeClass("hidden")
       this.setAccent(target)
-      this.showGhosts()
+      this.reviseGhosts()
       onArrive(target)
     }, duration)
     return true

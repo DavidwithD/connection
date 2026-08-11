@@ -23,7 +23,7 @@ Seven kinds of thing, and one of them is not a node.
 | field | Everything else, at rest | `tier 2` |
 | frontier | Has connections that were never read | `more` |
 | tether | A dashed stub standing in for an edge too long to draw | `stub` |
-| ghost | A hollow stand-in, in the ring, for a neighbour seated too far away | `ghost` |
+| ghost | A hollow stand-in, in the ring, for a neighbour that is off screen | `ghost` |
 
 *Arrival* is a word for describing behaviour, not a state. Every ring node carries the same
 surface-coloured outline, so one arriving over a dimmed node reads as being on top of it
@@ -47,25 +47,54 @@ Never per frame, though — four data writes over two neighbourhoods on a centre
 `O(degree + backdrop)` once per reply, so it stays affordable during a pan.
 
 Backdrop membership is a distance test, not a corridor test: everything within the centre's
-own ring reach that is not one of its neighbours. `ringReach` measures that from the
-neighbours actually drawn as lines, because a neighbour represented by a ghost is already in
-the ring and must not stretch the radius out to its real seat.
+own ring reach that is not one of its neighbours. `ringReach` measures that from the neighbours
+joined by a drawn line, so the radius answers to the world and not to the camera — one that
+moved with the zoom would dim a different set at every step, and each settle would become a
+restyle over everything near the centre. What the backdrop asks is what this centre *crowds*,
+and crowding is a fact about where the seats are.
 
 Nodes arriving mid-flight are born into the right tier rather than waiting for the next
 centre change, which is why `add` reads the current centre before it builds an element.
 
 ## Ghosts
 
+Every neighbour of the centre is either legible at its own seat or stood in for by a ghost.
+Never both, never neither. That is the whole rule, and it is the camera that decides which:
+a ghost stands while its neighbour's drawn box is off screen. So zooming out dissolves the
+doorways into the nodes they stood for, and zooming in raises them for the neighbourhood you
+zoomed past.
+
+Reading the camera at all is [ADR 0025](../decisions/0025-when-a-ghost-stands.md); the ghost
+itself is 0004's. The rule reads the canvas, which is not quite what the reader sees: the HUD,
+the islands and the legend float over it, so a neighbour parked under one counts as on screen
+and gets no ghost while being as hidden as one that left.
+
+The box and not the seat, because a ring node draws as its name: a seat just past the edge
+still has half its label readable, and a ghost raised for it would be the same name twice.
+Coming down needs only that some part of the neighbour shows; going up needs it clear of the
+edge by a margin. Those two are not each other's negation, which is what gives the dead band
+that stops a nudge and the nudge back from raising and lowering anything.
+
 A ghost exists only in the renderer. It is never in `World`, never in `Occupancy`, and holds
 no ground — which is what stops `nearestTo` from returning one and making a ghost the centre.
 Its slot comes from `slotsAround` ([world.ts](../../web/src/world.ts)): gaps first, and a ring
-position regardless if there are none, since crowding is what put the neighbour out of range
-to begin with.
+position regardless if there are none, since a full region is exactly where a doorway is worth
+most. The slots are cut once per visit and held for it, because `seat` spreads what it is given
+evenly — asking again for a different number moves the ghosts already standing, and nothing on
+this map moves except a ghost in flight.
 
-A ghost replaces the *centre's own end* of that long edge. The tether at the far end stays;
-it belongs to the other node. Raised on a settled camera, not on every centre change — and
-once at boot, because the first frame is the root's ring and has nothing else to stand in
-for a neighbour seated out of range.
+Where the centre's end of a long edge is a tether, the ghost replaces it. The tether at the far
+end stays; it belongs to the other node. Where the edge is short enough to be drawn, the line
+stays too, running off the edge of the screen — it says which way the neighbour lies, which is
+the one thing a stand-in in the ring cannot, so the ghost's own edge is dashed to keep the two
+marks apart. Raised and lowered on a settled camera, never per frame, and once at boot for a
+window too small to hold the root's ring.
+
+Which neighbours can have one is capped, and the cap is reached routinely: zoomed in, most of a
+neighbourhood is off screen. Ranked unlined first — a neighbour reached by two tethers has
+almost nothing pointing at it, while one with a drawn line at least has a direction — then
+nearest first, which is also the order the read-ahead holds replies in, so a door usually opens
+without a fetch.
 
 ## The flight
 
@@ -90,13 +119,14 @@ invariants in [architecture.md](architecture.md).
 retried at a tighter separation, so "no room" is a fact about now rather than a loss. Room is
 the only reason a neighbour is not drawn, and it is temporary.
 
-**A ghost is never a node.** Hollow, dashed, unseated, and gone when the centre moves on.
+**A ghost is never a node.** Hollow, dashed, unseated, gone when the centre moves on — and
+never on screen at the same time as the node it stands for.
 
 ## Where the numbers are
 
 Beside the code that reads them, once: separations and ring geometry in
 [placement.ts](../../web/src/placement.ts), flight speed and its clamps, the ghost cap, the
-long-edge threshold, the pill's inset and the ring's paint band in
-[map-view.ts](../../web/src/map-view.ts), and the settle delay and accent hysteresis in
-[main.ts](../../web/src/main.ts). Each carries the reason for its value in a comment.
-Copying one here would make this the stale copy.
+margin a seat must clear the screen by, the long-edge threshold, the pill's inset and the ring's
+paint band in [map-view.ts](../../web/src/map-view.ts), and the settle delay and accent
+hysteresis in [main.ts](../../web/src/main.ts). Each carries the reason for its value in a
+comment. Copying one here would make this the stale copy.

@@ -80,6 +80,102 @@ async function main() {
   )
   await shot(page, "1-landed")
 
+  // A ghost stands for a neighbour of the centre while that neighbour is off screen, so the
+  // camera is the only thing that can be asked whether it is right. Cytoscape registers itself
+  // on its container, which is how the page can be asked what it drew without the app having
+  // to expose anything for the asking.
+  const drawn = (page) =>
+    page.evaluate(() => {
+      const cy = document.querySelector("#stage")?._cyreg?.cy
+      if (!cy) return null
+      const view = cy.extent()
+      const shows = (box) =>
+        box.x2 >= view.x1 && box.x1 <= view.x2 && box.y2 >= view.y1 && box.y1 <= view.y2
+      const standing = cy.nodes("[?ghost]").map((ghost) => {
+        const id = ghost.id()
+        const target = cy.$id(id.slice(id.indexOf(":", 2) + 1))
+        return {
+          label: ghost.data("label"),
+          at: `${String(Math.round(ghost.position("x")))},${String(Math.round(ghost.position("y")))}`,
+          // A doorway nobody can see is no doorway. Its slot comes from `seat`, which walks
+          // outward past whatever is seated and knows nothing about the viewport.
+          shown: shows(ghost.boundingBox()),
+          // The invariant, and the whole reason the rule reads the camera: never both.
+          twin: target.nonempty() && shows(target.boundingBox()),
+        }
+      })
+      return {
+        zoom: cy.zoom().toFixed(2),
+        ring: cy.nodes("[tier = 1]").length,
+        dashed: cy.edges("[?ghost]").length === 0 || cy.edges("[?ghost]").style("line-style") === "dashed",
+        standing,
+      }
+    })
+
+  const report = (what, seen) => {
+    if (!seen) return console.log(`  ${what}: no map on the page`)
+    const hidden = seen.standing.filter((g) => !g.shown).map((g) => g.label)
+    const both = seen.standing.filter((g) => g.twin).map((g) => g.label)
+    console.log(
+      `  ${what}: zoom ${seen.zoom} · ring ${String(seen.ring)}` +
+        ` · ${String(seen.standing.length)} standing in` +
+        (seen.dashed ? "" : " · ⚠ ghost edge is not dashed") +
+        (both.length ? ` · ⚠ drawn twice: ${both.join(", ")}` : "") +
+        (hidden.length ? ` · ⚠ raised off screen: ${hidden.join(", ")}` : ""),
+    )
+    return seen
+  }
+
+  // Zoomed out, every neighbour is legible at its own seat and nothing should be standing in
+  // for one. This is the picture the rule exists for: a stand-in beside the node it stands for
+  // is the same name twice, and the map stops being a drawing of the graph.
+  const zoom = async (button, times) => {
+    for (let i = 0; i < times; i++) {
+      await page.locator(`#${button}`).click()
+      await page.waitForTimeout(300)
+    }
+    await page.waitForTimeout(300)
+  }
+
+  await zoom("zoom-out", 5)
+  report("zoomed out", await drawn(page))
+  await shot(page, "2-zoomed-out")
+
+  // Zoomed in, most of a neighbourhood has left the screen and the doorways are what is left
+  // of it. The cap is what stops a hub drawing a wheel of them.
+  await zoom("zoom-in", 9)
+  const close = report("zoomed in", await drawn(page))
+  await shot(page, "3-zoomed-in")
+
+  // A nudge and the nudge back have to land on the same picture. Any viewport rule flips a
+  // node sitting on the edge unless the two thresholds are apart, and any re-derived slot
+  // walks the ghosts already standing around the ring.
+  if (close?.standing.length) {
+    const before = close.standing.map((g) => `${g.label}@${g.at}`).sort()
+    // Not clicked first, deliberately: the handler is on the window and only stands aside for a
+    // text box, and a click on the stage could land on a node and glide the map somewhere else,
+    // which would read as the ring having moved when nothing here moved it.
+    for (const key of ["ArrowRight", "ArrowLeft"]) {
+      await page.keyboard.press(key)
+      await page.waitForTimeout(300)
+    }
+    const after = (await drawn(page))?.standing.map((g) => `${g.label}@${g.at}`).sort() ?? []
+    const same = before.length === after.length && before.every((g, i) => g === after[i])
+    console.log(
+      `  nudge and back: ${String(before.length)} → ${String(after.length)}` +
+        (same ? " · held" : ` · ⚠ the ring moved under it\n    was ${before.join(" ")}\n    now ${after.join(" ")}`),
+    )
+  }
+
+  // Back to where the page opened, so what follows is read at the zoom it was written for.
+  // Through `cy` rather than the buttons: this is putting the camera back, not a thing under
+  // test, and 1.35 to a power does not land on 1.
+  await page.evaluate(() => {
+    const cy = document.querySelector("#stage")?._cyreg?.cy
+    if (cy) cy.zoom(1)
+  })
+  await page.waitForTimeout(400)
+
   const islands = page.locator("#islands")
   const listed = await islands.isVisible()
   console.log(`  islands visible: ${listed}`)
@@ -152,7 +248,7 @@ async function main() {
         { timeout: 10000 },
       )
       console.log(`  crossed to ${target}: ${before} nodes placed → ${await seated()}`)
-      await shot(page, "2-crossed")
+      await shot(page, "4-crossed")
 
       // The row is the point: it stays, it is the marked one now, and it is no longer dim.
       const row = page.locator("#islands .island", { hasText: target }).first()
@@ -185,7 +281,7 @@ async function main() {
             (dim ? " — ⚠ its row was dim, so that click seated an island" : " — already on the map"),
         )
       }
-      await shot(page, "3-back")
+      await shot(page, "5-back")
     }
 
     // The reason the rows are built once and then only re-marked. Rebuilding empties the box,
@@ -224,7 +320,7 @@ async function main() {
     // happened to be on the way.
     await page.waitForTimeout(200)
     console.log(`  folded: ${await fold(page)}`)
-    await shot(page, "4-folded")
+    await shot(page, "6-folded")
     await page.locator("#hud-toggle").click()
   }
 
@@ -232,8 +328,8 @@ async function main() {
   // Nothing but a real window says whether it does — the panels' heights come from the font,
   // the numbers and the data, and none of those is in the stylesheet.
   for (const [name, size] of [
-    ["5-short", { width: 900, height: 500 }],
-    ["6-narrow", { width: 420, height: 800 }],
+    ["7-short", { width: 900, height: 500 }],
+    ["8-narrow", { width: 420, height: 800 }],
   ]) {
     await page.setViewportSize(size)
     const rail = await page.evaluate(() => {
