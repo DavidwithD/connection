@@ -28,6 +28,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0022](0022-a-graph-written-back-out.md) | A graph written back out as text | 🔵 Proposed |
 | [0023](0023-the-graph-moves-through-the-page.md) | The graph moves through the page | 🔵 Proposed |
 | [0024](0024-taking-a-node-out-with-its-edges.md) | Taking a node out with its edges | 🔵 Proposed |
+| [0025](0025-when-a-ghost-stands.md) | When a ghost stands | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

@@ -271,6 +271,16 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   background: transparent;
   border: 2px dashed var(--ink-2);
 }
+/* Matches the on-map ghost: a hollow dashed pill. The pill is what separates it from the
+   frontier dot above — that dot sits on a node that is really there, this one stands in for a
+   node that is not on screen. */
+.ghost-key {
+  display: inline-block;
+  width: 16px;
+  height: 11px;
+  border-radius: 3px;
+  border: 2px dashed var(--ink-2);
+}
 /* Matches the on-map stub: a dashed lead ending in a small muted dot. */
 .stub-key {
   display: inline-flex;

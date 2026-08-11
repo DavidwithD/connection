@@ -128,7 +128,14 @@ function setStatus(text: string, tone: "idle" | "busy" | "error"): void {
 }
 
 const explorer = new Explorer(world, view, {
-  onChange: () => render(),
+  onChange: () => {
+    render()
+    // A reply draws neighbours the settle that asked for it could not have seen: the read is
+    // not awaited there, so the ghost pass ran before any of this arrived. Scheduling another
+    // settle is what covers them, and it keeps ghosts on the settled camera rather than
+    // raising elements from inside `add`, which a pan also reaches.
+    settle()
+  },
   onError: (message) => setStatus(`⚠ ${message}`, "error"),
 })
 
@@ -188,9 +195,9 @@ const trackAccent = perFrame(() => {
  */
 const settle = debounce(() => {
   explorer.loadCentre()
-  // Ghosts wait for a settled camera. Tiers are data writes and cheap to redo mid-pan;
-  // elements arriving and leaving on every accent change would strobe.
-  view.showGhosts()
+  // Ghosts wait for a settled camera, going up and coming down. Tiers are data writes and
+  // cheap to redo mid-pan; elements arriving and leaving on every frame of one would strobe.
+  view.reviseGhosts()
   render()
 }, SETTLE_MS)
 
@@ -597,10 +604,10 @@ async function boot(): Promise<void> {
 
   // The root and its ring, and that is the whole first frame. Nothing beyond it is drawn
   // until somebody walks there; the first settle reads the ring without drawing any of
-  // what comes back. Ghosts are raised here rather than left to that settle, because a
-  // neighbour seated too far to draw is still one of these neighbours, and the first
-  // frame is the one place with nothing else on screen to stand in for it.
-  view.showGhosts()
+  // what comes back. The pass runs here rather than waiting for that settle, so a window too
+  // small to hold the root's ring shows a door to what it cut off on the first frame. On a
+  // window that fits, this raises nothing.
+  view.reviseGhosts()
   // `render` repaints the list, and it runs after the root is placed, so the island holding
   // it is drawn as somewhere you have been on the first frame rather than a beat later.
   render()

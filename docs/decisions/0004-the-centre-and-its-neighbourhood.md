@@ -6,13 +6,13 @@
 
 ## Context
 [ADR 0003](0003-graph-exploration-demo-stack.md) made the node nearest the middle of the
-screen the centre, and froze every position. Under those rules a node could be the centre
-and still hide neighbours, for three reasons. The zoom gate refused to load
-below 0.34. `seat` discarded neighbours it could not fit. And anything seated past ring
-four exceeded `LONG_EDGE`, so it drew as a grey stub.
+screen the centre, and froze every position. Under those rules a node could be the centre and
+still hide neighbours, three ways. The zoom gate refused to load below 0.34. `seat` discarded
+neighbours it could not fit. And anything seated past ring four exceeded `LONG_EDGE`, so it
+drew as a grey stub.
 
 Only the third is about drawing. The first two were losses, leaving a dashed "more here"
-border nothing could discharge. Each option below was drawn and animated first, in
+border nothing could discharge. Every option below was drawn first, in
 [names-and-options.html](../design/names-and-options.html).
 
 ## Decision
@@ -28,12 +28,11 @@ The centre shows every neighbour it has. Nothing on the map moves except a ghost
 | Nodes crowding the centre | Dimmed to a **backdrop** tier | The ring needs the room more than they do. |
 
 ## Alternatives considered
-- **A named tether** — the stub, plus the neighbour's name. Cheapest and honest, but it
-  leaves the ring incomplete, the whole complaint.
+- **A named tether** — the stub plus the name. Honest and cheap, but leaves the ring
+  incomplete, the whole complaint.
 - **Drawing the long edge anyway** — correct and unreadable: a starburst over unrelated
   nodes, edges changing shape as you pan.
-- **A tether on each ghost**, aimed home. Buys direction back, at the price of the tidy
-  ring the ghost was chosen for.
+- **A tether on each ghost**, aimed home. Direction back, at the price of the tidy ring.
 - **Fetching on arrival** — the obvious reading, and wrong: it lands you on a bare centre.
 
 ## Consequences
@@ -43,10 +42,13 @@ hollow, transient, seats nothing, and dissolves into the original.
 
 The cost is that a ring slot no longer says where its node is. Two neighbours 110 and 700
 units away sit at one radius, in whatever direction was free, so distance is learned by
-travelling now, not by looking.
+travelling, not by looking.
 
-`autolock` comes off for a flight, so frozen seating rests on `World` having no method
-that moves a node, not on Cytoscape refusing.
+[0025](0025-when-a-ghost-stands.md) replaced the criterion for raising a ghost. What one is,
+where it stands and how it dissolves are as decided here.
+
+`autolock` comes off for a flight, so frozen seating rests on `World` having no method that
+moves a node, not on Cytoscape refusing.
 
 ## Assumptions and unknowns
 - **A hollow ring reads as "not the real node".** Untested on anyone. If it fails, ghosts
@@ -57,7 +59,6 @@ that moves a node, not on Cytoscape refusing.
 
 ## Revisit when
 - Anyone mistakes a ghost for a node.
-- `MAX_GHOSTS` clamps for real: a hub reached eight undrawable neighbours.
 - Anything other than a flight needs to move something.
 - Someone has to compare two neighbours' distances from the ring alone.
 - The backdrop dims more of the screen than the ring needs.
