@@ -28,6 +28,7 @@ import {
   seat,
   type Placed,
   type Point,
+  type Slot,
 } from "./placement.js"
 
 export interface WorldNode extends Placed {
@@ -144,14 +145,22 @@ export class World {
    * region would be missing from every case it exists for. Nothing is written to the
    * occupancy grid either way, which is what keeps these from being seats — and what
    * stops `nearestTo` ever handing one back as the centre.
+   *
+   * `slot` is how much room one of them needs, which only the renderer can know: these draw as
+   * names. It decides how many a ring holds, and so how many rings get used.
    */
-  slotsAround(id: string, count: number): Point[] {
+  slotsAround(id: string, count: number, slot: Slot, maxRadius: number): Point[] {
     const node = this.nodes.get(id)
     if (!node || count <= 0) return []
     const seed = `ghost:${id}`
-    const gaps = seat(node, count, this.occupancy, seed, SQUEEZE_SEP)
+    // `seat` walks outward until it has the count and knows nothing about where the screen
+    // ends, so a gap beyond the reach is a doorway nobody can open. Dropped rather than kept,
+    // and `ringSlots` refills from rings that are inside it.
+    const gaps = seat(node, count, this.occupancy, seed, SQUEEZE_SEP).filter(
+      (point) => distance(node, point) <= maxRadius,
+    )
     if (gaps.length >= count) return gaps
-    return [...gaps, ...ringSlots(node, count - gaps.length, seed, gaps)]
+    return [...gaps, ...ringSlots(node, count - gaps.length, seed, gaps, slot, maxRadius)]
   }
 
   /**

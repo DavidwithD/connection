@@ -33,25 +33,12 @@ import cytoscape, {
   type NodeSingular,
   type StylesheetJson,
 } from "cytoscape"
-import { LONG_EDGE, NODE_SIZE, type Point } from "./placement.js"
+import { LONG_EDGE, NODE_SIZE, type Point, type Slot } from "./placement.js"
 import { currentPalette, type Palette } from "./palette.js"
 import type { World, WorldNode } from "./world.js"
 
 /** How far a stub reaches from its node, toward the far end of a hidden long edge. */
 const STUB_REACH = 44
-
-/**
- * Most ghosts a centre will show. Past this the ring stops being readable, and the remainder
- * keep whatever the map already showed of them — a line running off the edge of the screen,
- * or the stub of a long edge.
- *
- * A readability bound, and it is reached routinely: zoomed in, most of a neighbourhood is off
- * screen, so any node past this degree hits the cap — which is the right way round, because
- * zoomed in there are fewer real nodes on screen and more room for the ring. Zoomed out,
- * where a wheel of hollow circles would be worst, nothing is off screen and no ghost is
- * raised at all.
- */
-const MAX_GHOSTS = 8
 
 /**
  * How far past the edge of the screen a seat must sit before a ghost is raised for it, in
@@ -110,7 +97,27 @@ const EASING = "cubic-bezier(0.4, 0, 0.2, 1)" as Css.TransitionTimingFunction
  * Not a `NODE_SIZE`: those diameters are what the separations are derived from
  * (placement.ts) and what a field node still draws at, and a pill is neither.
  */
-const PILL_PAD = "8px"
+const PILL_PAD = 8
+
+/**
+ * The halo a pill wears in the surface colour, so a name reads as being *over* what it covers
+ * rather than colliding with it.
+ *
+ * An outline rather than a border, because the border is already spoken for: a node that is
+ * also a frontier has to keep its dashed edge.
+ */
+const PILL_HALO = 3
+
+/** The typeface every name is set in. Named, because the slot measurement has to match it. */
+const PILL_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
+
+/**
+ * Type size for a ring name and for the ghost that stands in for one.
+ *
+ * Shared deliberately: a ghost is a stand-in for a ring node, so a reader comparing the two
+ * is comparing the same name at the same size. It is also what `nameWidth` has to measure at.
+ */
+const RING_FONT_SIZE = 12
 
 /**
  * `z-index` takes a `data()` mapper at runtime — cytoscape's `style/parse.mjs` accepts a
@@ -130,6 +137,45 @@ const RANKED_Z = "data(lift)" as unknown as number
  * one drawn whole is the same rule twice rather than a new one.
  */
 const RING_Z = { top: 24, bottom: 10 } as const
+
+/**
+ * Paint order among ghosts: above the ring, below the centre.
+ *
+ * Ranked by the same key as `RING_Z`, and for a sharper version of the same reason. Two ring
+ * names overlapping costs legibility; two doorways overlapping costs the one underneath its
+ * click, since the topmost element takes the tap. Which of them that is has to follow from
+ * something the reader can see rather than from the order the elements were added in.
+ */
+const GHOST_Z = { top: 29, bottom: 26 } as const
+
+/**
+ * Slack between a ghost's slot and the pill that lands in it.
+ *
+ * `nameWidth` measures on a 2D context and Cytoscape measures with its own, so the two agree
+ * to about a pixel. A pill a pixel wider than its slot touches its neighbour, and touching is
+ * the thing the slot arithmetic exists to prevent.
+ */
+const SLOT_GAP = 6
+
+/**
+ * Kept between calls because it is the same context every time. The one Cytoscape's canvas
+ * renderer runs on, so a page that cannot get one has no map to stand a ghost on either.
+ */
+let measurer: CanvasRenderingContext2D | null = null
+
+/**
+ * How wide a name draws, in world units.
+ *
+ * A slot has to be reserved before the element exists, because a ghost may never move: it
+ * cannot be placed and then measured. Cytoscape sizes a pill from its label
+ * (`width: "label"`), so this measures the same string at the same font, and the pill's own
+ * padding and halo are added by the caller.
+ */
+function nameWidth(label: string): number {
+  measurer ??= document.createElement("canvas").getContext("2d")!
+  measurer.font = `500 ${String(RING_FONT_SIZE)}px ${PILL_FONT}`
+  return measurer.measureText(label).width
+}
 
 const pairKey = (a: string, b: string): string => (a < b ? `${a} ${b}` : `${b} ${a}`)
 
@@ -152,10 +198,8 @@ interface Doorways {
   centre: string
   /** Every slot this centre offers, in the order they are handed out. */
   pool: Point[]
-  /** The slot each neighbour holds. */
+  /** The slot each neighbour holds. Only ever added to, so a doorway never moves. */
   at: Map<string, Point>
-  /** How many neighbours the plan was last extended for. */
-  seen: number
 }
 
 /** A ghost belongs to the centre that raised it, and names the node it stands in for. */
@@ -169,7 +213,7 @@ export function ghostTarget(id: string): string | null {
 }
 
 function buildStyle(p: Palette): StylesheetJson {
-  const font = 'system-ui, -apple-system, "Segoe UI", sans-serif'
+  const pad = `${String(PILL_PAD)}px`
   return [
     // A node at rest: a disc, and unnamed. Only the centre and its ring are named, and a
     // named node draws as its name — see the pill selectors below.
@@ -180,7 +224,7 @@ function buildStyle(p: Palette): StylesheetJson {
         width: NODE_SIZE.resting,
         height: NODE_SIZE.resting,
         label: "",
-        "font-family": font,
+        "font-family": PILL_FONT,
         "font-size": 11,
         // Ink tokens, never the node's own colour.
         color: p.textSecondary,
@@ -212,20 +256,16 @@ function buildStyle(p: Palette): StylesheetJson {
         shape: "round-rectangle",
         width: "label",
         height: "label",
-        padding: PILL_PAD,
+        padding: pad,
         "background-color": p.surface,
         // Near-opaque, so where two pills overlap the front one reads whole instead of the
         // two interleaving. Why they are allowed to overlap: docs/design/the-centre.md.
         "background-opacity": 0.92,
         label: "data(label)",
         color: p.hop[0]!,
-        "font-size": 12,
+        "font-size": RING_FONT_SIZE,
         "font-weight": 500,
-        // A halo in the surface colour, so a ring node reads as being *over* the
-        // backdrop rather than colliding with it. It is an outline rather than a
-        // border because the border is already spoken for: a ring node that is also
-        // a frontier has to keep its dashed edge.
-        "outline-width": 3,
+        "outline-width": PILL_HALO,
         "outline-color": p.surface,
         "z-index": RING_Z.bottom,
       },
@@ -248,7 +288,7 @@ function buildStyle(p: Palette): StylesheetJson {
         shape: "round-rectangle",
         width: "label",
         height: "label",
-        padding: PILL_PAD,
+        padding: pad,
         "background-color": p.accent,
         "background-opacity": 1,
         label: "data(label)",
@@ -287,20 +327,23 @@ function buildStyle(p: Palette): StylesheetJson {
         "background-opacity": 0,
         width: "label",
         height: "label",
-        padding: PILL_PAD,
+        padding: pad,
         "border-width": 2,
         "border-color": p.hop[0]!,
         "border-style": "dashed",
         "border-opacity": 1,
-        "outline-width": 3,
+        "outline-width": PILL_HALO,
         "outline-color": p.surface,
         label: "data(label)",
         color: p.textSecondary,
-        "font-size": 12,
+        "font-size": RING_FONT_SIZE,
         "font-weight": 500,
-        "z-index": 25,
+        "z-index": GHOST_Z.bottom,
       },
     },
+    // Ranked once `rankGhosts` has ranked them, the same shape as the ring's rule above: a
+    // ghost raised mid-pass and not yet ranked still sits above the ring rather than at zero.
+    { selector: "node[?ghost][?lift]", style: { "z-index": RANKED_Z } },
     // Dashed, because the edge a ghost stands for may still be drawn as a line: a neighbour
     // off screen at close zoom keeps the line that runs to the edge of the viewport. That
     // line says which way the connection goes; this one says here is the door to it. Two
@@ -574,14 +617,18 @@ export class MapView {
    * more there. `add` already decided which pairs got a line, and asking the map is what keeps
    * this from drifting from that decision.
    *
-   * Then nearest first, so the cap keeps the ones most likely to be worth walking to — and the
-   * ones `Explorer` is already holding a reply for, so the door opens without a read. Degree
+   * Then nearest first, so the ones most likely to be worth walking to are served first — and
+   * the ones `Explorer` is already holding a reply for, so the door opens without a read. Degree
    * settles a tie, as it does for the ring's paint order, and ties are the common case because
    * a parent's neighbours are seated at one radius. Id settles the rest, so nothing depends on
    * which edge happened to be linked first.
    *
-   * Camera-independent throughout: a rank that moved with the viewport would reshuffle the
-   * slots underneath the ghosts already standing in them.
+   * Every neighbour is offered, and the order is what matters rather than the length: `slotsFor`
+   * walks this list giving a slot to each neighbour that needs one, so this decides who is
+   * served when a neighbourhood asks for more than its rings have room for.
+   *
+   * Camera-independent, so two neighbours never swap places under a pan. Which of them is
+   * eligible does change, and `slotsFor` says why that cannot disturb a doorway standing.
    */
   private ghostable(known: readonly string[], centre: string): string[] {
     const ranked = known.map((other) => ({
@@ -597,7 +644,7 @@ export class MapView {
         b.degree - a.degree ||
         (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     )
-    return ranked.slice(0, MAX_GHOSTS).map((entry) => entry.id)
+    return ranked.map((entry) => entry.id)
   }
 
   /**
@@ -635,29 +682,102 @@ export class MapView {
    * Sized from the degree the store reports rather than from the neighbours drawn so far, so a
    * reply landing later finds a slot waiting instead of shifting what is already standing. A
    * write that links a neighbour beyond that size leaves it without one for the rest of the
-   * visit, which is the same answer the cap gives: it keeps its line or its stub.
+   * visit: it keeps whatever line the map already drew for it.
+   *
+   * `reach` is read here and only here, on the pass that cuts the plan, for the same reason the
+   * slots are: it decides how far out the outermost ring may sit, and a reach that followed the
+   * zoom would move ghosts already standing. So a visit is measured once, at the zoom it began
+   * at, and holds that until the centre changes.
    *
    * Cut here rather than in `setAccent`, because `trackAccent` moves the accent on every frame
    * of a pan and `seat` must not be on that budget.
    */
-  private slotsFor(centre: string, known: readonly string[]): ReadonlyMap<string, Point> {
+  private slotsFor(
+    centre: string,
+    known: readonly string[],
+    reach: number,
+    outside: ReadonlyMap<string, number>,
+    margin: number,
+  ): ReadonlyMap<string, Point> {
     let plan = this.doorways
     if (!plan || plan.centre !== centre) {
-      const room = Math.min(MAX_GHOSTS, Math.max(known.length, this.world.get(centre)?.degree ?? 0))
-      plan = { centre, pool: this.world.slotsAround(centre, room), at: new Map(), seen: -1 }
+      const room = Math.max(known.length, this.world.get(centre)?.degree ?? 0)
+      // Reserved for the widest name known now. Degree covers a neighbour arriving later, but
+      // nothing can measure a name that has not arrived, so one longer than any of these
+      // overhangs its slot — the same bet the pool size makes, one property along.
+      plan = {
+        centre,
+        pool: this.world.slotsAround(centre, room, this.slotBox(known), reach),
+        at: new Map(),
+      }
       this.doorways = plan
     }
-    // Only when the neighbourhood grew: the rank is the one thing here that costs a sort.
-    if (plan.seen !== known.length) {
-      plan.seen = known.length
+
+    // A slot is claimed only by a neighbour past the margin, which is to say one about to have a
+    // doorway raised for it. Claiming for every neighbour up front spends the pool on names in
+    // plain view: a hub has more neighbours than its rings have room for, and near is nearly the
+    // same thing as on screen, so nothing is left by the time the far ones leave it.
+    //
+    // Camera-dependent, and safe because a claim is never taken back. The camera decides who
+    // receives a *free* slot; it cannot move or revoke one already held, so a neighbour that
+    // goes out of view and comes back finds its own waiting, and no doorway standing on screen
+    // is disturbed by a pan. `ghostable` still orders the claimants among themselves.
+    //
+    // Guarded on a slot being left rather than on the neighbourhood having grown, since the
+    // question now answers to the camera. Once the pool is spoken for there is nothing to do,
+    // so the sort is paid for only while doorways are still to be given out.
+    if (plan.at.size < plan.pool.length) {
       for (const target of this.ghostable(known, centre)) {
-        if (plan.at.has(target)) continue
+        if (plan.at.has(target) || (outside.get(target) ?? -Infinity) <= margin) continue
         // The lowest slot not yet handed out, because none is ever given back.
         const at = plan.pool[plan.at.size]
         if (at) plan.at.set(target, at)
       }
     }
     return plan.at
+  }
+
+  /**
+   * The box one slot has to hold, sized for the widest name that could land in it.
+   *
+   * One box for the whole plan rather than one per neighbour, because any of them may take any
+   * slot: the ranking decides who gets which, and it changes as replies land.
+   *
+   * Height comes from the type rather than from a measurement — a pill is one line, so its
+   * height is the font size and the padding, the same arithmetic Cytoscape does.
+   */
+  private slotBox(ids: readonly string[]): Slot {
+    let widest = 0
+    for (const id of ids) {
+      const label = this.world.get(id)?.label
+      if (label) widest = Math.max(widest, nameWidth(label))
+    }
+    const around = 2 * PILL_PAD + 2 * PILL_HALO + SLOT_GAP
+    return { w: widest + around, h: RING_FONT_SIZE + around }
+  }
+
+  /**
+   * Paint order among the ghosts standing, by degree — `setTiers`' rule for the ring, applied
+   * to the doorways for the reason in `GHOST_Z`.
+   *
+   * Re-ranked whenever the set changes rather than fixed when a ghost goes up: the rank is a
+   * position within the set, so one leaving changes it for the rest. Setting `lift` restyles
+   * and does not reposition, so nothing moves.
+   */
+  private rankGhosts(standing: readonly Ghost[]): void {
+    const ranked = [...standing].sort(
+      (a, b) =>
+        (this.world.get(b.target)?.degree ?? 0) - (this.world.get(a.target)?.degree ?? 0) ||
+        (a.target < b.target ? -1 : 1),
+    )
+    const band = GHOST_Z.top - GHOST_Z.bottom
+    ranked.forEach((ghost, i) => {
+      const lift =
+        ranked.length > 1
+          ? GHOST_Z.top - Math.round((i / (ranked.length - 1)) * band)
+          : GHOST_Z.top
+      this.cy.$id(ghost.ghost).data("lift", lift)
+    })
   }
 
   /** A long edge's stub at one end, with its lead. */
@@ -686,13 +806,19 @@ export class MapView {
     if (!centre || this.flying) return
 
     const known = this.world.neighbours(centre)
-    const slots = this.slotsFor(centre, known)
     const view = this.cy.extent()
     const margin = GHOST_MARGIN / this.cy.zoom()
     // Measured before the batch opens: a box sized from a label needs the style pass, and a
-    // batch holds that back until the outermost one closes.
+    // batch holds that back until the outermost one closes. Every neighbour rather than only
+    // the ones already holding a slot, because `slotsFor` picks who to give a free slot to
+    // from these.
     const outside = new Map<string, number>()
-    for (const target of slots.keys()) outside.set(target, this.outsideBy(target, view))
+    for (const target of known) outside.set(target, this.outsideBy(target, view))
+    // How far out a slot may sit: half the viewport's smaller span, which is the reach a ghost
+    // has to be inside to be worth raising. `slotsFor` reads it only on the pass that cuts the
+    // plan, and says why.
+    const reach = Math.min(view.x2 - view.x1, view.y2 - view.y1) / 2
+    const slots = this.slotsFor(centre, known, reach, outside, margin)
 
     const neighbours = new Set(known)
     const standing = new Set<string>()
@@ -732,6 +858,7 @@ export class MapView {
     // cost the boxes above and nothing more: no batch, no style pass, no redraw.
     if (!down.length && !up.length) return
 
+    const after = [...this.ghosts.filter((ghost) => standing.has(ghost.target)), ...up]
     this.cy.batch(() => {
       for (const ghost of down) this.lower(ghost)
       // A long edge's stub at this end was saying the same thing, less clearly. A short edge
@@ -739,8 +866,9 @@ export class MapView {
       // where the neighbour actually is.
       for (const ghost of up) this.stubAt(centre, ghost.target).addClass("hidden")
       this.cy.add(elements)
+      this.rankGhosts(after)
     })
-    this.ghosts = [...this.ghosts.filter((ghost) => standing.has(ghost.target)), ...up]
+    this.ghosts = after
   }
 
   /** One ghost down, and whatever it was standing in front of gets its meaning back. */

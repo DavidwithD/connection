@@ -104,9 +104,42 @@ async function main() {
           twin: target.nonempty() && shows(target.boundingBox()),
         }
       })
+      // The ring is every neighbour of the centre, whatever its distance. How many of them
+      // have left the screen is the population the doorways are drawn from — reported rather
+      // than asserted on, because the threshold for raising one is a margin past the edge and
+      // this script does not know it. A neighbour a few units out is correctly bare.
+      const centre = cy.nodes("[tier = 0]").first()
+      const ring = cy.nodes("[tier = 1]")
+      const offScreen = ring.filter((node) => !shows(node.boundingBox()))
+
+      // Slots are handed out so that no two boxes touch, so any overlap here is that
+      // arithmetic being wrong rather than a judgement call about crowding.
+      const boxes = cy.nodes("[?ghost]").map((ghost) => ghost.boundingBox())
+      let collisions = 0
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i]
+          const b = boxes[j]
+          if (a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2) collisions++
+        }
+      }
+
       return {
         zoom: cy.zoom().toFixed(2),
-        ring: cy.nodes("[tier = 1]").length,
+        ring: ring.length,
+        offScreen: offScreen.length,
+        collisions,
+        // How many rings the doorways spread over, which is the thing a single circle could not
+        // do. Distance from the centre, bucketed to the nearest ten so that two slots on one
+        // ring count once whatever rounding did to them.
+        rings: new Set(
+          cy.nodes("[?ghost]").map((ghost) => {
+            if (centre.empty()) return 0
+            const dx = ghost.position("x") - centre.position("x")
+            const dy = ghost.position("y") - centre.position("y")
+            return Math.round(Math.hypot(dx, dy) / 10)
+          }),
+        ).size,
         dashed: cy.edges("[?ghost]").length === 0 || cy.edges("[?ghost]").style("line-style") === "dashed",
         standing,
       }
@@ -118,10 +151,12 @@ async function main() {
     const both = seen.standing.filter((g) => g.twin).map((g) => g.label)
     console.log(
       `  ${what}: zoom ${seen.zoom} · ring ${String(seen.ring)}` +
-        ` · ${String(seen.standing.length)} standing in` +
+        ` · ${String(seen.offScreen)} off screen` +
+        ` · ${String(seen.standing.length)} standing in over ${String(seen.rings)} ring(s)` +
         (seen.dashed ? "" : " · ⚠ ghost edge is not dashed") +
         (both.length ? ` · ⚠ drawn twice: ${both.join(", ")}` : "") +
-        (hidden.length ? ` · ⚠ raised off screen: ${hidden.join(", ")}` : ""),
+        (hidden.length ? ` · ⚠ raised off screen: ${hidden.join(", ")}` : "") +
+        (seen.collisions ? ` · ⚠ ${String(seen.collisions)} overlapping doorway pair(s)` : ""),
     )
     return seen
   }
@@ -142,7 +177,8 @@ async function main() {
   await shot(page, "2-zoomed-out")
 
   // Zoomed in, most of a neighbourhood has left the screen and the doorways are what is left
-  // of it. The cap is what stops a hub drawing a wheel of them.
+  // of it. What stops a hub drawing a wheel of them is the rings themselves: each holds what
+  // its circumference holds, and only rings the viewport can show are used at all.
   await zoom("zoom-in", 9)
   const close = report("zoomed in", await drawn(page))
   await shot(page, "3-zoomed-in")

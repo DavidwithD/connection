@@ -51,6 +51,12 @@ export interface Placed extends Point {
   id: string
 }
 
+/** The box one name needs. Only the renderer can measure it, so it arrives from there. */
+export interface Slot {
+  w: number
+  h: number
+}
+
 /**
  * A uniform grid over world space, so "is this spot free?" and "what is nearest the
  * middle of the screen?" both stay cheap as the map grows.
@@ -218,7 +224,18 @@ export function seat(
 }
 
 /**
- * Positions on the first ring, taking no account of what is already there.
+ * How many boxes of this width fit round a circle of this radius without touching.
+ *
+ * The number a ring can hold used to be stated as a literal, and the literal was this
+ * calculation done once by hand for the first ring and a typical name. Computing it stays
+ * true for a long name and keeps meaning something on a ring further out — see
+ * docs/decisions/0027-a-ring-holds-what-it-holds.md.
+ */
+export const pillsAround = (radius: number, slotWidth: number): number =>
+  Math.max(1, Math.floor((TAU * radius) / slotWidth))
+
+/**
+ * Positions on rings around the parent, taking no account of what is already there.
  *
  * `seat` refuses to place anything without room, which is right for a node: it owns its
  * spot for the rest of the session. A ghost owns nothing and lasts only as long as you
@@ -227,45 +244,78 @@ export function seat(
  * answer has to work in a full region. The backdrop dimming and the ghost's own halo are
  * what make the resulting overlap readable.
  *
- * Candidates are scored by how far they sit from everything in `avoid` and taken greedily,
- * so a handful of ghosts spread around the parent instead of stacking on one side.
+ * How many a ring offers is `pillsAround`, so a wide neighbourhood steps outward instead of
+ * piling more names onto one circle. `maxRadius` is where that stops: a slot the reader cannot
+ * see is a doorway nobody can open, so past it the answer is fewer slots rather than
+ * unreachable ones. The first ring is offered regardless, because a viewport too small to hold
+ * it is one where every neighbour is off screen too, and no slot at all is the worse answer.
+ *
+ * A slot also has to clear the boxes already handed out, and that is not the same test as
+ * `pillsAround`. The rings step by `seat`'s stride — a little over a pill's height — while a
+ * name is nearly three times as wide as it is tall, so two slots one ring apart on the same
+ * bearing clear each other where the ring runs vertically and collide where it runs
+ * horizontally. Rejecting the collisions is what makes every slot handed out a doorway that
+ * can be read and clicked, rather than one the paint order happens to bury.
+ *
+ * Within a ring, candidates are scored by how far they sit from everything already taken and
+ * picked greedily, so a handful of ghosts spread around the parent instead of stacking along
+ * one side. The step outward and the odd-ring stagger are `seat`'s, at the separation
+ * `slotsAround` asks it for, so gap slots and these interleave rather than collide.
  */
 export function ringSlots(
   parent: Point,
   count: number,
   seed: string,
-  avoid: readonly Point[] = [],
+  avoid: readonly Point[],
+  slot: Slot,
+  maxRadius: number,
 ): Point[] {
   if (count <= 0) return []
   const rotation = rotationFor(seed)
-  const candidates: Point[] = []
-  const CANDIDATES = 24
-  for (let i = 0; i < CANDIDATES; i++) {
-    const angle = rotation + (TAU * i) / CANDIDATES
-    candidates.push({
-      x: parent.x + Math.cos(angle) * FIRST_RING,
-      y: parent.y + Math.sin(angle) * FIRST_RING,
-    })
-  }
-
+  const step = SQUEEZE_SEP * 0.92
   const taken: Point[] = [...avoid]
   const chosen: Point[] = []
-  while (chosen.length < count && candidates.length > 0) {
-    let best = 0
-    let bestScore = -1
-    candidates.forEach((point, i) => {
-      const score = taken.length
-        ? Math.min(...taken.map((other) => distance(point, other)))
-        : Infinity
-      if (score > bestScore) {
-        bestScore = score
-        best = i
-      }
-    })
-    const [pick] = candidates.splice(best, 1)
-    if (!pick) break
-    chosen.push(pick)
-    taken.push(pick)
+
+  const clears = (point: Point): boolean =>
+    !chosen.some(
+      (other) => Math.abs(other.x - point.x) < slot.w && Math.abs(other.y - point.y) < slot.h,
+    )
+
+  for (let ring = 0; ring < MAX_RINGS && chosen.length < count; ring++) {
+    const radius = FIRST_RING + ring * step
+    if (ring > 0 && radius > maxRadius) break
+
+    const slots = pillsAround(radius, slot.w)
+    const stagger = (ring % 2) * (TAU / (slots * 2))
+    const candidates: Point[] = []
+    for (let i = 0; i < slots; i++) {
+      const angle = rotation + (TAU * i) / slots + stagger
+      candidates.push({
+        x: parent.x + Math.cos(angle) * radius,
+        y: parent.y + Math.sin(angle) * radius,
+      })
+    }
+
+    while (chosen.length < count && candidates.length > 0) {
+      let best = -1
+      let bestScore = -1
+      candidates.forEach((point, i) => {
+        if (!clears(point)) return
+        const score = taken.length
+          ? Math.min(...taken.map((other) => distance(point, other)))
+          : Infinity
+        if (score > bestScore) {
+          bestScore = score
+          best = i
+        }
+      })
+      // Nothing left on this ring that clears what is already standing: go outward.
+      if (best < 0) break
+      const [pick] = candidates.splice(best, 1)
+      if (!pick) break
+      chosen.push(pick)
+      taken.push(pick)
+    }
   }
   return chosen
 }
