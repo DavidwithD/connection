@@ -3,46 +3,45 @@
  *
  *   drag            pan the map
  *   wheel           zoom toward the cursor
- *   click a node    glide it to the middle, drawing its ring on the click
- *   right-click     take the middle off the map, edges and all
+ *   click a node    make it the centre, and glide it to the middle
+ *   right-click     take the centre off the map, edges and all
  *   arrows          nudge the camera
  *   click an island cross to it, or go back to one already crossed to
  *
- * The accent is whatever node is nearest the middle of the screen, recomputed at most
- * once per frame. It uses hysteresis — a rival has to be clearly closer before it takes
- * over — because a bare nearest-wins test flickers between two nodes when the midpoint
- * passes between them.
+ * The centre is the node somebody named, and no amount of camera takes it away — see
+ * docs/decisions/0028-the-centre-is-named.md. A pan is looking, a click is going, so the map
+ * can be panned until the centre and its doorways are off screen. That is a picture the
+ * reader asked for, not a state to correct here.
  *
- * Whichever node holds the accent once the camera stops is the only one drawn from, and
- * every node arrives because somebody walked to its neighbour. The reading runs a hop
- * further than that: the ring around the accent is read on arrival and held undrawn, so
- * the next step is already paid for — see docs/decisions/0006-only-the-centre-reads.md.
+ * The centre is the only node drawn from, and every node arrives because somebody walked
+ * to its neighbour. The reading runs a hop further than that: the ring around the centre
+ * is read on arrival and held undrawn, so the next step is already paid for — see
+ * docs/decisions/0006-only-the-centre-reads.md.
  *
- * How long "stopped" takes depends on what moved the camera. Naming a node — a click, a
- * ghost — skips the wait entirely, because the destination is not in doubt. Drift waits,
- * and waits longest for the inputs that carry inertia.
+ * A stopped camera still has work waiting on it, because a doorway answers to the
+ * viewport even when the centre does not. How long "stopped" takes is `SETTLE_MS` below.
  *
  * See docs/decisions/0003-graph-exploration-demo-stack.md.
  */
 import { Missing, deleteNodeWithEdges, fetchIndex, fetchNeighbourhood } from "./api.js"
 import type { GraphIndex, Neighbourhood, NodeMeta } from "./api.js"
-import { Explorer, debounce, perFrame } from "./explore.js"
+import { Explorer, debounce } from "./explore.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
-import { distance, type Point } from "./placement.js"
+import type { Point } from "./placement.js"
 import { World } from "./world.js"
 import { Writes } from "./writes.js"
 
 /**
- * Camera stillness before the centre is drawn from.
+ * Camera stillness before the doorways are revised.
  *
- * The wait is not about the read — that is usually already held — but about *drift*. A
- * drag or a wheel sweeps the middle of the screen across whatever lies between here and
- * there, and a ring drawn for each would seat those nodes permanently: `World` never
- * reassigns a position, so a place panned past is a place that stays on the map. The
- * settle is what keeps the picture to the route.
+ * A pan no longer changes the centre, so nothing here is about what a gesture drifts
+ * across any more. What is left answers to the viewport: a doorway stands while its
+ * neighbour is off screen, and a doorway is an element, so raising and lowering them
+ * through the frames of a fling would strobe. The wait is for the picture the camera
+ * finished on, not for any of the ones it passed through.
  */
 const SETTLE_MS = 190
 
@@ -52,12 +51,9 @@ const SETTLE_MS = 190
  * Most of the 190 is inertia — a drag's fling, a wheel's momentum. An arrow has none: the
  * camera moves its 120px and is still. What is left to wait for is only whether another
  * key is coming, and a held arrow repeats faster than this on a stock keyboard, so a run
- * across six nodes still coalesces into the one draw at the end of it.
+ * of them still costs the one revision at the end of it.
  */
 const NUDGE_SETTLE_MS = 110
-
-/** A rival must be this much closer to the middle before it takes the accent. */
-const ACCENT_HYSTERESIS = 0.78
 
 /** Keyboard pan step, in screen pixels. */
 const NUDGE = 120
@@ -158,32 +154,41 @@ function render(): void {
   else setStatus("drag to pan · wheel to zoom · click to centre", "idle")
 }
 
-/** Whatever is nearest the middle becomes the accent, with a bias toward the incumbent. */
-const trackAccent = perFrame(() => {
-  // A flight pans the camera across everything between here and there. Letting the
-  // accent follow would hand it to each node in turn and tear down the ghost being
-  // flown, which is the one thing the journey is about.
+/**
+ * Name a node the centre, and take whatever its arrival makes possible.
+ *
+ * Every way in comes through here: a click, a search, an island, and the claim below for a
+ * map that has just lost its centre. `flyTo` is the one exception, promoting its own
+ * destination on landing so that the ghost has something to dissolve into.
+ */
+function becomeCentre(id: string): void {
+  if (!view.setAccent(id)) return
+  // Room is a property of the map at one moment. Arriving is the moment to ask again
+  // whether the neighbours this node never had space for can be fitted now.
+  const late = world.seatPending(id)
+  if (late.nodes.length || late.edges.length) view.add(late.nodes, late.edges)
+  render()
+}
+
+/**
+ * A centre for a map that has just lost one.
+ *
+ * Called on a loss and nowhere else — a centre deleted, or a join undone that took its node
+ * with it. A camera that has merely moved leaves the centre where it is, which is the whole
+ * of docs/decisions/0028-the-centre-is-named.md.
+ *
+ * Nearest the middle, bounded by `reach` so a map with nothing on screen is left without a
+ * centre rather than given one nobody can see. No hysteresis: there is no incumbent left to
+ * be biased toward, and the question is asked once instead of on every frame of a pan.
+ *
+ * Never during a flight. `setAccent` clears the ghosts, so a claim landing mid-journey would
+ * take down the one in the air — and the flight names its own destination anyway.
+ */
+function claimCentre(): void {
   if (view.inFlight) return
-
-  const centre = view.centre()
-  const candidate = world.nearestTo(centre, view.reach())
-  if (!candidate) return
-
-  const current = view.accent ? world.get(view.accent) : null
-  if (current && current.id !== candidate.id) {
-    const rival = distance(candidate, centre)
-    const incumbent = distance(current, centre)
-    if (rival > incumbent * ACCENT_HYSTERESIS) return
-  }
-  // Only touch the DOM when the accent actually moved: this runs every frame of a pan.
-  if (view.setAccent(candidate.id)) {
-    // Room is a property of the map at one moment. Arriving is the moment to ask again
-    // whether the neighbours this node never had space for can be fitted now.
-    const late = world.seatPending(candidate.id)
-    if (late.nodes.length || late.edges.length) view.add(late.nodes, late.edges)
-    render()
-  }
-})
+  const candidate = world.nearestTo(view.centre(), view.reach())
+  if (candidate) becomeCentre(candidate.id)
+}
 
 /**
  * Everything that waits for the camera to stop.
@@ -208,7 +213,6 @@ view.cy.on("viewport", () => {
   // The menu was raised over a node at a point on the screen. Move the map underneath it and
   // it is pointing at whatever has drifted under the pointer instead.
   closeMenu()
-  trackAccent()
   settle(nudged ? NUDGE_SETTLE_MS : SETTLE_MS)
   nudged = false
 })
@@ -228,12 +232,12 @@ view.cy.on("tap", "node", (event) => {
 
   if (!world.has(id)) return
 
-  // Naming a node is not drifting past it. There is no ambiguity left about where this
-  // is going, so its ring is drawn on the click rather than on the settle at the far end
-  // of the flight — the same bargain the ghost above makes, and for the same reason. With
-  // the reply usually already held it costs nothing, and the camera lands on a finished
-  // picture instead of completing one a beat after it stops.
+  // The click is what makes this the centre — nothing about the glide that follows will.
+  // Promoted before the camera moves rather than on the settle at the far end, so the ring
+  // draws on the click and the camera lands on a finished picture instead of completing one
+  // a beat after it stops. With the reply usually already held, that costs nothing.
   explorer.prefetch(id)
+  becomeCentre(id)
   view.focus(id)
 })
 
@@ -319,9 +323,10 @@ menuDelete.addEventListener("click", () => {
       // is the rule the store's own delete enforces.
       const gone = world.forget(id) ? [id] : []
       view.drop(gone, dropped)
-      // `drop` clears an accent that has gone and leaves the caller to re-pick. Nothing else
-      // asks until the camera next moves, and until then the HUD would name a gap.
-      trackAccent()
+      // `drop` clears an accent that has gone and leaves the caller to re-pick. This is the
+      // only thing that will: the camera no longer hands the mark around, so without the
+      // claim the map would sit with no centre and the HUD would name a gap.
+      claimCentre()
 
       receipt.settle("ok", `removed ${node.label}`)
       void refreshTotals()
@@ -358,13 +363,15 @@ menuDelete.addEventListener("click", () => {
 function goTo(node: NodeMeta, at?: Point): void {
   if (!world.has(node.id)) {
     view.add([world.place(node, at ?? world.landing(view.centre(), node.id))], [])
-    view.setAccent(node.id)
   }
   // From here on this is the click path: name a destination, read it now rather than on
-  // the settle at the far end, and glide.
+  // the settle at the far end, and glide. Named whether or not it had to be placed — a hit
+  // already on the map is still being arrived at, and the glide alone would leave the centre
+  // behind on the node the reader came from. `becomeCentre` is what repaints, so nothing here
+  // needs to: a destination that is already the centre has changed nothing to repaint for.
   explorer.prefetch(node.id)
+  becomeCentre(node.id)
   view.focus(node.id)
-  render()
 }
 
 /** Says which of these is already on the map, so picking one is a known quantity. */
@@ -428,9 +435,9 @@ new JoinPanel(
       world.lowerDegree(b.id)
       const gone = removed && world.forget(removed.id) ? [removed.id] : []
       view.drop(gone, [[a.id, b.id]])
-      // A removed node may have been the one nearest the middle. Nothing else asks until
-      // the camera next moves, and until then the HUD would name something that is gone.
-      if (gone.length) trackAccent()
+      // A removed node may have been the centre, and nothing else will ask. Without this the
+      // HUD would go on naming something that is gone.
+      if (gone.length) claimCentre()
       void refreshTotals()
       render()
     },
@@ -491,9 +498,11 @@ function renderedCentre(): { x: number; y: number } {
 
 onThemeChange((palette) => view.restyle(palette))
 
+// A window that changed shape is not a loss: the centre is wherever it was, whether or not
+// the new viewport still shows it. Only the doorways answer to the shape, and the settle is
+// what revises those.
 window.addEventListener("resize", () => {
   view.resize()
-  trackAccent()
   settle()
 })
 

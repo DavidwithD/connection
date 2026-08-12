@@ -13,9 +13,10 @@
  * seats against the occupancy of the moment, and seating a node for a place nobody walked
  * to would freeze it against a map that never existed.
  *
- * The trigger is a *settled* camera, never a moving one, so panning waits on nothing and a
- * gesture crossing six nodes draws only the one it stops on. Every reply is additive, so
- * one landing mid-gesture cannot disturb what is on screen.
+ * The trigger is a *settled* camera, never a moving one, so panning waits on nothing — and
+ * since a pan names no centre (docs/decisions/0028-the-centre-is-named.md), a gesture
+ * crossing six nodes draws none of them. Every reply is additive, so one landing mid-gesture
+ * cannot disturb what is on screen.
  *
  * A read whose node stopped being the centre before it landed is abandoned, and its claim
  * handed back so arriving there later asks again.
@@ -89,9 +90,9 @@ export class Explorer {
   loadCentre(): void {
     const centre = this.view.accent
 
-    // A reply about somewhere that is no longer the middle of the screen is no longer
-    // about anything anyone is looking at. Never during a flight: that destination was
-    // asked for by name, and the centre it is about to become is still in the air.
+    // A reply about somewhere that is no longer the centre is no longer about anything anyone
+    // is looking at. Never during a flight: that destination was asked for by name, and the
+    // centre it is about to become is still in the air.
     if (!this.view.inFlight) {
       for (const [id, control] of this.inflight) {
         if (id !== centre) control.abort()
@@ -124,7 +125,7 @@ export class Explorer {
       const result = await (held ?? fetchNeighbourhood(id, control.signal))
       // A held reply belongs to nobody, so no abort reaches it. The centre can still have
       // moved on while it was in the air, and drawing it then would be drawing a ring
-      // around a node that is no longer the middle of the screen.
+      // around a node that is no longer the centre.
       if (control.signal.aborted) throw new Cancelled()
 
       const absorbed = this.world.absorb(id, result.neighbours)
@@ -227,18 +228,5 @@ export function debounce(fn: () => void, ms: number): (after?: number) => void {
   return (after = ms) => {
     if (timer !== undefined) clearTimeout(timer)
     timer = setTimeout(fn, after) as unknown as number
-  }
-}
-
-/** Runs at most once per frame, for work that follows the camera. */
-export function perFrame(fn: () => void): () => void {
-  let queued = false
-  return () => {
-    if (queued) return
-    queued = true
-    requestAnimationFrame(() => {
-      queued = false
-      fn()
-    })
   }
 }

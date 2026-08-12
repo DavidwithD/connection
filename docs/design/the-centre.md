@@ -1,10 +1,14 @@
 # The centre and its neighbourhood
 
-What the map draws around the node in the middle, and what has to stay true while it does.
-The constraints behind it are [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md),
-for what is drawn, and [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it
-is drawn as; the options that lost are still drawn in
-[names-and-options.html](names-and-options.html).
+What the map draws around the centre, and what has to stay true while it does. The constraints
+behind it are [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md), for what is
+drawn, [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it is drawn as, and
+[ADR 0028](../decisions/0028-the-centre-is-named.md), for which node holds it; the options that
+lost are still drawn in [names-and-options.html](names-and-options.html).
+
+The centre is named, never inferred. A click, a doorway, a search hit, a crossing to an island
+— each of those hands the mark over, and nothing else does. Panning and zooming are looking,
+so the middle of the screen is where the centre was put rather than what defines it.
 
 ## The names
 
@@ -16,7 +20,7 @@ Seven kinds of thing, and one of them is not a node.
 
 | Name | What it is | In the code |
 |---|---|---|
-| centre | The node nearest the middle of the screen | `tier 0` |
+| centre | The node somebody named, until somebody names another | `tier 0` |
 | ring | A neighbour of the centre, named — the name being the mark | `tier 1` |
 | arrival | A ring node that turns up *while* its parent is the centre | born at `tier 1` |
 | backdrop | Near the centre, connected to something else, dimmed | `tier 3` |
@@ -61,8 +65,15 @@ centre change, which is why `add` reads the current centre before it builds an e
 Every neighbour of the centre is either legible at its own seat or stood in for by a ghost.
 Never both, never neither. That is the whole rule, and it is the camera that decides which:
 a ghost stands while its neighbour's drawn box is off screen. So zooming out dissolves the
-doorways into the nodes they stood for, and zooming in raises them for the neighbourhood you
-zoomed past.
+doorways into the nodes they stood for, zooming in raises them for the neighbourhood you zoomed
+past, and panning away raises them for the one you left behind — a doorway being the only mark
+on the map the camera still has any say over.
+
+Which means the doorways can leave the screen themselves. They stand in the centre's own rings,
+so a pan that carries the centre off the edge takes them along, and what is left is a
+neighbourhood standing in for neighbours where neither can be seen. Nothing is lost by it:
+**Recentre** brings the whole picture back, and clicking anything still on screen names a
+centre where you are instead.
 
 Reading the camera at all is [ADR 0025](../decisions/0025-when-a-ghost-stands.md); the ghost
 itself is 0004's. The rule reads the canvas, which is not quite what the reader sees: the HUD,
@@ -98,10 +109,13 @@ window too small to hold the root's ring.
 How many can stand is what the rings have room for, not a number written down:
 `pillsAround` ([placement.ts](../../web/src/placement.ts)) divides a ring's circumference by the
 widest name in the plan, and a neighbourhood wider than one ring uses the next one out. Only
-rings the viewport can show are used, because a doorway off screen opens for nobody, and two
-slots that would touch are refused — a name half under a sibling is still readable, a doorway
-half under one has lost its click. [ADR 0027](../decisions/0027-a-ring-holds-what-it-holds.md)
-is why this is measured rather than declared.
+rings the viewport could show when the visit began are used, because a doorway off screen opens
+for nobody — a bound on how far out to plan, measured once, not a promise about later: the reach
+is held for the visit for the same reason the slots are, and a visit now lasts as long as the
+reader stays on one centre. Two slots that would touch are refused — a name half under a sibling
+is still readable, a doorway half under one has lost its click.
+[ADR 0027](../decisions/0027-a-ring-holds-what-it-holds.md) is why this is measured rather than
+declared.
 
 The rings still run out on a hub at close zoom, so the order they are offered in decides who
 gets one. Ranked unlined first — a neighbour reached by two tethers has almost nothing pointing
@@ -139,6 +153,6 @@ never on screen at the same time as the node it stands for.
 Beside the code that reads them, once: separations, ring geometry and the long-edge threshold in
 [placement.ts](../../web/src/placement.ts), flight speed and its clamps, the margin a seat must
 clear the screen by, the pill's inset and type, and the paint bands for the ring and the doorways
-in [map-view.ts](../../web/src/map-view.ts), and the settle delay and accent hysteresis in
+in [map-view.ts](../../web/src/map-view.ts), and the settle delays and the keyboard pan step in
 [main.ts](../../web/src/main.ts). Each carries the reason for its value in a comment. Copying one
 here would make this the stale copy.

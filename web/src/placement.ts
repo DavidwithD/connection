@@ -235,6 +235,16 @@ export const pillsAround = (radius: number, slotWidth: number): number =>
   Math.max(1, Math.floor((TAU * radius) / slotWidth))
 
 /**
+ * Whether two boxes of this size, centred on these points, would touch.
+ *
+ * One definition for every slot that gets handed out, wherever it came from. A slot is a box
+ * because the thing standing in it draws as a name, and the separations `seat` works in are
+ * scalars sized for discs — so anything spaced by one of those still has to be asked this.
+ */
+export const touches = (a: Point, b: Point, slot: Slot): boolean =>
+  Math.abs(a.x - b.x) < slot.w && Math.abs(a.y - b.y) < slot.h
+
+/**
  * Positions on rings around the parent, taking no account of what is already there.
  *
  * `seat` refuses to place anything without room, which is right for a node: it owns its
@@ -257,6 +267,10 @@ export const pillsAround = (radius: number, slotWidth: number): number =>
  * horizontally. Rejecting the collisions is what makes every slot handed out a doorway that
  * can be read and clicked, rather than one the paint order happens to bury.
  *
+ * `avoid` is tested for that too, not merely scored against. It carries slots already promised
+ * to the same plan, so one of these landing on one of those buries a doorway just as thoroughly
+ * as two of these colliding would — and being someone else's does not make it smaller.
+ *
  * Within a ring, candidates are scored by how far they sit from everything already taken and
  * picked greedily, so a handful of ghosts spread around the parent instead of stacking along
  * one side. The step outward and the odd-ring stagger are `seat`'s, at the separation
@@ -276,10 +290,7 @@ export function ringSlots(
   const taken: Point[] = [...avoid]
   const chosen: Point[] = []
 
-  const clears = (point: Point): boolean =>
-    !chosen.some(
-      (other) => Math.abs(other.x - point.x) < slot.w && Math.abs(other.y - point.y) < slot.h,
-    )
+  const clears = (point: Point): boolean => !taken.some((other) => touches(point, other, slot))
 
   for (let ring = 0; ring < MAX_RINGS && chosen.length < count; ring++) {
     const radius = FIRST_RING + ring * step

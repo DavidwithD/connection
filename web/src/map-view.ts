@@ -430,11 +430,13 @@ export class MapView {
   }
 
   /**
-   * Half the viewport's smaller span, in world units — the search reach for the accent.
+   * Half the viewport's smaller span, in world units — how far a claim on the centre may look.
    *
-   * The smaller span and halved, so a node within reach of the middle is a node on screen. A
-   * wider reach hands the accent to something the reader cannot see, and the ring and its
-   * ghosts are drawn around wherever the accent is.
+   * The smaller span and halved, so a node within reach of the middle is a node on screen. The
+   * claim runs when a centre has been taken off the map and something has to replace it, and a
+   * wider reach would replace it with a node the reader cannot see. It is not what keeps the
+   * centre in view: nothing does, and docs/decisions/0028-the-centre-is-named.md says why that
+   * is allowed.
    */
   reach(): number {
     const box = this.cy.extent()
@@ -797,6 +799,13 @@ export class MapView {
    * any part of its target shows, and goes up only once the target is `GHOST_MARGIN` clear of
    * the edge. So one pass can never both drop and raise the same neighbour, and no name is
    * ever readable at its own seat and stood in for at the same time.
+   *
+   * Runs whether or not the centre is itself on screen. A pan carries the centre off the edge
+   * and its doorways with it now that neither answers to the camera
+   * (docs/decisions/0028-the-centre-is-named.md), and skipping the pass for a picture nobody
+   * is looking at is the obvious saving — but a neighbour can come back into view while the
+   * centre is still outside it, and the pass that did not run is the one that would have taken
+   * that ghost down. Measuring regardless is what the invariant above costs.
    *
    * Nothing is written to the occupancy grid — a ghost holds no ground, which is also what
    * stops `nearestTo` ever returning one and making a ghost the centre.
