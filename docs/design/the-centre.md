@@ -83,6 +83,11 @@ most. The slots are cut once per visit and held for it, because `seat` spreads w
 evenly — asking again for a different number moves the ghosts already standing, and nothing on
 this map moves except a ghost in flight.
 
+A slot is claimed only by a neighbour that needs one at the time, and never given back — which is
+what lets the claim answer to the camera while the position does not. `slotsFor`
+([map-view.ts](../../web/src/map-view.ts)) carries the reason a claim that is never revoked can
+be made on what the reader can see without disturbing a doorway already standing.
+
 Where the centre's end of a long edge is a tether, the ghost replaces it. The tether at the far
 end stays; it belongs to the other node. Where the edge is short enough to be drawn, the line
 stays too, running off the edge of the screen — it says which way the neighbour lies, which is
@@ -90,11 +95,18 @@ the one thing a stand-in in the ring cannot, so the ghost's own edge is dashed t
 marks apart. Raised and lowered on a settled camera, never per frame, and once at boot for a
 window too small to hold the root's ring.
 
-Which neighbours can have one is capped, and the cap is reached routinely: zoomed in, most of a
-neighbourhood is off screen. Ranked unlined first — a neighbour reached by two tethers has
-almost nothing pointing at it, while one with a drawn line at least has a direction — then
-nearest first, which is also the order the read-ahead holds replies in, so a door usually opens
-without a fetch.
+How many can stand is what the rings have room for, not a number written down:
+`pillsAround` ([placement.ts](../../web/src/placement.ts)) divides a ring's circumference by the
+widest name in the plan, and a neighbourhood wider than one ring uses the next one out. Only
+rings the viewport can show are used, because a doorway off screen opens for nobody, and two
+slots that would touch are refused — a name half under a sibling is still readable, a doorway
+half under one has lost its click. [ADR 0027](../decisions/0027-a-ring-holds-what-it-holds.md)
+is why this is measured rather than declared.
+
+The rings still run out on a hub at close zoom, so the order they are offered in decides who
+gets one. Ranked unlined first — a neighbour reached by two tethers has almost nothing pointing
+at it, while one with a drawn line at least has a direction — then nearest first, which is also
+the order the read-ahead holds replies in, so a door usually opens without a fetch.
 
 ## The flight
 
@@ -124,9 +136,9 @@ never on screen at the same time as the node it stands for.
 
 ## Where the numbers are
 
-Beside the code that reads them, once: separations and ring geometry in
-[placement.ts](../../web/src/placement.ts), flight speed and its clamps, the ghost cap, the
-margin a seat must clear the screen by, the long-edge threshold, the pill's inset and the ring's
-paint band in [map-view.ts](../../web/src/map-view.ts), and the settle delay and accent
-hysteresis in [main.ts](../../web/src/main.ts). Each carries the reason for its value in a
-comment. Copying one here would make this the stale copy.
+Beside the code that reads them, once: separations, ring geometry and the long-edge threshold in
+[placement.ts](../../web/src/placement.ts), flight speed and its clamps, the margin a seat must
+clear the screen by, the pill's inset and type, and the paint bands for the ring and the doorways
+in [map-view.ts](../../web/src/map-view.ts), and the settle delay and accent hysteresis in
+[main.ts](../../web/src/main.ts). Each carries the reason for its value in a comment. Copying one
+here would make this the stale copy.

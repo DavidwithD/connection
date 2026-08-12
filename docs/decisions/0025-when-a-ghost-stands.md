@@ -37,8 +37,8 @@ A ghost stands while the box its neighbour draws is off screen.
 ## Consequences
 The ghost becomes the one thing the camera changes, so every stopped camera costs a
 measurement per candidate, and two visits at different zooms show different rings. The cap
-changes meaning, not value: written as a hub backstop and never reached, it is the bound any
-close zoom arrives at.
+changes meaning, not value: a hub backstop became the bound any close zoom reaches, until
+[0027](0027-a-ring-holds-what-it-holds.md) let the ring decide.
 
 The accent's reach is corrected with it, so the centre changes hands sooner and varies more
 under a pan.

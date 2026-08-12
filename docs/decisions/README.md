@@ -30,6 +30,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0024](0024-taking-a-node-out-with-its-edges.md) | Taking a node out with its edges | 🔵 Proposed |
 | [0025](0025-when-a-ghost-stands.md) | When a ghost stands | 🔵 Proposed |
 | [0026](0026-a-fourth-kind-of-document.md) | A fourth kind of document | 🔵 Proposed |
+| [0027](0027-a-ring-holds-what-it-holds.md) | A ring holds what it holds | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
