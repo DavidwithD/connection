@@ -46,26 +46,29 @@ neither is told when the other writes, so the second one drifts until you reload
 
 ## The map — `/`
 
-Pan around an undirected cyclic graph like a map. Whatever you stop on is what loads.
+Pan around an undirected cyclic graph like a map. Whatever you click is what loads.
 
 | Gesture | Does |
 |---|---|
 | drag | Pan |
 | wheel | Zoom toward the cursor |
-| click a node | Glide it to the middle |
+| click a node | Make it the centre, and glide it to the middle |
 | click the centre | Put its name in the box at the top — the next name joins the pair |
 | click a ghost | Fly to the node it stands in for |
 | right-click the centre | Take it off the map, with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
+| **Recentre** | Go back to the centre, wherever the panning left it |
 | `/` | Put the caret in the box at the top, whatever the focus was on |
 
-The node nearest the middle of the screen is the **centre**, which is what gliding a node to
-the middle is for. It is the only node the map draws around, so what you see is the route you
-walked — and nothing already on screen ever moves on its own. Panning does no work either: the
-next read waits for the camera to go still. What the map draws around the centre, and why none
-of it moves, is [the-centre.md](design/the-centre.md).
+The node you clicked is the **centre**, and it stays the centre however far you pan away from
+it — panning is looking, clicking is going. It is the only node the map draws around, so what
+you see is the route you walked and nothing besides: drift adds nothing, and nothing already on
+screen ever moves on its own. Pan far enough and the centre goes off screen along with the
+doorways standing around it; **Recentre** is the way back, and clicking anything you can see is
+the way on. What the map draws around the centre, and why none of it moves, is
+[the-centre.md](design/the-centre.md).
 
 Which is why **islands** exists. A graph in pieces has components no walk from here can reach,
 however long you look — and a node you make is one until you join it to something. The list is

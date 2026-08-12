@@ -227,8 +227,17 @@ export const pillsAround = (radius: number, slotWidth: number): number =>
   Math.max(1, Math.floor((TAU * radius) / slotWidth))
 
 /**
- * Positions on rings around the parent, for ghosts. Unlike `seat`, this ignores the
- * occupancy grid.
+ * Whether two boxes of this size, centred on these points, would touch.
+ *
+ * One definition for every slot that gets handed out, wherever it came from. A slot is a box
+ * because the thing standing in it draws as a name, and the separations `seat` works in are
+ * scalars sized for discs — so anything spaced by one of those still has to be asked this.
+ */
+export const touches = (a: Point, b: Point, slot: Slot): boolean =>
+  Math.abs(a.x - b.x) < slot.w && Math.abs(a.y - b.y) < slot.h
+
+/**
+ * Positions on rings around the parent, taking no account of what is already there.
  *
  * `seat` returns nothing when there is no room, which is correct for a node: a node keeps
  * its spot for the rest of the session. A ghost keeps nothing and exists only while the
@@ -247,10 +256,14 @@ export const pillsAround = (radius: number, slotWidth: number): number =>
  * the same bearing therefore clear each other where the ring runs vertically and collide
  * where it runs horizontally. Rejecting those collisions keeps every slot clickable.
  *
- * Within a ring, each candidate is scored by its distance from everything already taken,
- * and the best is picked. A few ghosts then spread around the parent instead of stacking on
- * one side. The step and the odd-ring stagger match `seat`, so these slots interleave with
- * the ones `seat` produces rather than colliding with them.
+ * `avoid` is tested for that too, not merely scored against. It carries slots already promised
+ * to the same plan, so one of these landing on one of those buries a doorway just as thoroughly
+ * as two of these colliding would — and being someone else's does not make it smaller.
+ *
+ * Within a ring, candidates are scored by how far they sit from everything already taken and
+ * picked greedily, so a handful of ghosts spread around the parent instead of stacking along
+ * one side. The step outward and the odd-ring stagger are `seat`'s, at the separation
+ * `slotsAround` asks it for, so gap slots and these interleave rather than collide.
  */
 export function ringSlots(
   parent: Point,
@@ -266,10 +279,7 @@ export function ringSlots(
   const taken: Point[] = [...avoid]
   const chosen: Point[] = []
 
-  const clears = (point: Point): boolean =>
-    !chosen.some(
-      (other) => Math.abs(other.x - point.x) < slot.w && Math.abs(other.y - point.y) < slot.h,
-    )
+  const clears = (point: Point): boolean => !taken.some((other) => touches(point, other, slot))
 
   for (let ring = 0; ring < MAX_RINGS && chosen.length < count; ring++) {
     const radius = FIRST_RING + ring * step

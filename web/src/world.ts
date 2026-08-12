@@ -13,6 +13,7 @@ import {
   ringSlots,
   rotationFor,
   seat,
+  touches,
   type Placed,
   type Point,
   type Slot,
@@ -144,12 +145,17 @@ export class World {
     const node = this.nodes.get(id)
     if (!node || count <= 0) return []
     const seed = `ghost:${id}`
-    // `seat` walks outward until it has enough spots and knows nothing about the viewport,
-    // so a gap past `maxRadius` cannot be clicked. Drop those. `ringSlots` refills the count
-    // from rings inside the radius.
-    const gaps = seat(node, count, this.occupancy, seed, SQUEEZE_SEP).filter(
-      (point) => distance(node, point) <= maxRadius,
-    )
+    // Two reasons a gap `seat` found is no good here. It walks outward until it has the count
+    // and knows nothing about where the screen ends, so one beyond the reach is a doorway
+    // nobody can open. And it spaces by a scalar sized for discs, while these draw as names —
+    // so two gaps far enough apart to be separate seats can still bury one another as pills.
+    // Both drop out, and `ringSlots` refills from rings that are inside the reach.
+    const gaps: Point[] = []
+    for (const point of seat(node, count, this.occupancy, seed, SQUEEZE_SEP)) {
+      if (distance(node, point) > maxRadius) continue
+      if (gaps.some((other) => touches(point, other, slot))) continue
+      gaps.push(point)
+    }
     if (gaps.length >= count) return gaps
     return [...gaps, ...ringSlots(node, count - gaps.length, seed, gaps, slot, maxRadius)]
   }
