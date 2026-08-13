@@ -209,6 +209,7 @@ one, and the end you fired empties for the next name.
 | `↵` | Take the highlighted row — with the other end filled, that writes the edge |
 | `⇧↵` | Create exactly what is typed, whatever the list shows |
 | `⌘↵` | Either of those, and go on from the name it just wrote |
+| `Tab` | Cross to the other end |
 | `Esc` | Close the list; again, put the widget away and let the focus go |
 
 `↵` takes the best match, so a prefix and one key reaches a node that already exists; `⇧↵`
@@ -218,9 +219,12 @@ creates too. Why the two are separate keys is
 
 `⌘` rides on either of them, and changes what happens after the write rather than what is
 written: the name just fired takes the *other* end, so the caret stays where it is and the
-next name joins to that one. That is a path at one name per node — `Kavara` `↵`, then
-`Corwen` `⌘↵`, `Thessa` `⌘↵` — and what it costs is the anchor you were fanning from, which
-the moving one replaces. Ctrl does the same, and so does ⌘ held over a row you click.
+next name joins to that one. What it costs is the anchor you were fanning from, which the
+moving one replaces. Ctrl does the same on a keyboard with no ⌘ to hold; over a row you
+click it is ⌘ alone, since Control-click is the other mouse button on a Mac.
+
+A path is then one name per node. `Kavara` `↵` arms the near end, `Tab` crosses to the far
+one, and the rest — `Corwen` `⌘↵`, `Thessa` `⌘↵` — runs without the caret moving again.
 
 `Esc` collapses the whole widget, not just the end you are in — both names go, the far end
 with them, and the focus is handed back to the map. It is the way out, and `/` is the way
@@ -230,8 +234,9 @@ back in.
 parts the edge and deletes the node if that write is what created it. It stays for thirty
 seconds. A node something else has since been joined to is kept, and the edge still parts.
 
-A receipt names both ends, and clicking either name puts it back in the near end, which is how
-a path costs one name per node. Clicking loads and never writes.
+A receipt names both ends, and clicking either name puts it back in the near end. That is the
+way back to a write that has scrolled away, where `⌘↵` carries only the one just fired.
+Clicking loads and never writes.
 
 Taking a node off the map is the one write with no way back, since its edges cannot return
 with it. So it asks first rather than offering an undo after, and the row it asks with names

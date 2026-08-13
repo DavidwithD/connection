@@ -167,10 +167,11 @@ export class JoinPanel {
   /**
    * Back to one box, holding nothing.
    *
-   * Both ends, because the two are one widget: `Esc` in the end you are looking at, while
-   * the other quietly keeps an anchor, would leave the thing every following pick writes
-   * against off screen behind a panel that looks shut. Nothing is unwritten by this — the
-   * ends hold names, and a write that landed has its own way back.
+   * Both ends, because the two are one widget and this is the key that leaves it. Clearing
+   * only the end you are in hands the focus back to the map with the other still armed, and
+   * `/` comes back to the near end, from where the next name fires at whatever the far end
+   * kept. Nothing is unwritten by this — the ends hold names, and a write that landed has
+   * its own way back.
    *
    * The focus goes too, in the box that asked for this: `Esc` is also how you get out.
    */
@@ -217,7 +218,8 @@ export class JoinPanel {
 
     // The *other* end — the one you are not typing in — so the caret stays where it is and
     // the next name has somewhere to go. Two ends hold one anchor, so the one this replaces
-    // is let go of; that is what the gesture spends.
+    // is let go of; that is what the gesture spends. Which end takes it, and what the near
+    // end would have cost, is docs/decisions/0028-where-a-chained-name-lands.md.
     //
     // The same object the queued write holds, not a copy, so a name this write has yet to
     // create becomes a node in both the moment it exists. The write keeps the pair it was
@@ -308,10 +310,8 @@ export class JoinPanel {
       }
 
       this.hooks.onUndone(done.a, done.b, removed)
-      // An end may be holding what just went: `⌘↵` puts the name it fires into one, and this
-      // is the write that can take that name back out of the store. A dead name in an end is
-      // a trap — the next pick fires at an id nothing carries and comes back refused — which
-      // is the same reason a name in an undone receipt stops loading (see `reuse`).
+      // The name may be sitting in an end: `⌘↵` puts what it fires into one. The same reason
+      // a name in an undone receipt stops loading (see `reuse`).
       if (removed) this.forget(removed)
       const fate = removed ? `${done.b.label} removed` : `${done.b.label} left in place`
       receipt.settle("undone", fate)
@@ -323,12 +323,20 @@ export class JoinPanel {
     }
   }
 
-  /** Let go of a node that has left the store, in whichever end is holding it. */
-  private forget(node: NodeMeta): void {
+  /**
+   * Let go of a node that has left the store, in whichever end is holding it.
+   *
+   * The undo above is one way a node goes; the map deleting from the centre is the other
+   * (web/src/main.ts), and both call this. What an end left holding a dead name costs is in
+   * docs/design/writing-to-the-graph.md.
+   */
+  forget(node: NodeMeta): void {
     for (const side of [this.near, this.far]) {
       if (side.anchor?.node?.id !== node.id) continue
-      side.box.clear()
       side.anchor = null
+      // Never over a box being typed in, which is the rule `paint` holds to. The anchor is
+      // what has to go; a half-typed name belongs to whoever is typing it.
+      if (document.activeElement !== side.ui.input) side.box.clear()
     }
     this.paint()
   }

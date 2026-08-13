@@ -25,7 +25,7 @@ One box. Naming a node in it opens a second, and the two are an edge's ends.
 | The ends | Stacked, joined by a constant line | It draws what it makes, so neither needs a label. |
 | Which end writes | Both | Nothing in the store tells them apart. |
 | The camera | Follows an arming pick, not a firing one | The anchor stays in view through a run of names. |
-| A receipt | Names the pair; either name loads into the near end | A path costs one name per node. |
+| A receipt | Names the pair; either name loads into the near end | The way back to any landed write. |
 | A queued write's pair | Fixed when the target is picked | Retyping an end would otherwise redirect a queued edge. |
 
 The far end arrives on the pick, since the list opens into its space. The widget shrinks when

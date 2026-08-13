@@ -231,10 +231,12 @@ export class Combobox {
 
       // mousedown, not click: the input's blur would close the list out from under a click
       // before it landed. ⌘ carries here too — a row and the key that takes it are the same
-      // act, and a reader who has learned the modifier will hold it over either.
+      // act, and a reader who has learned the modifier will hold it over either. Not Ctrl:
+      // holding that over a click is how a Mac asks for the other button, and a secondary
+      // click quietly moving the anchor would put the next edge somewhere nobody meant.
       button.addEventListener("mousedown", (event) => {
         event.preventDefault()
-        this.take(i, event.metaKey || event.ctrlKey)
+        this.take(i, event.metaKey)
       })
 
       const item = document.createElement("li")

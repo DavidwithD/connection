@@ -429,7 +429,7 @@
         </tr>
         <tr>
           <td>Build <code>a-b-c-d</code> with <kbd>⌘↵</kbd></td>
-          <td class="desc">A path is the shape this widget would otherwise be worst at: every node named twice, once as a target and again as the next source. Hold <kbd>⌘</kbd> on the pick and the name just written takes the <em>other</em> end, so the caret never moves and each node is named once. What it spends is the anchor you were fanning from — two ends hold one anchor, and the moving one takes its seat.</td>
+          <td class="desc">A path is the shape this widget would otherwise be worst at: every node named twice, once as a target and again as the next source. Hold <kbd>⌘</kbd> on the pick and the name just written takes the <em>other</em> end, so the caret never moves and each node is named once. The camera goes with it, since that end is now the armed one. What it spends is the anchor you were fanning from — two ends hold one anchor, and the moving one takes its seat.</td>
         </tr>
         <tr>
           <td>Now click a name in a receipt</td>
@@ -583,9 +583,10 @@
               degree.textContent = String(row.node.degree)
               button.append(name, degree)
             }
+            // ⌘ alone over a row: Control-click is the other mouse button on a Mac.
             button.addEventListener("mousedown", (e) => {
               e.preventDefault()
-              this.take(i, e.metaKey || e.ctrlKey)
+              this.take(i, e.metaKey)
             })
             const item = document.createElement("li")
             item.append(button)

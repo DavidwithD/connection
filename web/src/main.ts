@@ -323,6 +323,9 @@ menuDelete.addEventListener("click", () => {
       // `drop` clears an accent that has gone and leaves the caller to re-pick. Nothing else
       // asks until the camera next moves, and until then the HUD would name a gap.
       trackAccent()
+      // An end of the panel may be naming it. Nothing about this write goes through the
+      // panel, so it is told: a dead name in an end is the trap its own undo clears.
+      panel.forget(node)
 
       receipt.settle("ok", `removed ${node.label}`)
       void refreshTotals()
