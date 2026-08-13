@@ -428,8 +428,12 @@
           <td class="desc">It names the pair, not a target. With both ends fire-able there is no target — and a receipt outlives the pair that made it, so a single name would read against whatever the widget shows by then.</td>
         </tr>
         <tr>
-          <td>Build <code>a-b-c-d</code></td>
-          <td class="desc">A path is the shape this widget would otherwise be worst at: every node named twice, once as a target and again as the next source. Click the second name in the receipt instead — it goes into the first end and the caret lands in the second, so a chain is one name per node. Any landed receipt works, either name, however far back.</td>
+          <td>Build <code>a-b-c-d</code> with <kbd>⌘↵</kbd></td>
+          <td class="desc">A path is the shape this widget would otherwise be worst at: every node named twice, once as a target and again as the next source. Hold <kbd>⌘</kbd> on the pick and the name just written takes the <em>other</em> end, so the caret never moves and each node is named once. What it spends is the anchor you were fanning from — two ends hold one anchor, and the moving one takes its seat.</td>
+        </tr>
+        <tr>
+          <td>Now click a name in a receipt</td>
+          <td class="desc">The same chain, reaching what <kbd>⌘↵</kbd> cannot: any write that landed, however far back, rather than only the one just fired. It goes into the first end and the caret lands in the second. Loading is not writing, which is what lets both names be live.</td>
         </tr>
         <tr>
           <td>Clear one end</td>
@@ -438,6 +442,10 @@
         <tr>
           <td>Clear both</td>
           <td class="desc">Now it shrinks. Receipts stay where they are, below the part that collapsed.</td>
+        </tr>
+        <tr>
+          <td><kbd>Esc</kbd>, then <kbd>Esc</kbd></td>
+          <td class="desc">The first puts the list away, the second puts the widget away — both ends and the focus with them, in one key from either end. One end at a time is what leaves an anchor armed in the end you are not looking at, which is the state this is the way out of. On the real page <kbd>/</kbd> is the way back in.</td>
         </tr>
         <tr>
           <td><code>zibb</code> <kbd>↵</kbd></td>
@@ -498,11 +506,11 @@
         focus() { this.input.focus() }
         clear() { this.input.value = ""; this.close() }
         close() { this.rows = []; this.at = -1; this.list.replaceChildren() }
-        take(i) {
+        take(i, chain) {
           const row = this.rows[i]
           if (!row) return
           this.close()
-          this.hooks.onPick(row)
+          this.hooks.onPick(row, chain)
         }
         onKey(e) {
           if (e.isComposing) return
@@ -515,23 +523,26 @@
             return
           }
           if (e.key === "Enter") {
+            // ⌘ modifies both branches rather than choosing between them: it says what
+            // happens after the pick, never which node was meant.
+            const chain = e.metaKey || e.ctrlKey
             if (e.shiftKey) {
               const text = this.input.value.trim()
               if (!text) return
               e.preventDefault()
               this.close()
-              this.hooks.onPick({ kind: "create", label: text })
+              this.hooks.onPick({ kind: "create", label: text }, chain)
               return
             }
             if (this.at < 0) return
             e.preventDefault()
-            this.take(this.at)
+            this.take(this.at, chain)
             return
           }
           if (e.key === "Escape") {
             e.preventDefault()
             if (this.rows.length) this.close()
-            else { this.input.value = ""; this.hooks.onEmptied?.() }
+            else { this.input.value = ""; this.hooks.onEmptied?.(); this.input.blur() }
           }
         }
         query() {
@@ -572,7 +583,10 @@
               degree.textContent = String(row.node.degree)
               button.append(name, degree)
             }
-            button.addEventListener("mousedown", (e) => { e.preventDefault(); this.take(i) })
+            button.addEventListener("mousedown", (e) => {
+              e.preventDefault()
+              this.take(i, e.metaKey || e.ctrlKey)
+            })
             const item = document.createElement("li")
             item.append(button)
             this.list.append(item)
@@ -732,7 +746,7 @@
         const end = ends[which]
         end.box = new Combobox(end.input, end.list, {
           onType: paint,
-          onPick: (picked) => {
+          onPick: (picked, chain) => {
             const wrote = fire(which, picked)
             // Arming flies, firing does not — whichever end it happened in. The anchor is
             // what you are looking at, and the end being fired in a run never drags the view
@@ -743,14 +757,25 @@
               end.box.clear()
               end.node = null
               end.pending = null
+              // ⌘: the other end takes it, so the caret stays put — and the anchor it
+              // replaces is let go of, since two ends hold one anchor.
+              if (chain) {
+                const to = ends[other(which)]
+                to.node = picked.kind === "node" ? picked.node : null
+                to.pending = picked.kind === "node" ? null : picked.label
+                // Now an armed end, so the camera follows it as any other arming does.
+                fly(picked)
+              }
             }
             paint()
           },
-          // Emptying one end never touches the other. The widget shrinks when the last name
-          // in it goes, whichever end that was.
+          // `Esc` empties both ends, because the two are one widget rather than two boxes.
           onEmptied: () => {
-            end.node = null
-            end.pending = null
+            for (const w of ["a", "b"]) {
+              ends[w].box.clear()
+              ends[w].node = null
+              ends[w].pending = null
+            }
             paint()
           },
         })

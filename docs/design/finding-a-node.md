@@ -72,6 +72,11 @@ Two keys, and the split between them is the whole shape:
 They meet in one case: a name matching nothing has no best match to take, so `↵` creates
 rather than doing nothing.
 
+`⌘` rides on either Enter rather than joining that split. It carries no opinion about which
+node was meant, so the box passes it out untouched as a flag on the pick: what going on from
+a name means is the caller's, and for the panel that names an edge it is the next name
+joining to the one just written ([join.ts](../../web/src/join.ts)).
+
 A query in the air is aborted when the next one starts, so a slower earlier reply cannot
 overwrite a later one. Rows fire on `mousedown` rather than `click`, because losing focus
 closes the list and a `click` would arrive after it had gone.

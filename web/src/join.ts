@@ -10,7 +10,10 @@
  *
  * The end that fired empties, so a run of names needs no reaching. Whichever end you leave
  * alone is the anchor: hold the near end and you fan out from one node, hold the far end and
- * you fan in to one. The widget shrinks when its last name goes.
+ * you fan in to one. `⌘↵` moves the anchor, which is how a path is named — one name per node
+ * instead of each one twice. `Esc` puts the whole widget away.
+ *
+ * The widget shrinks when its last name goes.
  *
  * Every pick writes immediately — no queue, no commit step. What makes that bearable is that
  * every write can be taken back: each one leaves a receipt carrying an `undo`, and taking it
@@ -18,10 +21,10 @@
  * only key it needs, and safe because `↵` is not final. See
  * docs/decisions/0011-taking-a-write-back.md.
  *
- * A receipt names both ends, and either name loads back into the near end. That is the whole
- * of what makes a path cheap: without it every node in a chain is named twice, once as a
- * target and again as the next anchor. Loading never writes — a pick inside an end is the
- * only thing that does — so reaching back through the receipts can never cost an edge.
+ * A receipt names both ends, and either name loads back into the near end. It reaches what
+ * `⌘↵` cannot: any write that landed, however far back, rather than only the one just fired.
+ * Loading never writes — a pick inside an end is the only thing that does — so reaching back
+ * through the receipts can never cost an edge.
  *
  * Every write goes down the one line the page keeps (web/src/writes.ts), undos included —
  * behind whatever is already queued, so an undo can never overtake the write it reverses.
@@ -140,15 +143,43 @@ export class JoinPanel {
     return {
       allowCreate: true,
       note: this.hooks.note,
-      onPick: (picked) => this.pick(self(), picked),
+      onPick: (picked, chain) => this.pick(self(), picked, chain),
       onError: (message) => this.hooks.onStatus(`⚠ ${message}`, "error"),
       // Emptying the box is how a name is let go of. Without this the box would come back
       // the moment it lost focus, and `Esc` would look like a key that does nothing.
-      onEmptied: () => {
-        self().anchor = null
-        this.paint()
-      },
+      onEmptied: () => this.collapse(),
     }
+  }
+
+  /**
+   * Put the caret in the near end, ready for a name.
+   *
+   * What `/` reaches from anywhere on the page (web/src/main.ts). The text is selected
+   * rather than typed onto the end of, because a box already holding an anchor is one you
+   * mean to type over — and leaving without picking puts back whatever is actually held,
+   * exactly as any other typing-over does.
+   */
+  focus(): void {
+    this.near.ui.input.focus()
+    this.near.ui.input.select()
+  }
+
+  /**
+   * Back to one box, holding nothing.
+   *
+   * Both ends, because the two are one widget: `Esc` in the end you are looking at, while
+   * the other quietly keeps an anchor, would leave the thing every following pick writes
+   * against off screen behind a panel that looks shut. Nothing is unwritten by this — the
+   * ends hold names, and a write that landed has its own way back.
+   *
+   * The focus goes too, in the box that asked for this: `Esc` is also how you get out.
+   */
+  private collapse(): void {
+    for (const side of [this.near, this.far]) {
+      side.box.clear()
+      side.anchor = null
+    }
+    this.paint()
   }
 
   private other(side: Side): Side {
@@ -156,9 +187,10 @@ export class JoinPanel {
   }
 
   /** A name was taken in one end. Arm it, or fire it at whatever the other end holds. */
-  private pick(side: Side, picked: Picked): void {
+  private pick(side: Side, picked: Picked, chain: boolean): void {
     const label = picked.kind === "node" ? picked.node.label : picked.label
-    const anchor = this.other(side).anchor
+    const other = this.other(side)
+    const anchor = other.anchor
 
     if (anchor && this.same(anchor, picked)) {
       this.hooks.onStatus("⚠ a node cannot be joined to itself", "error")
@@ -182,6 +214,20 @@ export class JoinPanel {
     // typed into it.
     side.box.clear()
     side.anchor = null
+
+    // The *other* end — the one you are not typing in — so the caret stays where it is and
+    // the next name has somewhere to go. Two ends hold one anchor, so the one this replaces
+    // is let go of; that is what the gesture spends.
+    //
+    // The same object the queued write holds, not a copy, so a name this write has yet to
+    // create becomes a node in both the moment it exists. The write keeps the pair it was
+    // fired at regardless: it holds `anchor`, which no longer sits in an end.
+    if (chain) {
+      other.anchor = named
+      // An armed end is one the camera follows, and this end is now armed. A name nothing
+      // carries yet has nowhere to fly to, as above.
+      if (named.node) this.hooks.onArm(named.node)
+    }
     this.paint()
 
     const pair: [Anchor, Anchor] = side === this.near ? [named, anchor] : [anchor, named]
@@ -262,6 +308,11 @@ export class JoinPanel {
       }
 
       this.hooks.onUndone(done.a, done.b, removed)
+      // An end may be holding what just went: `⌘↵` puts the name it fires into one, and this
+      // is the write that can take that name back out of the store. A dead name in an end is
+      // a trap — the next pick fires at an id nothing carries and comes back refused — which
+      // is the same reason a name in an undone receipt stops loading (see `reuse`).
+      if (removed) this.forget(removed)
       const fate = removed ? `${done.b.label} removed` : `${done.b.label} left in place`
       receipt.settle("undone", fate)
       this.hooks.onStatus(`undid ${done.a.label} and ${done.b.label}`, "idle")
@@ -270,6 +321,16 @@ export class JoinPanel {
       receipt.settle("warn", reason)
       this.hooks.onStatus(`⚠ ${reason}`, "error")
     }
+  }
+
+  /** Let go of a node that has left the store, in whichever end is holding it. */
+  private forget(node: NodeMeta): void {
+    for (const side of [this.near, this.far]) {
+      if (side.anchor?.node?.id !== node.id) continue
+      side.box.clear()
+      side.anchor = null
+    }
+    this.paint()
   }
 
   private paint(): void {

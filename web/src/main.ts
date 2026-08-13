@@ -6,6 +6,7 @@
  *   click a node    glide it to the middle, drawing its ring on the click
  *   right-click     take the middle off the map, edges and all
  *   arrows          nudge the camera
+ *   /               put the caret in the box at the top
  *   click an island cross to it, or go back to one already crossed to
  *
  * The accent is whatever node is nearest the middle of the screen, recomputed at most
@@ -379,7 +380,7 @@ const note = (node: NodeMeta): string =>
  * where it sits rather than re-seating it, which is the seated-once rule holding for a node
  * that arrived by being made rather than by being walked to.
  */
-new JoinPanel(
+const panel = new JoinPanel(
   {
     near: {
       field: el<HTMLDivElement>("near-end"),
@@ -445,6 +446,16 @@ window.addEventListener("keydown", (event) => {
 
   // The arrows below pan the camera. Inside an end of the panel they belong to the text.
   if (event.target instanceof HTMLInputElement) return
+
+  // The way to the box from wherever the map has left the focus: the whole middle of this
+  // page takes keys, and the panel is the one part of it a hand already on the keyboard
+  // cannot reach. Below the guard above, so a slash typed into an end stays a slash, and not
+  // with a modifier held, which belongs to the browser.
+  if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault()
+    panel.focus()
+    return
+  }
 
   const pan: Record<string, [number, number]> = {
     ArrowLeft: [NUDGE, 0],

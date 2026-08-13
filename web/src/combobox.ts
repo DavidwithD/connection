@@ -14,7 +14,8 @@
  *   ↑ ↓      move the highlight, wrapping at both ends
  *   ↵        take the highlighted row
  *   ⇧↵       create exactly what is typed, whatever the list shows
- *   Esc      close the list; again, clear the box
+ *   ⌘↵       either of those, and go on from what it named
+ *   Esc      close the list; again, empty the box and let the focus go
  *
  * The two Enters are the whole shape of it. `↵` takes the best match, so typing a prefix
  * and pressing it is how you reach a node that exists — the common thing, and the reason
@@ -24,6 +25,10 @@
  *
  * The one place they meet is a name matching nothing. There is no best match to take, so
  * `↵` creates too rather than doing nothing at all.
+ *
+ * ⌘ rides on either Enter rather than adding a third. It says nothing about which node is
+ * meant — only what should happen once one is — and travels out on the pick as `chain`:
+ * what going on from a name means belongs to whoever owns the box.
  */
 import { Cancelled, searchLabels, type NodeMeta } from "./api.js"
 import { debounce } from "./explore.js"
@@ -43,7 +48,11 @@ export type Picked =
   | { kind: "create"; label: string }
 
 export interface ComboboxHooks {
-  onPick: (picked: Picked) => void
+  /**
+   * A name was taken. `chain` is the ⌘ variant of taking it: the same pick, plus a request
+   * to go on from what it named.
+   */
+  onPick: (picked: Picked, chain: boolean) => void
   onError: (message: string) => void
   /** The box was emptied by `Esc`, rather than by a pick or a blur. */
   onEmptied?: () => void
@@ -97,11 +106,11 @@ export class Combobox {
     this.list.replaceChildren()
   }
 
-  private take(index: number): void {
+  private take(index: number, chain: boolean): void {
     const row = this.rows[index]
     if (!row) return
     this.close()
-    this.hooks.onPick(row)
+    this.hooks.onPick(row, chain)
   }
 
   private onKey(event: KeyboardEvent): void {
@@ -123,6 +132,10 @@ export class Combobox {
     }
 
     if (event.key === "Enter") {
+      // ⌘ modifies both branches below rather than choosing between them, so it is read
+      // before either. Ctrl with it, for a keyboard that has no ⌘ to hold.
+      const chain = event.metaKey || event.ctrlKey
+
       // Shift means create, and it does not care what is highlighted or whether the list
       // has even opened yet — it is the one gesture that says what it does on its own.
       if (event.shiftKey) {
@@ -130,18 +143,19 @@ export class Combobox {
         if (!this.hooks.allowCreate || !text) return
         event.preventDefault()
         this.close()
-        this.hooks.onPick({ kind: "create", label: text })
+        this.hooks.onPick({ kind: "create", label: text }, chain)
         return
       }
       if (this.at < 0) return
       event.preventDefault()
-      this.take(this.at)
+      this.take(this.at, chain)
       return
     }
 
     if (event.key === "Escape") {
       event.preventDefault()
-      // Two meanings, nearest first: put the list away, or empty the box.
+      // Two meanings, nearest first: put the list away, or empty the box and let the focus
+      // go — what else that costs is the caller's to say, through `onEmptied`.
       if (this.rows.length) this.close()
       else {
         this.input.value = ""
@@ -216,10 +230,11 @@ export class Combobox {
       }
 
       // mousedown, not click: the input's blur would close the list out from under a click
-      // before it landed.
+      // before it landed. ⌘ carries here too — a row and the key that takes it are the same
+      // act, and a reader who has learned the modifier will hold it over either.
       button.addEventListener("mousedown", (event) => {
         event.preventDefault()
-        this.take(i)
+        this.take(i, event.metaKey || event.ctrlKey)
       })
 
       const item = document.createElement("li")
