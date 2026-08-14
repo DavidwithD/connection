@@ -35,9 +35,8 @@ its last name goes.
 - **Revealing the far end on the keystroke, or behind a chevron.** The list opens into that
   space, so the first flickers and the second spends a glyph reading *open the options* above
   a list of them.
-- **Ends side by side.** The [drawing](../design/two-ends.html) shows it fits, but only by
-  re-centring as it grows, which slides the panel under the caret, and each end loses a
-  quarter of its width.
+- **Ends side by side.** It fits only by re-centring as it grows, which slides the panel
+  under the caret, and each end loses a quarter of its width.
 - **The box mirroring the centre, refilled by a map click.** One notion of the current node
   rather than two, at the price of arming a write on every idle click.
 

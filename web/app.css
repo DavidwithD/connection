@@ -303,8 +303,8 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 
 /* Top centre, between the HUD and the controls. It grows downward, never sideways, so the
    width it needs is the width it always has — until the foot of this file takes its
-   neighbours away, and the 320 with them. Both layouts are drawn to scale against this
-   room in docs/design/two-ends.html. */
+   neighbours away, and the 320 with them. Why not sideways is
+   docs/decisions/0013-one-box-that-grows-into-an-edge.md. */
 #ends {
   top: 16px;
   left: 50%;

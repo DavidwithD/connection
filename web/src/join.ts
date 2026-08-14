@@ -5,8 +5,7 @@
  * constant line, which is why neither carries a label. Both ends write. Naming a node while
  * the other end holds one joins them, whichever end you typed in, because the store keeps no
  * direction to tell them apart (src/graph/edge.ts). See
- * docs/decisions/0013-one-box-that-grows-into-an-edge.md, and
- * docs/design/two-ends.html for the thing itself, driveable.
+ * docs/decisions/0013-one-box-that-grows-into-an-edge.md.
  *
  * The end that fired empties, so a run of names needs no reaching. Whichever end you leave
  * alone is the anchor: hold the near end and you fan out from one node, hold the far end and

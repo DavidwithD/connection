@@ -11,7 +11,6 @@ nothing in here is wrong.
 | [writing-to-the-graph.md](writing-to-the-graph.md) | The four transactions, how a refusal reads, and the way back |
 | [the-islands.md](the-islands.md) | Components as an index, maintained by writes that may fail |
 | [a-graph-as-text.md](a-graph-as-text.md) | The file a graph is typed and written back as |
-| [two-ends.html](two-ends.html) | The panel that finds and joins, driveable, with its losing layouts |
 
 `architecture.md` is the whole system — layers, and the invariants that cross them. Every
 other page is one capability, at the level where you can argue with the design without
@@ -22,3 +21,9 @@ opening a source file. [template.md](template.md) is the one copy of that shape.
 The reasoning. A design document states that positions are frozen; a record states what
 freezing cost and what was turned down to buy it. If you catch yourself writing *we chose*,
 you are writing a record — take the next number in [decisions/](../decisions/).
+
+Anything that only stays true because someone remembers to update it. Two pages tried — a
+drawing of a comparison already argued in prose, and a working copy of the panel carrying
+its own cut-down combobox — and both went stale with nothing to report it. Neither gate
+reads a page: [checks.md](../checks.md) binds markdown, and the layout tree covers the code
+directories only.

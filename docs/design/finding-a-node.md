@@ -8,9 +8,8 @@ the node, while the node's own item carries index keys that put the label somewh
 by name puts the found node on the map beside the camera, joined to nothing.
 
 The reasoning is [ADR 0008](../decisions/0008-finding-a-node-by-name.md); the panel these
-boxes live in is [ADR 0013](../decisions/0013-one-box-that-grows-into-an-edge.md), drawn and
-driveable in [two-ends.html](two-ends.html). What the box *writes* is
-[writing-to-the-graph.md](writing-to-the-graph.md).
+boxes live in is [ADR 0013](../decisions/0013-one-box-that-grows-into-an-edge.md). What the
+box *writes* is [writing-to-the-graph.md](writing-to-the-graph.md).
 
 ## The pieces
 
