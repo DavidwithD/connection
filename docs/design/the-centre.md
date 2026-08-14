@@ -3,8 +3,7 @@
 What the map draws around the node in the middle, and what has to stay true while it does.
 The constraints behind it are [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md),
 for what is drawn, and [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it
-is drawn as; the options that lost are still drawn in
-[names-and-options.html](names-and-options.html).
+is drawn as.
 
 ## The names
 
@@ -120,6 +119,15 @@ Clicking a ghost runs `flyTo` ([map-view.ts](../../web/src/map-view.ts)):
 Steps 2 and 4 are the ones that break if touched. A ghost torn down when its centre stops
 being the centre leaves nothing under the cursor by the second frame; a destination promoted
 before the landing shows you arriving at a place you have not reached.
+
+A round trip is symmetric in everything geometric and asymmetric in everything it knows.
+The motion mirrors: whichever ghost was clicked is the one that travels, the way back covers
+the distance the way out did, and the centre being left demotes and stands a ghost of itself
+in the new ring. What differs is what you land on. Flying out, the destination is an
+unlabelled dot whose neighbours may not be seated, and whether its ring is there on arrival
+is network-bound; flying back, every seat exists and nothing is fetched. Step 1 is what that
+asymmetry pays for — the outbound flight is otherwise idle time, and the return needs none
+of it.
 
 ## Invariants
 
