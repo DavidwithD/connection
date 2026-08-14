@@ -38,14 +38,20 @@ and the reasoning, so the "why" survives even after the code changes.
 
 ## How to add one
 
-1. Take the next unused number (zero-padded to 4 digits). Numbers are spent once and
+1. **Check that there is one to record.** A fork, an option that lost, and somebody who
+   pays for the choice. Name that somebody before anything else; if the only one you can
+   name is a reader who might turn up, stop — you have a note, and a note goes in the
+   document it explains. The tests no script runs are at the foot of [GATE.md](GATE.md),
+   and they are worth answering before a number is spent rather than after a shape is
+   filled in.
+2. Take the next unused number (zero-padded to 4 digits). Numbers are spent once and
    never reused, so records start at 0002 — 0001 was withdrawn before it was decided.
-2. Copy [template.md](template.md) to `NNNN-<kebab-case-title>.md` — that file is the
+3. Copy [template.md](template.md) to `NNNN-<kebab-case-title>.md` — that file is the
    one copy of the shape, so it does not get restated here.
-3. Add a row to the table above **in the same change** — the index is the map.
-4. Link the record from the code or spec that carries the constraint. A record nothing
+4. Add a row to the table above **in the same change** — the index is the map.
+5. Link the record from the code or spec that carries the constraint. A record nothing
    points at is unreachable at the moment it was needed.
-5. Never renumber or delete a *decided* ADR. A reversal gets a *new* ADR, and the old
+6. Never renumber or delete a *decided* ADR. A reversal gets a *new* ADR, and the old
    one flips to ♻️ Superseded with a link forward. A record whose Decision was never
    made is a note, not a decision, and may be withdrawn — its number stays spent.
 
