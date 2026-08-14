@@ -171,6 +171,7 @@ Pan around an undirected cyclic graph like a map. Whatever you stop on is what l
 | drag | Pan |
 | wheel | Zoom toward the cursor |
 | click a node | Glide it to the middle |
+| click the centre | Put its name in the box at the top — the next name joins the pair |
 | click a ghost | Fly to the node it stands in for |
 | right-click the centre | Take it off the map, with everything joined to it |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
@@ -226,6 +227,14 @@ click it is ⌘ alone, since Control-click is the other mouse button on a Mac.
 
 A path is then one name per node. `Kavara` `↵` arms the near end, `Tab` crosses to the far
 one, and the rest — `Corwen` `⌘↵`, `Thessa` `⌘↵` — runs without the caret moving again.
+
+The map is the other way to fill an end. Click the node the middle is holding and its name
+goes to whichever end is free, so the first click arms an anchor and the second joins the
+pair — leaving the same receipt and the same `undo` as a name typed. `⌘` on the click moves
+the anchor exactly as it does on a pick, which is how a path is drawn by clicking along it as
+you walk. The caret follows into the end left free, which is what makes the next name
+typeable and what stops the arrows panning until `Esc` hands the map back
+([ADR 0029](decisions/0029-a-click-that-joins.md)).
 
 `Esc` collapses the whole widget, not just the end you are in — both names go, the far end
 with them, and the focus is handed back to the map. It is the way out, and `/` is the way

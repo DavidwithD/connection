@@ -4,6 +4,7 @@
  *   drag            pan the map
  *   wheel           zoom toward the cursor
  *   click a node    glide it to the middle, drawing its ring on the click
+ *   click it again  hand its name to the panel, and the next one joins the pair
  *   right-click     take the middle off the map, edges and all
  *   arrows          nudge the camera
  *   /               put the caret in the box at the top
@@ -228,6 +229,17 @@ view.cy.on("tap", "node", (event) => {
   }
 
   if (!world.has(id)) return
+
+  // The centre is the one node a click cannot take you to, because you are already standing
+  // on it. So it is free to mean the other thing a node can be here — a name for the panel —
+  // and what an end does with one is `take`'s (web/src/join.ts). The glide to the middle comes
+  // back down that path, on the pick that arms, rather than from here.
+  if (id === view.accent) {
+    const node = world.get(id)
+    // ⌘ alone, as over a row of the list (web/src/combobox.ts).
+    if (node) panel.take(node, (event.originalEvent as MouseEvent | undefined)?.metaKey === true)
+    return
+  }
 
   // Naming a node is not drifting past it. There is no ambiguity left about where this
   // is going, so its ring is drawn on the click rather than on the settle at the far end
