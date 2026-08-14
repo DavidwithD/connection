@@ -164,6 +164,26 @@ export class JoinPanel {
   }
 
   /**
+   * A name handed in from outside — the map, where the node under the centre is clicked
+   * rather than typed (web/src/main.ts).
+   *
+   * It lands in whichever end is not the anchor, which is where typing it would have put it:
+   * the two ends hold one anchor between them, so a name reaching the free one is a pair, and
+   * a pair is an edge. The first click arms, the second writes, and everything after the
+   * write is this panel's ordinary business — a receipt that reverses it, and an anchor left
+   * standing for the click after that. `⌘` moves the anchor instead, exactly as it does over
+   * a row of the list. See docs/decisions/0029-a-click-that-joins.md.
+   *
+   * The caret ends in whichever end is free once that has happened, so the name after this
+   * one can be typed or clicked with nothing to reach for either way.
+   */
+  take(node: NodeMeta, chain: boolean): void {
+    this.pick(this.free(), { kind: "node", node }, chain)
+    // Asked again, because the pick moved it: the end that took the name is the anchor now.
+    this.free().ui.input.focus()
+  }
+
+  /**
    * Back to one box, holding nothing.
    *
    * Both ends, because the two are one widget and this is the key that leaves it. Clearing
@@ -184,6 +204,15 @@ export class JoinPanel {
 
   private other(side: Side): Side {
     return side === this.near ? this.far : this.near
+  }
+
+  /**
+   * The end a name from outside lands in: the one not holding the anchor.
+   *
+   * The near end when neither holds one, which is where a first name goes however it arrives.
+   */
+  private free(): Side {
+    return this.near.anchor ? this.far : this.near
   }
 
   /** A name was taken in one end. Arm it, or fire it at whatever the other end holds. */

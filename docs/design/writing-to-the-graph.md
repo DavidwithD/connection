@@ -207,3 +207,4 @@ stale copy.
 | [0019](../decisions/0019-every-island-has-an-address.md) | That the island index is derived, and so may fail behind a write |
 | [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) | Edge by edge rather than one transaction, and what a stopped run leaves |
 | [0028](../decisions/0028-where-a-chained-name-lands.md) | Which end a chained name lands in, and what moving the anchor spends |
+| [0029](../decisions/0029-a-click-that-joins.md) | That the map can fire a join, by clicking the node the middle holds |
