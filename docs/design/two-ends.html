@@ -526,16 +526,24 @@
             // ⌘ modifies both branches rather than choosing between them: it says what
             // happens after the pick, never which node was meant.
             const chain = e.metaKey || e.ctrlKey
+            const text = this.input.value.trim()
+            if (!text) return
+            e.preventDefault()
+            // Nothing resolved in hand — the wait has not elapsed, or Esc put the list
+            // away. Ask now rather than dropping the keystroke.
+            if (!this.rows.length) this.query()
+            if (this.input.value.trim() !== text) return
             if (e.shiftKey) {
-              const text = this.input.value.trim()
-              if (!text) return
-              e.preventDefault()
+              // One name is owned by one node, so a name already carried is taken rather
+              // than made a second time.
+              const carried = this.rows.find(
+                (row) => row.kind === "node" && norm(row.node.label) === norm(text),
+              )
               this.close()
-              this.hooks.onPick({ kind: "create", label: text }, chain)
+              this.hooks.onPick(carried ?? { kind: "create", label: text }, chain)
               return
             }
             if (this.at < 0) return
-            e.preventDefault()
             this.take(this.at, chain)
             return
           }

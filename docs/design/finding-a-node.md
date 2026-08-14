@@ -65,12 +65,17 @@ Two keys, and the split between them is the whole shape:
 
 - `↵` takes the highlighted row. Typing a prefix and pressing it is how you reach a node
   that exists — the common act, and the reason this resolves names at all.
-- `⇧↵` creates exactly what is typed, whatever the list shows. Creating is a distinct act
-  and gets a distinct key, because `ash` is far more often the start of a name that exists
-  than a node somebody means to make.
+- `⇧↵` creates exactly what is typed, whatever else the list shows. Creating is a distinct
+  act and gets a distinct key, because `ash` is far more often the start of a name that
+  exists than a node somebody means to make.
 
-They meet in one case: a name matching nothing has no best match to take, so `↵` creates
-rather than doing nothing.
+They meet at both ends of that. A name matching nothing has no best match to take, so `↵`
+creates rather than doing nothing; a name matching exactly has nothing to create, since one
+name is owned by one node, so `⇧↵` takes that node rather than firing a create the store is
+bound to refuse.
+
+Neither key waits on the list. With nothing resolved in hand the box asks and then acts, so
+a name typed faster than the box can search is not a keystroke that lands on nothing.
 
 `⌘` rides on either Enter rather than joining that split. It carries no opinion about which
 node was meant, so the box passes it out untouched as a flag on the pick: what going on from

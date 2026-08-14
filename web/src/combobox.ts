@@ -13,7 +13,7 @@
  *
  *   ↑ ↓      move the highlight, wrapping at both ends
  *   ↵        take the highlighted row
- *   ⇧↵       create exactly what is typed, whatever the list shows
+ *   ⇧↵       create exactly what is typed, unless a node already carries that name
  *   ⌘↵       either of those, and go on from what it named
  *   Esc      close the list; again, empty the box and let the focus go
  *
@@ -23,8 +23,14 @@
  * the one a half-typed name falls into: `ash` is far more often the start of `Ashanlin`
  * than a node somebody means to make.
  *
- * The one place they meet is a name matching nothing. There is no best match to take, so
- * `↵` creates too rather than doing nothing at all.
+ * They meet at both ends of that. A name matching nothing has no best match to take, so
+ * `↵` creates rather than doing nothing at all; a name matching exactly has nothing to
+ * create, since one name is owned by one node, so `⇧↵` takes that node rather than firing
+ * a create the store is bound to refuse.
+ *
+ * Either Enter asks before it acts when the box holds nothing resolved. The wait below is
+ * long enough for a fast hand to reach `↵` before the first search has even been sent, and
+ * a keystroke dropped there is a key that silently does nothing.
  *
  * ⌘ rides on either Enter rather than adding a third. It says nothing about which node is
  * meant — only what should happen once one is — and travels out on the pick as `chain`:
@@ -113,6 +119,39 @@ export class Combobox {
     this.hooks.onPick(row, chain)
   }
 
+  /**
+   * What either Enter does, once there is something to do it with.
+   *
+   * The rows are what a pick comes out of, and the box is holding none of them more often
+   * than it looks: before the wait has elapsed, and after `Esc` has put the list away. So
+   * this asks first when it has to, and only then reads what was typed against what the
+   * store answered — the `create` gesture included, which is the one that would otherwise
+   * fire blind.
+   */
+  private async enter(text: string, create: boolean, chain: boolean): Promise<void> {
+    if (!this.rows.length) await this.query()
+    // Typed on while the query was in the air: the box now says something this keystroke
+    // was never aimed at, and the search for *that* is already on its way.
+    if (this.input.value.trim() !== text) return
+
+    if (create) {
+      if (!this.hooks.allowCreate) return
+      // A name already carried is not a name that can be made — the store owns one node per
+      // name and refuses the second, which is why the create row below is withheld for an
+      // exact match. ⇧↵ answers to the same rule: the split between the two Enters is about
+      // which node was meant, and an exact name leaves nothing to mean.
+      const carried = this.rows.find(
+        (row) => row.kind === "node" && norm(row.node.label) === norm(text),
+      )
+      this.close()
+      this.hooks.onPick(carried ?? { kind: "create", label: text }, chain)
+      return
+    }
+
+    if (this.at < 0) return
+    this.take(this.at, chain)
+  }
+
   private onKey(event: KeyboardEvent): void {
     // An IME confirming a conversion fires Enter too. That keystroke belongs to the text
     // being composed, not to the list — without this it would pick a row mid-word.
@@ -135,20 +174,10 @@ export class Combobox {
       // ⌘ modifies both branches below rather than choosing between them, so it is read
       // before either. Ctrl with it, for a keyboard that has no ⌘ to hold.
       const chain = event.metaKey || event.ctrlKey
-
-      // Shift means create, and it does not care what is highlighted or whether the list
-      // has even opened yet — it is the one gesture that says what it does on its own.
-      if (event.shiftKey) {
-        const text = this.input.value.trim()
-        if (!this.hooks.allowCreate || !text) return
-        event.preventDefault()
-        this.close()
-        this.hooks.onPick({ kind: "create", label: text }, chain)
-        return
-      }
-      if (this.at < 0) return
+      const text = this.input.value.trim()
+      if (!text) return
       event.preventDefault()
-      this.take(this.at, chain)
+      void this.enter(text, event.shiftKey, chain)
       return
     }
 

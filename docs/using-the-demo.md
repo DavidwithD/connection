@@ -207,15 +207,16 @@ one, and the end you fired empties for the next name.
 |---|---|
 | `↑` `↓` | Move the highlight, wrapping at both ends |
 | `↵` | Take the highlighted row — with the other end filled, that writes the edge |
-| `⇧↵` | Create exactly what is typed, whatever the list shows |
+| `⇧↵` | Create exactly what is typed — or take it, if a node already carries that name |
 | `⌘↵` | Either of those, and go on from the name it just wrote |
 | `Tab` | Cross to the other end |
 | `Esc` | Close the list; again, put the widget away and let the focus go |
 
 `↵` takes the best match, so a prefix and one key reaches a node that already exists; `⇧↵`
-always creates, whatever the list shows. A name matching nothing is the one case where `↵`
-creates too. Why the two are separate keys is
-[finding-a-node.md](design/finding-a-node.md).
+creates instead, whatever else the list shows. They agree at both ends of that: a name
+matching nothing is created by either, and a name that already exists is taken by either —
+the graph holds one node per name, so there is no second one to make. Why they are separate
+keys at all is [finding-a-node.md](design/finding-a-node.md).
 
 `⌘` rides on either of them, and changes what happens after the write rather than what is
 written: the name just fired takes the *other* end, so the caret stays where it is and the
