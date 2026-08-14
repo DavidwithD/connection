@@ -56,8 +56,9 @@ const STUB_REACH = 44
 const GHOST_MARGIN = 160
 
 /**
- * Flight speed across the screen, in pixels per millisecond. Chosen by eye against the
- * three-way comparison in docs/design/names-and-options.html, figure 5: 543px in 720ms.
+ * Flight speed across the screen, in pixels per millisecond. Chosen by eye against three
+ * timings of one 543px flight, which 720ms won —
+ * docs/decisions/0004-the-centre-and-its-neighbourhood.md.
  *
  * Screen pixels rather than world units, because zoomed out the same world distance is a
  * shorter visual move and must not take longer to cross.

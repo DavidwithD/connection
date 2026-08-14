@@ -13,8 +13,9 @@
  *
  *   ↑ ↓      move the highlight, wrapping at both ends
  *   ↵        take the highlighted row
- *   ⇧↵       create exactly what is typed, whatever the list shows
- *   Esc      close the list; again, clear the box
+ *   ⇧↵       create exactly what is typed, unless a node already carries that name
+ *   ⌘↵       either of those, and go on from what it named
+ *   Esc      close the list; again, empty the box and let the focus go
  *
  * The two Enters are the whole shape of it. `↵` takes the best match, so typing a prefix
  * and pressing it is how you reach a node that exists — the common thing, and the reason
@@ -22,8 +23,18 @@
  * the one a half-typed name falls into: `ash` is far more often the start of `Ashanlin`
  * than a node somebody means to make.
  *
- * The one place they meet is a name matching nothing. There is no best match to take, so
- * `↵` creates too rather than doing nothing at all.
+ * They meet at both ends of that. A name matching nothing has no best match to take, so
+ * `↵` creates rather than doing nothing at all; a name matching exactly has nothing to
+ * create, since one name is owned by one node, so `⇧↵` takes that node rather than firing
+ * a create the store is bound to refuse.
+ *
+ * Either Enter asks before it acts when the box holds nothing resolved. The wait below is
+ * long enough for a fast hand to reach `↵` before the first search has even been sent, and
+ * a keystroke dropped there is a key that silently does nothing.
+ *
+ * ⌘ rides on either Enter rather than adding a third. It says nothing about which node is
+ * meant — only what should happen once one is — and travels out on the pick as `chain`:
+ * what going on from a name means belongs to whoever owns the box.
  */
 import { Cancelled, searchLabels, type NodeMeta } from "./api.js"
 import { debounce } from "./explore.js"
@@ -43,7 +54,11 @@ export type Picked =
   | { kind: "create"; label: string }
 
 export interface ComboboxHooks {
-  onPick: (picked: Picked) => void
+  /**
+   * A name was taken. `chain` is the ⌘ variant of taking it: the same pick, plus a request
+   * to go on from what it named.
+   */
+  onPick: (picked: Picked, chain: boolean) => void
   onError: (message: string) => void
   /** The box was emptied by `Esc`, rather than by a pick or a blur. */
   onEmptied?: () => void
@@ -97,11 +112,44 @@ export class Combobox {
     this.list.replaceChildren()
   }
 
-  private take(index: number): void {
+  private take(index: number, chain: boolean): void {
     const row = this.rows[index]
     if (!row) return
     this.close()
-    this.hooks.onPick(row)
+    this.hooks.onPick(row, chain)
+  }
+
+  /**
+   * What either Enter does, once there is something to do it with.
+   *
+   * The rows are what a pick comes out of, and the box is holding none of them more often
+   * than it looks: before the wait has elapsed, and after `Esc` has put the list away. So
+   * this asks first when it has to, and only then reads what was typed against what the
+   * store answered — the `create` gesture included, which is the one that would otherwise
+   * fire blind.
+   */
+  private async enter(text: string, create: boolean, chain: boolean): Promise<void> {
+    if (!this.rows.length) await this.query()
+    // Typed on while the query was in the air: the box now says something this keystroke
+    // was never aimed at, and the search for *that* is already on its way.
+    if (this.input.value.trim() !== text) return
+
+    if (create) {
+      if (!this.hooks.allowCreate) return
+      // A name already carried is not a name that can be made — the store owns one node per
+      // name and refuses the second, which is why the create row below is withheld for an
+      // exact match. ⇧↵ answers to the same rule: the split between the two Enters is about
+      // which node was meant, and an exact name leaves nothing to mean.
+      const carried = this.rows.find(
+        (row) => row.kind === "node" && norm(row.node.label) === norm(text),
+      )
+      this.close()
+      this.hooks.onPick(carried ?? { kind: "create", label: text }, chain)
+      return
+    }
+
+    if (this.at < 0) return
+    this.take(this.at, chain)
   }
 
   private onKey(event: KeyboardEvent): void {
@@ -123,25 +171,20 @@ export class Combobox {
     }
 
     if (event.key === "Enter") {
-      // Shift means create, and it does not care what is highlighted or whether the list
-      // has even opened yet — it is the one gesture that says what it does on its own.
-      if (event.shiftKey) {
-        const text = this.input.value.trim()
-        if (!this.hooks.allowCreate || !text) return
-        event.preventDefault()
-        this.close()
-        this.hooks.onPick({ kind: "create", label: text })
-        return
-      }
-      if (this.at < 0) return
+      // ⌘ modifies both branches below rather than choosing between them, so it is read
+      // before either. Ctrl with it, for a keyboard that has no ⌘ to hold.
+      const chain = event.metaKey || event.ctrlKey
+      const text = this.input.value.trim()
+      if (!text) return
       event.preventDefault()
-      this.take(this.at)
+      void this.enter(text, event.shiftKey, chain)
       return
     }
 
     if (event.key === "Escape") {
       event.preventDefault()
-      // Two meanings, nearest first: put the list away, or empty the box.
+      // Two meanings, nearest first: put the list away, or empty the box and let the focus
+      // go — what else that costs is the caller's to say, through `onEmptied`.
       if (this.rows.length) this.close()
       else {
         this.input.value = ""
@@ -216,10 +259,13 @@ export class Combobox {
       }
 
       // mousedown, not click: the input's blur would close the list out from under a click
-      // before it landed.
+      // before it landed. ⌘ carries here too — a row and the key that takes it are the same
+      // act, and a reader who has learned the modifier will hold it over either. Not Ctrl:
+      // holding that over a click is how a Mac asks for the other button, and a secondary
+      // click quietly moving the anchor would put the next edge somewhere nobody meant.
       button.addEventListener("mousedown", (event) => {
         event.preventDefault()
-        this.take(i)
+        this.take(i, event.metaKey)
       })
 
       const item = document.createElement("li")

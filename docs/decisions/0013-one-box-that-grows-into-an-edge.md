@@ -25,7 +25,7 @@ One box. Naming a node in it opens a second, and the two are an edge's ends.
 | The ends | Stacked, joined by a constant line | It draws what it makes, so neither needs a label. |
 | Which end writes | Both | Nothing in the store tells them apart. |
 | The camera | Follows an arming pick, not a firing one | The anchor stays in view through a run of names. |
-| A receipt | Names the pair; either name loads into the near end | A path costs one name per node. |
+| A receipt | Names the pair; either name loads into the near end | The way back to any landed write. |
 | A queued write's pair | Fixed when the target is picked | Retyping an end would otherwise redirect a queued edge. |
 
 The far end arrives on the pick, since the list opens into its space. The widget shrinks when
@@ -35,9 +35,8 @@ its last name goes.
 - **Revealing the far end on the keystroke, or behind a chevron.** The list opens into that
   space, so the first flickers and the second spends a glyph reading *open the options* above
   a list of them.
-- **Ends side by side.** The [drawing](../design/two-ends.html) shows it fits, but only by
-  re-centring as it grows, which slides the panel under the caret, and each end loses a
-  quarter of its width.
+- **Ends side by side.** It fits only by re-centring as it grows, which slides the panel
+  under the caret, and each end loses a quarter of its width.
 - **The box mirroring the centre, refilled by a map click.** One notion of the current node
   rather than two, at the price of arming a write on every idle click.
 

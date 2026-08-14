@@ -24,7 +24,7 @@ Every write can be reversed, by the operation that mirrors it.
 | A degree, parting | Refused below zero | A degree short of its edges is the one state a reader cannot detect. |
 | Undoing a create-and-join | Edge first, then node | The store will not delete a node that still has edges. |
 | A node since joined to something else | Edge parts, node stays | It is no longer only this write's doing. |
-| Creating | `↵` when nothing matches, `⇧↵` always | Creating is a distinct act and gets a distinct key. |
+| Creating | `↵` when nothing matches, `⇧↵` unless it exists | Creating is a distinct act with a distinct key. |
 
 ## Alternatives considered
 - **Deleting a node with its edges.** One call rather than two. The transaction's size would

@@ -175,6 +175,7 @@ Pan around an undirected cyclic graph like a map. Whatever you stop on is what l
 | right-click the centre | Take it off the map, with everything joined to it |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
+| `/` | Put the caret in the box at the top, whatever the focus was on |
 
 The node nearest the middle of the screen is the **centre**, which is what gliding a node to
 the middle is for. It is the only node the map draws around, so what you see is the route you
@@ -206,20 +207,37 @@ one, and the end you fired empties for the next name.
 |---|---|
 | `↑` `↓` | Move the highlight, wrapping at both ends |
 | `↵` | Take the highlighted row — with the other end filled, that writes the edge |
-| `⇧↵` | Create exactly what is typed, whatever the list shows |
-| `Esc` | Close the list; again, let the name go |
+| `⇧↵` | Create exactly what is typed — or take it, if a node already carries that name |
+| `⌘↵` | Either of those, and go on from the name it just wrote |
+| `Tab` | Cross to the other end |
+| `Esc` | Close the list; again, put the widget away and let the focus go |
 
 `↵` takes the best match, so a prefix and one key reaches a node that already exists; `⇧↵`
-always creates, whatever the list shows. A name matching nothing is the one case where `↵`
-creates too. Why the two are separate keys is
-[finding-a-node.md](design/finding-a-node.md).
+creates instead, whatever else the list shows. They agree at both ends of that: a name
+matching nothing is created by either, and a name that already exists is taken by either —
+the graph holds one node per name, so there is no second one to make. Why they are separate
+keys at all is [finding-a-node.md](design/finding-a-node.md).
+
+`⌘` rides on either of them, and changes what happens after the write rather than what is
+written: the name just fired takes the *other* end, so the caret stays where it is and the
+next name joins to that one. What it costs is the anchor you were fanning from, which the
+moving one replaces. Ctrl does the same on a keyboard with no ⌘ to hold; over a row you
+click it is ⌘ alone, since Control-click is the other mouse button on a Mac.
+
+A path is then one name per node. `Kavara` `↵` arms the near end, `Tab` crosses to the far
+one, and the rest — `Corwen` `⌘↵`, `Thessa` `⌘↵` — runs without the caret moving again.
+
+`Esc` collapses the whole widget, not just the end you are in — both names go, the far end
+with them, and the focus is handed back to the map. It is the way out, and `/` is the way
+back in.
 
 **Every write from the box can be taken back.** Each leaves a receipt carrying `undo`, which
 parts the edge and deletes the node if that write is what created it. It stays for thirty
 seconds. A node something else has since been joined to is kept, and the edge still parts.
 
-A receipt names both ends, and clicking either name puts it back in the near end, which is how
-a path costs one name per node. Clicking loads and never writes.
+A receipt names both ends, and clicking either name puts it back in the near end. That is the
+way back to a write that has scrolled away, where `⌘↵` carries only the one just fired.
+Clicking loads and never writes.
 
 Taking a node off the map is the one write with no way back, since its edges cannot return
 with it. So it asks first rather than offering an undo after, and the row it asks with names

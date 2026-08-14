@@ -12,8 +12,7 @@ neighbours it could not fit. And anything seated past ring four exceeded `LONG_E
 drew as a grey stub.
 
 Only the third is about drawing. The first two were losses, leaving a dashed "more here"
-border nothing could discharge. Every option below was drawn first, in
-[names-and-options.html](../design/names-and-options.html).
+border nothing could discharge. Every option below was drawn first.
 
 ## Decision
 The centre shows every neighbour it has. Nothing on the map moves except a ghost.

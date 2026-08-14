@@ -143,7 +143,7 @@ joined to that node since, the delete is refused and the receipt says the node w
 place. That is right — the node is no longer only this write's doing, and the edge is gone,
 which is what was asked for.
 
-The anchor is never undone. It is the thing being worked from, and taking it away under the
+The anchor is never undone. It is the thing being worked from, and reversing it under the
 box still naming it would be a stranger result than leaving it.
 
 ## What has to stay true
@@ -160,6 +160,12 @@ makes `missing` meaningless for that node for the rest of the graph's life.
 [`World.forget`](../../web/src/world.ts) refuse for the same reason, and the loop above is
 the only thing allowed to get around it — by parting the edges first, not by relaxing the
 rule.
+
+**No end of the panel holds a node the store has lost.** A node goes two ways, and
+[`JoinPanel.forget`](../../web/src/join.ts) is called on both: an undo deleting what its
+write created, and the map's own delete from the centre. A dead name left in an end fires
+its next pick at an id nothing carries, which is the two-transaction cost above, paid for
+nothing.
 
 **One name is owned by one node.** The claim item, conditionally written. Two nodes holding
 one name leaves the claim pointing at whichever landed last, with the other unreachable by
@@ -200,3 +206,4 @@ stale copy.
 | [0013](../decisions/0013-one-box-that-grows-into-an-edge.md) | The panel that fires the writes, and why `↵` is enough |
 | [0019](../decisions/0019-every-island-has-an-address.md) | That the island index is derived, and so may fail behind a write |
 | [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) | Edge by edge rather than one transaction, and what a stopped run leaves |
+| [0028](../decisions/0028-where-a-chained-name-lands.md) | Which end a chained name lands in, and what moving the anchor spends |
