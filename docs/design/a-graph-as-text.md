@@ -9,10 +9,7 @@ the same format's other half, ordered so that a round trip can be checked with `
 
 Both directions live in one file ([text.ts](../../src/graph/text.ts)) because they are one
 format. What is *done* with a reading — surveying it against the table and applying it — is
-[load.ts](../../src/graph/load.ts). The records are
-[ADR 0021](../decisions/0021-a-graph-in-a-text-file.md) for the format,
-[ADR 0022](../decisions/0022-a-graph-written-back-out.md) for the writer, and
-[ADR 0023](../decisions/0023-the-graph-moves-through-the-page.md) for the page.
+[load.ts](../../src/graph/load.ts).
 
 ## The format
 
@@ -150,9 +147,9 @@ stopped recognising a flag treats it as a filename.
 ## The page
 
 [transfer.html](../../web/transfer.html) is its own Vite entry, sharing the stylesheet and
-the API client with the map and importing none of its machinery — which is what keeps a
-second page from being the duplication
-[ADR 0017](../decisions/0017-the-second-view-goes.md) deleted one for. Nothing here draws a
+the API client with the map and importing none of its machinery. That sharing is what makes
+a second page affordable: what one otherwise costs is every fix made twice, across
+stylesheets and boot helpers that were copied once and then drifted. Nothing here draws a
 graph.
 
 The way in is two calls, not one. Choosing a file only surveys it; the button that writes
@@ -185,8 +182,9 @@ into an empty table, and export again give back the same bytes.
 **A name holding the separator or the comment character cannot be written at all.** There is
 no escape in this format, and adding one would change what every file already written means.
 Nothing rejects those characters when a node is made, so the writer has to refuse — which
-means an unwritable name is reachable from the map. That asymmetry is recorded as an open
-question in [ADR 0022](../decisions/0022-a-graph-written-back-out.md), not resolved.
+means an unwritable name is reachable from the map. Which end to fix that at is open.
+Refusing the two characters when a node is made would narrow a write path that has accepted
+them since it existed, and nothing anybody wanted has yet been refused.
 
 **A misspelling is a new node, not an error.** The format's real cost, and it cannot be
 caught here: nothing matches a name against a near miss. The plan lists every name it would
@@ -205,7 +203,8 @@ many names or faults are printed before the rest become a count, in
 | Record | What it settled |
 |---|---|
 | [0021](../decisions/0021-a-graph-in-a-text-file.md) | The format, the star reading, and that a file is a patch |
-| [0022](../decisions/0022-a-graph-written-back-out.md) | The writer, and the ordering that makes a round trip checkable |
+| [0022](../decisions/0022-a-graph-written-back-out.md) | The writer, the ordering that makes a round trip checkable, and the open question about the separator and the comment character |
 | [0023](../decisions/0023-the-graph-moves-through-the-page.md) | A second page rather than a panel, and two calls for the way in |
+| [0017](../decisions/0017-the-second-view-goes.md) | That there is one view, so a second page shares rather than copies |
 | [0018](../decisions/0018-the-graph-outlives-the-seed.md) | The JSON export this is deliberately not — and the reckoning a load wants after it |
 | [0012](../decisions/0012-the-name-is-the-node.md) | That a node is its name, which is why the file has no ids |

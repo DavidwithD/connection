@@ -31,9 +31,8 @@ count and the order below are the contract, not an implementation detail.
 
 **Creating a node** ([node.ts](../../src/graph/node.ts)) is three operations: claim the
 name, write the meta, raise `nodeCount`. The claim is conditional on nothing already
-holding it, which is the write [ADR 0008](../decisions/0008-finding-a-node-by-name.md) put
-the reservation item there to allow. The seed can check a name in memory because it writes
-every node at once; nothing here can, so the check has to be a condition.
+holding it, which is what the claim item is there for. The seed can check a name in memory
+because it writes every node at once; nothing here can, so the check has to be a condition.
 
 The id is random rather than the seed's counter, because continuing a counter means
 reading the highest one and hoping nobody else did the same. Its prefix is the only record
@@ -89,8 +88,7 @@ The delete above will not take a node holding an edge, so this empties it first:
 adjacency, part every neighbour through the ordinary `removeEdge`, then delete the node
 once nothing is left ([node.ts](../../src/graph/node.ts)).
 
-Not atomic, and that is the trade
-([ADR 0024](../decisions/0024-taking-a-node-out-with-its-edges.md)). A transaction sized to
+Not atomic, and that is the trade. A transaction sized to
 a node's degree would outgrow what one transaction can hold, so instead every step leaves a
 graph that is true: a run that stops partway leaves a smaller node, and asking again
 finishes the job — index included, because each part repairs it in passing.
@@ -102,8 +100,7 @@ not a loop that never closes.
 
 ## What the routes add
 
-Nothing. That is the design
-([ADR 0010](../decisions/0010-writing-to-the-graph-from-the-browser.md)) — the
+Nothing. That is the design — the
 four routes in [server/index.ts](../../src/server/index.ts) import the same functions the
 terminal runs, and one wrapper decides the status number: a refusal is `409`, anything else
 propagates and becomes a `500`. A taken name is an answer to show, not a fault to page
@@ -177,8 +174,7 @@ written down where it is.
 
 **The graph is the transaction; the island index is derived.** A join or a part is followed
 by a second write that maintains the component index, outside the transaction and allowed
-to fail ([ADR 0019](../decisions/0019-every-island-has-an-address.md)). A merge that cannot
-be recorded must not undo a join that already happened. What it costs when it loses is an
+to fail. A merge that cannot be recorded must not undo a join that already happened. What it costs when it loses is an
 index that over-lists or a size that is short, and `npm run graph:init` reckons either back
 from the nodes and edges themselves. It sits inside `edge.ts` rather than in its callers so
 the API and the terminal cannot drift on it.

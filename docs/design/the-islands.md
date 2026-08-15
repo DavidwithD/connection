@@ -8,10 +8,8 @@ roots carry the island index keys, so one Query returns one row per component, l
 first. The index is derived, maintained one edge at a time by writes that are allowed to
 fail, and reckoned back from the graph itself when it drifts.
 
-Why the store cannot simply answer *what components are there* is
-[ADR 0019](../decisions/0019-every-island-has-an-address.md): membership spans the whole
-edge set, and each node owns its own partition, so the alternative is a Scan. What the page
-does with the list is [ADR 0020](../decisions/0020-the-islands-list-is-an-index.md).
+The store cannot simply answer *what components are there*: membership spans the whole edge
+set, and each node owns its own partition, so the only other way to ask is a Scan.
 
 ## The pieces
 
