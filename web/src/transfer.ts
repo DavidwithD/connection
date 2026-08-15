@@ -1,22 +1,8 @@
 /**
- * The page a graph moves through: a file out, and a file in.
+ * The file page: survey first, write on the second click.
  *
- * Two steps for the way in, not one. `npm run graph:load` has `--dry-run` because a
- * misspelled name is a new node and looks exactly like one somebody meant to add
- * (docs/decisions/0021-a-graph-in-a-text-file.md), and a page needs that reading shown back
- * more than a terminal does: there is no file on disk to check afterwards, and no scrollback
- * saying what was written. So choosing a file only surveys it, and the button that writes
- * appears once there is something to write.
- *
- * What the survey found is three numbers and, folded away under them, the pairs it read.
- * Reachable because a line's reading is not visible in the line (src/graph/text.ts), and
- * folded because the numbers are the answer nine times out of ten.
- *
- * Nothing here draws a graph. It shares the stylesheet and the API client with the map and
- * none of its machinery, which is what keeps a second page from being the duplication
- * docs/decisions/0017-the-second-view-goes.md deleted one for.
- *
- * See docs/decisions/0023-the-graph-moves-through-the-page.md.
+ * The survey is three numbers and, folded away under them, the pairs it read — folded
+ * because the numbers are the answer nine times out of ten. Nothing here draws a graph.
  */
 import { Refused, loadGraphText, previewGraphText, type LoadPlan } from "./api.js"
 

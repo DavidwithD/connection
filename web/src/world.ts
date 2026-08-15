@@ -1,21 +1,8 @@
 /**
- * The world: what has been placed, where, and what it connects to.
+ * The store: frozen positions, adjacency, degrees.
  *
- * This is the store. It owns positions, and the one rule it enforces is that a position,
- * once assigned, is never reassigned — there is no method to move a node. Rendering reads
- * from here; nothing writes back.
- *
- * Each node keeps its *true* degree from the server alongside the edges actually loaded.
- * The difference is what makes a node worth expanding, and it is the only reason the map
- * can tell "fully drawn" from "there is more here".
- *
- * A neighbour that arrives with nowhere to sit is kept rather than dropped. Room is a
- * property of the map at one moment, not of the graph, so the answer can change — and
- * re-asking the store for something it already told us would be the wrong way to find out.
- *
- * The seated-once guarantee is an invariant of the whole frontend, not just of this file:
- * see docs/design/architecture.md. The reasoning is
- * docs/decisions/0003-graph-exploration-demo-stack.md.
+ * There is no method to move a node, and that absence is the whole of the seated-once
+ * guarantee. Rendering reads from here; nothing writes back.
  */
 import {
   LONG_EDGE,
@@ -323,8 +310,7 @@ export class World {
    * from "there is more here". An edge written to the store raises both sides of that
    * subtraction. Linking it locally without this raises only the second, so the difference
    * falls by one and a node with graph still behind it starts claiming to be finished — the
-   * same drift docs/decisions/0009-the-first-write-outside-the-seed.md is about, arriving
-   * from the client instead of the store.
+   * same drift a transaction defends against in the store, arriving from the client instead.
    *
    * So it is never called alone. Link and bump, together, or not at all.
    */
@@ -363,8 +349,7 @@ export class World {
    * node leaves, and the ground it held goes back into the grid for whoever comes next.
    * What would break the rule is *reusing* the id later at a different spot, so the node
    * has to be genuinely gone from the store too. Both callers have removed it there first:
-   * an undone create, and a node taken off the map with its edges
-   * (docs/decisions/0024-taking-a-node-out-with-its-edges.md).
+   * an undone create, and a node taken off the map with its edges.
    *
    * Refuses a node with edges. Removing one would leave adjacency in its neighbours
    * pointing at nothing, and `pairs` counting an edge with one end missing.

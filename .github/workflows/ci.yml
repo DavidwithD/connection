@@ -1,7 +1,7 @@
 # The gates, somewhere they cannot be skipped.
 #
 # The pre-commit hook runs the same two gates the same way, but it is per-clone,
-# opt-in, and one `--no-verify` from silent — docs/decisions/0016-the-gates-run-in-ci.md.
+# opt-in, and one `--no-verify` from silent.
 #
 # Nothing here reimplements a check. Every step is an npm script a contributor runs
 # locally, so a red run is reproducible with one command and never means "CI has its
@@ -50,9 +50,9 @@ jobs:
       - run: npm run docs
 
       # The docs gate's own failure mode is silence, so the thing that proves it still
-      # compares anything belongs where it cannot be skipped either — same argument as
-      # docs/decisions/0016-the-gates-run-in-ci.md. It is not on the pre-commit hook:
-      # it copies the tree once per case, which is a second of work a commit need not pay.
+      # compares anything belongs where it cannot be skipped either. It is not on the
+      # pre-commit hook: it copies the tree once per case, which is a second of work a
+      # commit need not pay.
       - run: npm run docs:selftest
 
       # Bundling fails in ways typecheck cannot see, and it is the step most likely

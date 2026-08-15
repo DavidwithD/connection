@@ -1,15 +1,8 @@
 /**
- * Finding a node by its name rather than its id.
+ * Name to node, exact and by prefix.
  *
- *   GetItem  label#<normalised>/#owner   -> the one node that holds this exact name
- *   Query    label index, begins_with    -> everything starting with what has been typed
- *
- * Two calls because they answer to different rules. Resolving an exact name feeds a write,
- * so it reads the base table and is strongly consistent: a claim made a moment ago is
- * visible. Prefix search feeds a search box, where the index's eventual consistency costs
- * nothing worse than a just-renamed node appearing a beat late.
- *
- * See docs/decisions/0008-finding-a-node-by-name.md.
+ *   GetItem  label#<normalised>/#owner   the one node that holds this exact name
+ *   Query    label index, begins_with    everything starting with what has been typed
  */
 import { GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME } from "../db/client.js"

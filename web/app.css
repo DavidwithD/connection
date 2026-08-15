@@ -3,7 +3,7 @@
    bundle, so a throw in the script costs a page its behaviour and not its styling as well.
 
    One stylesheet, because there is one set of tokens and one idea of what a bordered box
-   looks like. Two would be two, and ADR 0017 is the record of what that cost last time. */
+   looks like. Two stylesheets would be two ideas of it. */
 
 /* Tokens from web/src/palette.ts. Both modes are chosen, not flipped: the dark
    column is the same hues re-stepped for the dark surface. */
@@ -303,8 +303,7 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 
 /* Top centre, between the HUD and the controls. It grows downward, never sideways, so the
    width it needs is the width it always has — until the foot of this file takes its
-   neighbours away, and the 320 with them. Both layouts are drawn to scale against this
-   room in docs/design/two-ends.html. */
+   neighbours away, and the 320 with them. */
 #ends {
   top: 16px;
   left: 50%;

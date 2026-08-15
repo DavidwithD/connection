@@ -1,34 +1,9 @@
 /**
- * The panel at the top of the map: two ends, and the line between them.
+ * The panel at the top: two ends, and the writes.
  *
- * It is one box until a name lands in it, and then it is an edge — two boxes joined by a
- * constant line, which is why neither carries a label. Both ends write. Naming a node while
- * the other end holds one joins them, whichever end you typed in, because the store keeps no
- * direction to tell them apart (src/graph/edge.ts). See
- * docs/decisions/0013-one-box-that-grows-into-an-edge.md, and
- * docs/design/two-ends.html for the thing itself, driveable.
- *
- * The end that fired empties, so a run of names needs no reaching. Whichever end you leave
- * alone is the anchor: hold the near end and you fan out from one node, hold the far end and
- * you fan in to one. The widget shrinks when its last name goes.
- *
- * Every pick writes immediately — no queue, no commit step. What makes that bearable is that
- * every write can be taken back: each one leaves a receipt carrying an `undo`, and taking it
- * reverses the whole write, the created node included. The panel is fast because `↵` is the
- * only key it needs, and safe because `↵` is not final. See
- * docs/decisions/0011-taking-a-write-back.md.
- *
- * A receipt names both ends, and either name loads back into the near end. That is the whole
- * of what makes a path cheap: without it every node in a chain is named twice, once as a
- * target and again as the next anchor. Loading never writes — a pick inside an end is the
- * only thing that does — so reaching back through the receipts can never cost an edge.
- *
- * Every write goes down the one line the page keeps (web/src/writes.ts), undos included —
- * behind whatever is already queued, so an undo can never overtake the write it reverses.
- *
- * A name that does not exist yet is created first, in its own transaction, and only then
- * joined. Two writes, so a create that lands followed by a join that is refused leaves a
- * real node with no edges — reachable by name, attached to nothing.
+ * One box until a name lands in it, and then an edge. The end that fired empties, so a run of
+ * names needs no reaching; whichever end you leave alone is the anchor. Every pick writes
+ * immediately, and every write can be taken back.
  */
 import {
   Refused,

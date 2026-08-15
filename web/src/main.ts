@@ -1,28 +1,9 @@
 /**
- * Wiring: seed the world, let the camera roam, keep the HUD honest.
+ * Wiring, accent tracking, the HUD.
  *
- *   drag            pan the map
- *   wheel           zoom toward the cursor
- *   click a node    glide it to the middle, drawing its ring on the click
- *   right-click     take the middle off the map, edges and all
- *   arrows          nudge the camera
- *   click an island cross to it, or go back to one already crossed to
- *
- * The accent is whatever node is nearest the middle of the screen, recomputed at most
- * once per frame. It uses hysteresis — a rival has to be clearly closer before it takes
- * over — because a bare nearest-wins test flickers between two nodes when the midpoint
- * passes between them.
- *
- * Whichever node holds the accent once the camera stops is the only one drawn from, and
- * every node arrives because somebody walked to its neighbour. The reading runs a hop
- * further than that: the ring around the accent is read on arrival and held undrawn, so
- * the next step is already paid for — see docs/decisions/0006-only-the-centre-reads.md.
- *
- * How long "stopped" takes depends on what moved the camera. Naming a node — a click, a
- * ghost — skips the wait entirely, because the destination is not in doubt. Drift waits,
- * and waits longest for the inputs that carry inertia.
- *
- * See docs/decisions/0003-graph-exploration-demo-stack.md.
+ * The accent is whatever node is nearest the middle of the screen, recomputed at most once
+ * per frame, with hysteresis so it does not flicker between two rivals. How long "stopped"
+ * takes depends on what moved the camera: naming a node skips the wait, drift waits longest.
  */
 import { Missing, deleteNodeWithEdges, fetchIndex, fetchNeighbourhood } from "./api.js"
 import type { GraphIndex, Neighbourhood, NodeMeta } from "./api.js"
@@ -244,10 +225,9 @@ view.cy.on("tap", "node", (event) => {
  * reason — it is what the reader walked to, and it is the only node whose degree is on the
  * page — so it is the only one the row can honestly price. A ghost is never it.
  *
- * The count is in the row because this is the one write nothing can take back
- * (docs/decisions/0024-taking-a-node-out-with-its-edges.md). Everywhere else the panel lets
- * `↵` write and offers the way back afterwards; here there is no way back, so the asking
- * happens first and says how much graph is going.
+ * The count is in the row because this is the one write nothing can take back. Everywhere
+ * else the panel lets `↵` write and offers the way back afterwards; here there is no way
+ * back, so the asking happens first and says how much graph is going.
  */
 const menu = el<HTMLDivElement>("node-menu")
 const menuDelete = el<HTMLButtonElement>("node-delete")

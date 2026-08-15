@@ -1,16 +1,10 @@
 /**
- * The API client: every call a page makes, and the shape of what comes back.
+ * The wire shape: every call a page makes, and what comes back.
  *
- * With one exception, and it is worth knowing about. The two downloads on
- * web/transfer.html are `href`s in the markup, because a download is a URL the browser
- * follows rather than a call anything here makes — which also means they are the only
- * paths in the client that nothing checks. The docs gate reads this file against the
- * routes (docs/checks.md); a route renamed out from under those two anchors breaks them
- * quietly.
- *
- * Reads are cancellable so a node that has been panned away from stops being paid for.
- * Writes are not, and the asymmetry is deliberate: abandoning a read costs a reply nobody
- * wanted, while abandoning a write leaves nobody able to say whether it landed.
+ * With one exception. The two downloads on the transfer page are `href`s in the markup,
+ * because a download is a URL the browser follows rather than a call made here — which makes
+ * them the only paths in the client nothing checks. A route renamed out from under those two
+ * anchors breaks them quietly.
  */
 
 export interface NodeMeta {

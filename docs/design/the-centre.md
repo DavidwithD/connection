@@ -6,6 +6,20 @@ for what is drawn, and [ADR 0012](../decisions/0012-the-name-is-the-node.md), fo
 is drawn as; the options that lost are still drawn in
 [names-and-options.html](names-and-options.html).
 
+## What the renderer may do
+
+Only *add*. [map-view.ts](../../web/src/map-view.ts) never moves an element, never restyles
+one per frame, and never removes one, so a pan is camera work and costs nothing beyond the
+redraw. Panning triggers no fetch and no layout, because there is no layout.
+
+Cytoscape's own gestures are already the convention a map wants — drag pans, wheel zooms
+toward the cursor — so none of that is reimplemented. `autoungrabify` turns a drag that
+starts on a node into a pan rather than a move, which both matches a map and protects the
+frozen positions.
+
+Ghosts are the one exception, and it is deliberate. They are also the one thing here the
+camera decides.
+
 ## The names
 
 A named node draws *as* its name: a pill sized to the label, with no disc beside it. Only

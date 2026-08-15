@@ -36,14 +36,15 @@ them.
 | Move a graph in or out | [moving-a-graph.md](requirements/moving-a-graph.md) | [a-graph-as-text.md](design/a-graph-as-text.md) | 0018, 0021, 0022, 0023 |
 | Find a node by name | **not written up** | [finding-a-node.md](design/finding-a-node.md) | 0008, 0013 |
 | Cross to an island | **not written up** | [the-islands.md](design/the-islands.md) | 0019, 0020 |
+| Seed a graph to explore | **not written up** | [the-generated-graph.md](design/the-generated-graph.md) | 0003, 0018, 0019 |
 | Store a graph at all | Open — see [requirements/](requirements/) | [architecture.md](design/architecture.md), the README's data model | 0002, 0007 |
 | Keep the docs honest | n/a — serves this directory | [checks.md](checks.md), [decisions/GATE.md](decisions/GATE.md) | 0014, 0015, 0016, 0026 |
 
-Four rows are short of a requirement, in three different ways, and the column says which.
-**Not written up** is a genuine gap: both capabilities arrived after
-[exploring-a-graph.md](requirements/exploring-a-graph.md) was written and neither was ever
-scoped, so what a search box or an island list *must* do exists only as the records that
-built them. **Open** is the domain nobody has defined
+Five rows are short of a requirement, in three different ways, and the column says which.
+**Not written up** is a genuine gap: all three capabilities arrived after
+[exploring-a-graph.md](requirements/exploring-a-graph.md) was written and none was ever
+scoped, so what a search box, an island list or a seeded graph *must* do exists only as the
+records that built them. **Open** is the domain nobody has defined
 ([ADR 0002](decisions/0002-single-table-layout.md)). **n/a** is the gates, which serve this
 directory rather than a reader of the graph.
 
@@ -64,10 +65,17 @@ and a note goes in the document it explains.
 ## The reader
 
 Not someone browsing this directory. Someone who hit a constraint in the code and needs to
-know whether it still holds. So the links that matter run *inbound*: the file carrying a
-constraint points at the document explaining it, not only the reverse.
-[decisions/GATE.md](decisions/GATE.md) makes that a rule for records (`M010`); the same
-habit is what keeps the two living directories from going unread.
+know whether it still holds.
+
+No source file names a document, so every link runs one way: from here, outward. That keeps
+a rename from falsifying a comment nobody reads, and it keeps one rationale in one place
+instead of two that drift apart. What it costs is a reader who starts in the code and has to
+come here to find the page. The capability table above is that entry point, and
+[design/architecture.md](design/architecture.md#where-each-record-landed) maps every record
+to the files carrying it.
+
+Which makes those two tables load-bearing. A capability with no row, or a record with no row,
+is a document nothing reaches.
 
 ## What is enforced
 

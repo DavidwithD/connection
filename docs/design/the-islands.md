@@ -123,6 +123,20 @@ list claiming to be the whole graph. The total is a `COUNT` per load rather than
 anyone maintains — maintaining it would mean riding on the writes this index deliberately
 lets fail.
 
+## What proves it survives a sequence
+
+`npm run graph:smoke` ([smoke.ts](../../src/graph/smoke.ts)) walks one component through
+create, join, join, part. The index is maintained by writes that are allowed to fail and
+repaired by a command nobody runs on a schedule, so the thing worth testing is not any single
+write but the order they arrive in. Three of those four steps are the cases that sank the
+designs this one replaced: a pair of made nodes joined only to each other is invisible to an
+index keyed on degree, and a part is the one thing union-find cannot undo.
+
+Everything it makes, it removes. Names are scoped to the run, and the last act is to check
+the graph counts what it counted before. That is the only sense in which it is safe against a
+real table — it writes to the real graph, because a component is a property of the real graph
+and there is nowhere else to have one.
+
 ## What has to stay true
 
 **Only a root carries the island keys.** This is the whole of what keeps the index to one row

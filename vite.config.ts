@@ -2,10 +2,9 @@ import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
 
 /**
- * `web/index.html` is the map — pan an accumulating world (ADR 0003, ADR 0004).
- * `web/transfer.html` is where a graph arrives as a file and leaves as one (ADR 0023). Both
- * talk to the Hono API in `src/server/`, and the second draws nothing, which is what keeps
- * it from being the second view ADR 0017 deleted.
+ * `web/index.html` is the map — pan an accumulating world. `web/transfer.html` is where a
+ * graph arrives as a file and leaves as one. Both talk to the Hono API in `src/server/`, and
+ * the second draws nothing.
  *
  * Dev proxies `/api` rather than enabling CORS, so the browser sees a single origin and
  * the API needs no knowledge of the page's host.

@@ -1,17 +1,8 @@
 /**
- * Generate a small-world graph and write it to the graph table.
+ * Drop the graph table, then write a generated small-world graph into it.
  *
- *   npm run graph:seed              # default size
- *   GRAPH_N=2000 GRAPH_K=8 npm run graph:seed
- *   GRAPH_HUB_K=25 npm run graph:seed   # a longer tail of well-connected nodes
- *
- * The previous graph goes by dropping the table and creating it again, which is the one
- * destructive thing here: outside DynamoDB Local it refuses to run without
- * GRAPH_SEED_DROP=1. Why a drop rather than a delete pass is in src/graph/bulk.ts, with the
- * code that does it — `graph:restore` rebuilds the same way.
- *
- * A seed run replaces whatever was there, including nodes made by hand since the last one.
- * `npm run graph:export` takes those out first; see src/graph/export.ts.
+ * The drop is the one destructive thing here: outside DynamoDB Local it refuses to run
+ * without GRAPH_SEED_DROP=1. Every default below is an environment variable.
  */
 import { PutCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME, describeTarget, isLocal } from "../db/client.js"

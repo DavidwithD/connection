@@ -40,8 +40,9 @@ Value lands at exactly two moments, and neither is browsing this directory:
   retro-written records are rationalisations, and they reliably omit the uncertainty.
   Open the record while the answer is still Proposed.
 - **Collision time.** Someone hits the constraint in the code and asks why it is like
-  this. They do not open the index. Findability is **inbound**: the code and the specs
-  must point *at* the record (`M010`).
+  this. They do not open the index. So a record has to be reachable from the living
+  documents: the design page describing the result must point *at* it (`M010`). The code
+  points at nothing, by design — see [the reader](../README.md#the-reader).
 
 And the thing that kills a corpus is trust, not prose. The first time a reader finds an
 Accepted record that is quietly dead, they stop believing all of them, and the whole
@@ -122,8 +123,8 @@ repeated inside one record · `D003` template prose left in place · `D004` the 
 inlining a copy of the template · `D005` 25+ words verbatim from a non-record doc.
 Quoting a spec is fine; copying it means two things to update.
 
-**Time** — `M001` time-relative words ("currently", "soon") that go stale · `M010` nothing
-outside the index points at this record · `M012` still Proposed after 90 days — decide it,
+**Time** — `M001` time-relative words ("currently", "soon") that go stale · `M010` no living
+document points at this record · `M012` still Proposed after 90 days — decide it,
 reject it, or admit it isn't live.
 
 **Wiring** — `M002` broken relative links · `M003` links to records that don't exist ·

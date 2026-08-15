@@ -3,17 +3,9 @@
  *
  *   npm run graph:node -- "Vessarin"
  *
- * The second write outside the seed, and the first that makes a node without destroying
- * the graph around it. Where `addEdge` protects a count, this protects a name: a label owns
- * its own partition (src/graph/keys.ts), and two nodes claiming one would leave the claim
- * pointing at whichever landed last with the other unreachable by name. The seed can check
- * that in memory before it writes, because it writes every node at once
- * (src/graph/seed.ts). Nothing here can, so the check is a condition on the claim itself —
- * which is the write ADR 0008 put the reservation item there to allow.
- *
  * Three operations, all or none: the claim, the node, and the count that describes it.
- *
- * See docs/decisions/0010-writing-to-the-graph-from-the-browser.md.
+ * `deleteNode` is the same three reversed, and `removeNodeWithEdges` below is a loop over
+ * the ordinary writes rather than a transaction of its own.
  */
 import { randomUUID } from "node:crypto"
 import { pathToFileURL } from "node:url"
@@ -218,8 +210,7 @@ export async function deleteNode(id: string, label: string): Promise<void> {
  * rather than a transaction assembled here: that write already moves both halves and both
  * degrees together and already repairs the island index behind itself, so every round of
  * this leaves a graph that is true. None of it is atomic — a run that stops partway leaves
- * a smaller node, and asking again finishes the job. That trade is
- * docs/decisions/0024-taking-a-node-out-with-its-edges.md.
+ * a smaller node, and asking again finishes the job.
  *
  * Read again each round rather than once at the top: `readAdjacency` stops at a ceiling
  * (src/graph/repo.ts), so a node past it hands back an instalment and the rest is still

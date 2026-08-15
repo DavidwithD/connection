@@ -1,16 +1,4 @@
-/**
- * The general table, for a domain that does not exist yet.
- *
- * Prefixed key values (`user#123` / `profile`) and one overloaded GSI, so entity types can
- * be added without declaring a domain model nobody can describe. That reasoning holds only
- * while the entities are unknown: the graph *is* known, so it has its own table next door.
- * See docs/decisions/0007-a-table-for-the-graph.md.
- *
- * DynamoDB only requires *key* attributes to be declared. Everything else is
- * per-item and needs no migration, so this definition should stay stable even
- * as the domain takes shape. Adding an access pattern later usually means
- * adding a GSI here, not reshaping the table.
- */
+/** The general table, and the registry `migrate` reads. */
 import type { CreateTableCommandInput } from "@aws-sdk/client-dynamodb"
 import { graphTableDefinition } from "../graph/table.js"
 import { TABLE_NAME } from "./client.js"

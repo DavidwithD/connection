@@ -5,26 +5,7 @@
  *   Thorne                        # a node and no edges — an island of one
  *   Kavara | Miselin | Vessarin   # Kavara joins Miselin, and Kavara joins Vessarin
  *
- * The first name on a line is the one the rest are joined to. A star, not a chain:
- * `a | b | c` is two edges out of `a`, not a path through `b`. That is how a graph is
- * thought about while it is being typed — this node, and what it connects to — it puts a
- * hub on one line, and it gives a line of one name the meaning it should have: a node with
- * no edges, which is the component ADR 0019 exists for and the case a chain reading would
- * have to bolt on as a special one. A path is still a path, one line per step.
- *
- * Names, not ids, because a label already owns a partition and resolves in one read
- * (src/graph/keys.ts, docs/decisions/0008-finding-a-node-by-name.md) — a node *is* its name
- * here (docs/decisions/0012-the-name-is-the-node.md), so a file of names needs no id column
- * and no header.
- *
- * Both directions live here, together, because they are one format. The separator, the
- * comment character and the star reading are each a rule the reader and the writer have to
- * agree on, and a rule stated twice is a rule that drifts — a writer that stopped matching
- * its reader would produce files that load as a *different graph* rather than as an error.
- * What is done with a reading is src/graph/load.ts, which is the half that touches a table.
- *
- * See docs/decisions/0021-a-graph-in-a-text-file.md and
- * docs/decisions/0022-a-graph-written-back-out.md.
+ * Both directions live here because they are one format, and a rule stated twice drifts.
  */
 import type { Item } from "./bulk.js"
 import { components } from "./islands.js"
@@ -160,7 +141,7 @@ export class Unwritable extends Error {
  * loaded into an empty table comes back with new ids — `n-<uuid>` where a seed had `n0000`
  * — so an id anywhere in the sort would make the second export of one graph differ from the
  * first, and the round trip could not be checked by comparing them. Labels are unique by
- * claim (docs/decisions/0008-finding-a-node-by-name.md), so they order this on their own.
+ * claim, so they order this on their own.
  *
  * Nothing here is dated, for the same reason. The JSON export stamps itself because it is a
  * backup; this file is meant to be edited and committed, and a stamp would make every
@@ -242,10 +223,9 @@ export function format(items: Item[], shape: Shape): string {
   }
   for (const group of islands.values()) group.sort(byLabel)
 
-  // Largest island first, as the page lists them
-  // (docs/decisions/0020-the-islands-list-is-an-index.md), and by its first name where two
-  // are the same size — which node names a component is decided by the order the unions
-  // happened in, and is no more stable across a reload than the ids are.
+  // Largest island first, as the page lists them, and by its first name where two are the
+  // same size — which node names a component is decided by the order the unions happened
+  // in, and is no more stable across a reload than the ids are.
   const order = [...islands.keys()].sort((a, b) => {
     const size = (sizes.get(b) ?? 0) - (sizes.get(a) ?? 0)
     if (size !== 0) return size

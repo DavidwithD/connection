@@ -1,25 +1,8 @@
 /**
- * The panel down the left: every island in the graph, as somewhere to go.
+ * The panel down the left: every component, as somewhere to go.
  *
- * The map is walked outward from one node, so a component holding nothing anyone has reached
- * is at the end of no walk however long (docs/decisions/0019-every-island-has-an-address.md).
- * Naming them is the only way in — and naming *all* of them, the one under your feet
- * included, is what makes the list an index of places rather than a list of errands. See
- * docs/decisions/0020-the-islands-list-is-an-index.md.
- *
- * A row never leaves on a click. That is the whole difference: crossing back is a click
- * rather than a name typed from memory, and the row you just used is still where it was when
- * you look for it again.
- *
- * Two rows can be clicked and mean different things. One you have been to is already seated
- * on the map, so going back is only the camera moving. One you have not seats a whole island
- * that was never there, in open water, permanently — `World` never reassigns a position. The
- * dim on an off-map row is that difference, and it is the only thing on a row besides its
- * name.
- *
- * How many islands there are is a property of the data and has no ceiling: 688 nodes of
- * vocabulary arrived as 267 components. So the list is paged, and the heading carries the
- * total — a list that stops at twenty without saying so is a list claiming to be the graph.
+ * A row never leaves on a click, and every component is listed — the one under your feet
+ * included. Paged, with the total in the heading, because the count has no ceiling.
  */
 import { fetchIslands, type IslandMeta, type IslandPage } from "./api.js"
 
@@ -49,7 +32,7 @@ export class IslandsPanel {
    *
    * The first page, because it is the only part a fresh read can be compared against. A merge
    * between two islands nobody has scrolled to cannot be seen from here, and is left to drift
-   * — the same over-listing ADR 0019 already accepts.
+   * — the same over-listing the island index already accepts.
    */
   private key = ""
 

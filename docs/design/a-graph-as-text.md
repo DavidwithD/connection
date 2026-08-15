@@ -111,6 +111,42 @@ for.
 A text export is lossy on purpose — no ids, no degrees, no `rootId`, no index item. It is not
 a backup, and the JSON export still is.
 
+## The backup this is not
+
+The JSON export and its restore are the other pair, and they behave differently on purpose
+([export.ts](../../src/graph/export.ts), [restore.ts](../../src/graph/restore.ts)).
+
+A subset of a graph is not automatically a graph, so three things are corrected on the way
+out. Each is an inconsistency that reads fine right up until something walks into it.
+
+- An edge with one end outside the export is dropped. Half an edge left in the table is an
+  unreachable orphan, and it is the reason a node holding edges cannot be deleted.
+- `degree` is rewritten from the edges actually kept. A count that outlives the edges it
+  counted makes a finished node look like it has more graph behind it.
+- The index item is left behind and recomputed on the way in, because `rootId` usually names
+  a node the export is dropping.
+
+Whatever it drops or corrects, it says so.
+
+The restore drops the table rather than copying into a new one, and that is DynamoDB rather
+than a choice: a table's name is fixed at creation, and there is neither a copy nor a rename.
+So the only way to end up with the right name is to build that table again — which is what
+the seed already does, and why the machinery is shared.
+
+Everything before the drop is a check, and that ordering is the whole safety argument. From
+the moment the table goes the file is the only copy, so it is read, parsed and proved
+consistent first. A file that fails any check leaves the table exactly as it was. The checks
+are the invariants the writes defend one transaction at a time
+([writing-to-the-graph.md](writing-to-the-graph.md)), asked of a whole graph at once: both
+halves of every edge, degrees matching the edges they count, one live claim per name.
+
+`graph:load` and `graph:restore` each take one file and one flag that stops the run before
+anything is written, and they read the command line through one place
+([args.ts](../../src/graph/args.ts)). What `--dry-run` is called, and what happens when a
+second path arrives, is an agreement between two commands — and holding it twice is two
+places for it to drift. The drift would not read as a bug either: a command that has quietly
+stopped recognising a flag treats it as a filename.
+
 ## The page
 
 [transfer.html](../../web/transfer.html) is its own Vite entry, sharing the stylesheet and

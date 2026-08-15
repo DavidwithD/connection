@@ -1,29 +1,10 @@
 /**
  * A text box that hands back nodes, not text.
  *
- * The distinction is the whole reason this exists. Search is a prefix query capped at
- * twenty (src/graph/labels.ts), so several nodes can answer to what has been typed and a
- * string is never enough to say which one was meant. Every box in the app that names a node
- * therefore resolves it here first, and its caller only ever sees a `NodeMeta`.
- *
- * Two of these run, one at each end of the panel that names an edge. They differ in nothing
- * but which end they report to.
- *
- * Keyboard, because a box you have to click is a box you can only use once in a row:
- *
  *   ↑ ↓      move the highlight, wrapping at both ends
  *   ↵        take the highlighted row
  *   ⇧↵       create exactly what is typed, whatever the list shows
  *   Esc      close the list; again, clear the box
- *
- * The two Enters are the whole shape of it. `↵` takes the best match, so typing a prefix
- * and pressing it is how you reach a node that exists — the common thing, and the reason
- * this resolves names at all. Creating is a different act with a different key, and never
- * the one a half-typed name falls into: `ash` is far more often the start of `Ashanlin`
- * than a node somebody means to make.
- *
- * The one place they meet is a name matching nothing. There is no best match to take, so
- * `↵` creates too rather than doing nothing at all.
  */
 import { Cancelled, searchLabels, type NodeMeta } from "./api.js"
 import { debounce } from "./explore.js"

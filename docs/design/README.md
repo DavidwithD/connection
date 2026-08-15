@@ -11,6 +11,7 @@ nothing in here is wrong.
 | [writing-to-the-graph.md](writing-to-the-graph.md) | The four transactions, how a refusal reads, and the way back |
 | [the-islands.md](the-islands.md) | Components as an index, maintained by writes that may fail |
 | [a-graph-as-text.md](a-graph-as-text.md) | The file a graph is typed and written back as |
+| [the-generated-graph.md](the-generated-graph.md) | The three passes a seeded graph is built in, and why each one |
 | [names-and-options.html](names-and-options.html) | The far-neighbour options, drawn and animated |
 | [two-ends.html](two-ends.html) | The panel that finds and joins, driveable, with its losing layouts |
 

@@ -1,27 +1,9 @@
 /**
- * Rebuild the graph table from a file `graph:export` wrote.
+ * Check an export, then rebuild the table from it. Drops the table to do it.
  *
- *   npm run graph:restore -- graph-export.json
- *   npm run graph:restore -- graph-export.json --dry-run   # check the file, touch nothing
- *
- * Together with the export this is how the seed leaves without taking anything with it:
- * export what was made by hand, restore it into an empty table. There is no table to copy
- * into and no table to rename, because DynamoDB has neither operation — a table's name is
- * fixed at creation, so the only way to end up with the right name is to drop that table and
- * build it again. Which is what the seed already does, and why the machinery is shared
- * (src/graph/bulk.ts).
- *
- * Everything before the drop is a check, and that ordering is the whole safety argument.
- * The file is the only copy of the graph from the moment the table goes, so it is read,
- * parsed and proved consistent first; a file that fails any check leaves the table exactly
- * as it was. The checks are the invariants the writes defend one transaction at a time
- * (docs/decisions/0009-the-first-write-outside-the-seed.md), asked of a whole graph at once:
- * both halves of every edge, degrees matching the edges they count, one live claim per name.
- *
- * The index item is rebuilt rather than restored. `rootId` has to name a node that is
- * actually here, and the export usually leaves behind the seed node the old one named.
- *
- * See docs/decisions/0018-the-graph-outlives-the-seed.md.
+ * Everything before the drop is a check, and that ordering is the whole safety argument: a
+ * file that fails any of them leaves the table exactly as it was. The index item is rebuilt
+ * rather than restored.
  */
 import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"

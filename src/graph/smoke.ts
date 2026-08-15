@@ -1,21 +1,9 @@
 /**
- * Walk a component through every write that can change it, and check it survives.
+ * Walk a component through create, join, join, part, and check it survives.
  *
- *   npm run graph:smoke
- *
- * The island index is maintained by writes that are allowed to fail and repaired by a
- * command nobody runs on a schedule (src/graph/islands.ts), so the thing worth testing is
- * not any one of them but the sequence: create, join, join, part. Three of those four are
- * the cases that sank the designs this one replaced — a pair of made nodes joined only to
- * each other is invisible to a degree-zero index, and a part is the one thing union-find
- * cannot undo.
- *
- * Everything it makes, it removes: names are scoped to the run, and the last act is to
- * check the graph counts what it counted before. Safe against a dev table for that reason,
- * and only that reason — it writes to the real graph, because a component is a property of
- * the real graph and there is nowhere else to have one.
- *
- * Needs a graph to be part of: `npm run graph:init` on an empty table is enough.
+ * Everything it makes, it removes: names are scoped to the run, and the last act is to check
+ * the graph counts what it counted before. Needs a graph to be part of — `npm run graph:init`
+ * on an empty table is enough.
  */
 import { pathToFileURL } from "node:url"
 import { describeTarget, GRAPH_TABLE_NAME } from "../db/client.js"
