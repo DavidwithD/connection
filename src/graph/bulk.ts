@@ -1,13 +1,4 @@
-/**
- * Operations over the whole table: reading all of it, writing many items at once, and
- * clearing the table they go into.
- *
- * These began as the seed's and are now wanted by the commands that export, rebuild and
- * reconcile the graph. Held in one place because the reasoning below is the kind that gets
- * lost in a copy: the retry loop and the two waiters each exist for a failure that never
- * happens locally, so a second copy would look like dead code right up until it ran
- * against AWS.
- */
+/** Whole-table reads and writes, and dropping the table. */
 import {
   CreateTableCommand,
   DeleteTableCommand,
@@ -86,10 +77,9 @@ export async function writeAll(items: Item[], label: string): Promise<void> {
  * orphaned whatever it had already written. Nothing outlives the table it lived in, so
  * dropping closes both.
  *
- * That only works because the table is the graph's alone
- * (docs/decisions/0007-a-table-for-the-graph.md). Both waiters are load-bearing against real
- * DynamoDB, where the two calls are asynchronous and creating a table still being deleted
- * fails. Local completes them near-instantly.
+ * That only works because the table is the graph's alone. Both waiters are load-bearing
+ * against real DynamoDB, where the two calls are asynchronous and creating a table still
+ * being deleted fails. Local completes them near-instantly.
  */
 export async function recreateTable(): Promise<void> {
   try {

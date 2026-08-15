@@ -1,25 +1,8 @@
 /**
- * Watts–Strogatz small-world generator.
+ * Watts–Strogatz small-world generator. Pure, deterministic, undirected.
  *
- * Chosen for the shape the demo needs rather than for realism. A ring lattice is
- * densely cyclic and gives every node the same degree; rewiring a fraction of the
- * edges then collapses the average path length, so exploring the result never
- * feels like walking down a corridor. Undirected throughout.
- *
- * What it will not give you is a hub — the degree spread stays narrow at any rewiring
- * probability worth using. A pass afterwards moves edges onto a few chosen nodes to
- * make some, holding the total edge count fixed; see `hubs` and `hubK`.
- *
- * Nor will it give you a graph in pieces: a rewired ring lattice is connected and stays so at
- * every probability. `islands` is what does, by building one ring per component rather than
- * one across the whole node list. All three passes have their own way out of a component —
- * the ring can wrap past the end of one, a shortcut can land in the next, a hub can take its
- * edge from anywhere — so all three are held inside an island, because a component this
- * quietly joins to another is one the page can never offer as somewhere else to go.
- *
- * Deterministic, because the *graph* must be reproducible across seed runs even
- * though the *layout* deliberately is not — see
- * docs/decisions/0003-graph-exploration-demo-stack.md.
+ * Three passes: one ring per island, a fraction of the ring edges rewired, then a pass that
+ * pulls a few nodes up into hubs. All three are held inside an island.
  */
 import { edgeKey } from "./keys.js"
 
@@ -53,18 +36,9 @@ export interface GenerateOptions {
 /**
  * How the nodes divide between islands: halving shares, largest first.
  *
- * Even shares would make the tail as big as the continent and leave nothing to notice about
- * the order they are offered in. Halving gives one component worth exploring, a few worth
- * crossing to, and — at the end of it — the ones that matter most for exercising this: a
- * pair and a lone node, which is what somebody making nodes by hand actually produces.
- *
- * These must sum to exactly `n`, and that is the part worth being careful about rather than
- * the weights: a node in no island is a node outside every range this builds, with no ring
- * to join and no component to belong to. Rounding moves the total either way and the floor
- * of one moves it up, so the difference is settled against the largest islands — the only
- * ones with nodes to spare, and the only ones a few either way says nothing about. Taking
- * from them always terminates, because the smallest total the floor can produce is one per
- * island and `generate` has already refused more islands than nodes.
+ * These must sum to exactly `n`, so the rounding difference is settled against the largest
+ * islands. Taking from them always terminates: the smallest total the floor of one can
+ * produce is one per island, and `generate` has already refused more islands than nodes.
  */
 export function shares(n: number, islands: number): number[] {
   const weights = Array.from({ length: islands }, (_, i) => 0.5 ** i)
@@ -233,27 +207,9 @@ export function generate({
     }
   })
 
-  // Hubs. The lattice hands out one degree and rewiring only nudges it a little either
-  // side of `k`, at any probability worth using — so nothing in the graph is worth calling
-  // well connected, and the views that size a node by its degree have nothing to say.
-  //
-  // Each edge a hub gains is paid for by one dropped elsewhere: an edge (v, w) becomes
-  // (v, hub), so v is unchanged, w gives up one, and the total edge count — and with it
-  // the mean degree — is exactly what it was.
-  //
-  // Two kinds of donor are refused. A node already down at `half + 1`, so the pass cannot
-  // tear the ring open to feed a hub and the bottom of the degree range stays where the
-  // lattice left it; and any earlier hub, which would otherwise be drained back down by
-  // the hubs built after it and quietly cost the graph the top degree it was asked for.
-  //
-  // Those two refusals are also the ceiling on `hubs`: everything a hub gains is somebody
-  // else's spare degree, so once it is spent the pass runs out of donors and the hubs
-  // asked for past that point are left sitting at `k`, silently.
-  //
-  // With islands, this is the pass that most wants to escape one: it takes an edge from
-  // wherever it finds it and hangs it on the hub. Both ends are held to the hub's island
-  // below, which also means the hubs asked for land where the nodes are — an island of two
-  // has no spare degree to give anybody, and contributes none.
+  // Hubs. Each edge a hub gains is paid for by one dropped elsewhere, so the total edge
+  // count is unchanged. Two kinds of donor are refused: a node already down at the ring's
+  // floor, and any earlier hub. Both ends are held to the hub's own island.
   if (hubs > 0 && hubK > k) {
     const chosen = new Set<number>()
     // Which island a node is in, by the ranges above. Read once per candidate rather than

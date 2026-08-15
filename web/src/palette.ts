@@ -1,19 +1,4 @@
-/**
- * Colour tokens for the graph, and the theme switch.
- *
- * Hop distance is an *ordinal* encoding — discrete, ordered marks — so it gets one
- * hue stepped light→dark, and the centre gets a reserved accent from a different
- * hue. Both ramps were run through the palette validator rather than eyeballed:
- *
- *   light  blue 250/350/450/550   ordinal: 4/4 pass (adjacent ΔL >= 0.06)
- *   dark   blue 300/400/500/600   ordinal: 4/4 pass (dark end 2.15:1 vs surface)
- *   accent vs nearest hop step    CVD ΔE 24.4 light / 24.9 dark (>= 8 target)
- *   ink on the accent fill        6.2:1 light / 5.1:1 dark (>= 4.5 target)
- *
- * The steps are applied discretely, never interpolated. Interpolating between them
- * would put colours on screen that nothing validated, and five classes do not need
- * a continuous scale.
- */
+/** Validated colour tokens, light and dark. */
 
 export interface Palette {
   surface: string
@@ -25,7 +10,20 @@ export interface Palette {
    * its own contrast pair. Dark in both themes: the accent is a mid-tone orange either way.
    */
   inkOnAccent: string
-  /** Index 0 is hop 1; the last entry covers every hop beyond the ramp. */
+  /**
+   * Index 0 is hop 1; the last entry covers every hop beyond the ramp.
+   *
+   * Hop distance is an *ordinal* encoding, so it is one hue stepped light→dark rather than
+   * several hues. Both ramps were run through the palette validator rather than eyeballed:
+   *
+   *   light  blue 250/350/450/550   ordinal: 4/4 pass (adjacent ΔL >= 0.06)
+   *   dark   blue 300/400/500/600   ordinal: 4/4 pass (dark end 2.15:1 vs surface)
+   *   accent vs nearest hop step    CVD ΔE 24.4 light / 24.9 dark (>= 8 target)
+   *   ink on the accent fill        6.2:1 light / 5.1:1 dark (>= 4.5 target)
+   *
+   * Applied discretely, never interpolated: a value between two steps is a colour nothing
+   * validated, and five classes do not need a continuous scale.
+   */
   hop: readonly string[]
   edge: string
   edgeActive: string

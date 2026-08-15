@@ -4,9 +4,8 @@
 Each check finds one fact twice — in the code, and in the document describing it —
 and fails when the two disagree.
 
-docs/checks.md is the reference: what is bound to what, and every rule code raised
-below. docs/decisions/0014-binding-the-docs-to-the-code.md is why this compares
-instead of generating.
+The reference for what is bound to what, and for every rule code raised below, is
+the checks document this enforces.
 
 Every extractor is a heuristic tied to how this repo writes things, so each one
 fails loudly when it finds nothing at all (`X000`). A gate that silently stops
@@ -41,8 +40,8 @@ TABLE_FILES = ["src/db/tables.ts", "src/graph/table.ts"]
 
 # Which document carries each check's half of the comparison.
 #
-# ADR 0014 binds a fact in the code to "the document describing it". Which document
-# that is was hardcoded to the README in five separate functions, so moving a bound
+# A fact in the code is bound to "the document describing it". Which document that
+# is was hardcoded to the README in five separate functions, so moving a bound
 # section out of it failed as an X000 — a broken extractor — rather than as the
 # ordinary consequence of a decision nobody had recorded. Declaring it here makes
 # the location reviewable, and moving a section a one-line edit.
@@ -340,8 +339,8 @@ def all_doc_text(gate: Gate) -> str:
     """Every document's text, for "is this knob written down anywhere?".
 
     Deliberately wider than the link checks: a flag documented beside the machinery
-    that reads it — a gate's strict switch, in docs/decisions/GATE.md — is
-    documented, and a rule demanding the README's table instead would be wrong.
+    that reads it — a gate's strict switch, in that gate's own rules — is documented,
+    and a rule demanding the README's table instead would be wrong.
     """
     parts = [gate.read(ENV_EXAMPLE)]
     for path in sorted(gate.root.rglob("*.md")):
@@ -669,7 +668,7 @@ def check_layout(gate: Gate) -> None:
 
 
 def markdown_files(gate: Gate) -> list[str]:
-    """Tracked markdown outside docs/decisions/, which has its own gate."""
+    """Tracked markdown outside `DECISIONS_DIR`, which has its own gate."""
     out = []
     for path in sorted(gate.root.rglob("*.md")):
         if any(part in SKIP_DIRS for part in path.parts):

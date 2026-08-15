@@ -1,12 +1,4 @@
-/**
- * Create any table that does not exist yet, then wait until it is ACTIVE.
- *
- * Idempotent — safe to re-run. It creates missing tables but never alters or
- * drops an existing one, so it cannot destroy data. Changing an existing table
- * (new GSI, new key) is a deliberate act and should be its own migration.
- *
- *   npm run ddb:migrate
- */
+/** Create any missing table, then wait until it is ACTIVE. Never alters or drops one. */
 import {
   CreateTableCommand,
   DescribeTableCommand,

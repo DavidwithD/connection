@@ -4,8 +4,8 @@
 The docs gate's own worst failure is silence. Every extractor is a pattern over how
 this repo happens to write things, so a reorganised document or a refactored helper
 can leave a check matching nothing at all — and a check that compares nothing
-reports PASS for ever. docs/checks.md calls that "worse than no gate because it is
-believed", and the `X000` rules exist to catch it.
+reports PASS for ever. That is worse than no gate, because it is believed, and the
+`X000` rules exist to catch it.
 
 Nothing proved the X000 rules themselves fire. This does.
 

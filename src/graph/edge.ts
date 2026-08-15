@@ -4,29 +4,9 @@
  *   npm run graph:edge -- "Kavara" "Miselin"
  *   npm run graph:edge -- "Kavara-Miselin"
  *
- * The first write outside the seed, and the reason it is a transaction rather than four
- * puts: `degree` on the meta item is what tells a reader whether it has seen all of a
- * node's edges (src/graph/repo.ts), so an edge item that lands without its increment — or
- * an increment that lands twice — makes the store lie about how much graph is left. Five
- * operations, all or none.
- *
- * `removeEdge` is the same five in reverse, and it is constrained from the other side: an
- * edge item deleted without its decrement leaves a degree counting something that is gone,
- * and the node claims graph behind it that nobody can ever read. Deleting an edge that was
- * never there must not lower a degree either, which is what the conditions are for.
- *
- * Both are shared with the routes, so everything a caller has to get right lives inside
- * them: the self-edge guard, and turning a cancellation into a sentence. The browser gets
- * the same refusals the terminal does.
- *
- * Each is followed by a second write that neither joins nor parts anything: an edge can
- * merge two components or split one, and the index that lets the page find the graph it
- * cannot walk to has to be told. That write is outside the transaction and is allowed to
- * fail — see `reindex` below, and src/graph/islands.ts for why the index is derived.
- *
- * See docs/decisions/0009-the-first-write-outside-the-seed.md,
- * docs/decisions/0010-writing-to-the-graph-from-the-browser.md and
- * docs/decisions/0011-taking-a-write-back.md.
+ * Five operations, all or none: both edge halves, both degrees, and `edgeCount`.
+ * `removeEdge` is the same five in reverse. Each is followed by `reindex` below, which
+ * maintains the island index outside the transaction and is allowed to fail.
  */
 import { pathToFileURL } from "node:url"
 import { TransactionCanceledException } from "@aws-sdk/client-dynamodb"

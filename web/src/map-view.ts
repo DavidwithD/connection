@@ -1,29 +1,8 @@
 /**
- * The map. Cytoscape draws it; the camera is the user's.
+ * Cytoscape render; additive only, no layout engine.
  *
- * The smoothness rule is that this class only ever *adds* elements. Nothing is moved,
- * restyled per frame, or removed, so a pan is pure camera work and costs nothing beyond
- * the redraw. Panning triggers no fetch and no layout because there is no layout.
- *
- * Cytoscape's native gestures are exactly the Google Maps convention already: drag pans,
- * wheel zooms toward the cursor. `autoungrabify` turns a drag that starts on a node into
- * a pan rather than a move, which both matches a map and protects the frozen positions.
- *
- * Importance is four discrete tiers — accent, its graph neighbours, everything else, and
- * the backdrop it crowds — recomputed when the accent changes and again when a reply lands
- * on it, which is O(degree) rather than per frame. A continuous falloff would mean
- * restyling every node per frame.
- *
- * Ghosts are the one exception to all of the above, and the exception is deliberate. They are
- * also the one thing here the camera decides: a ghost stands for a neighbour of the centre
- * while that neighbour is off screen, so zooming and panning raise and lower them. That costs
- * a handful of measurements once the camera stops, never per frame, and it is what keeps a
- * name from being readable at its own seat and stood in for in the ring at the same time.
- *
- * Tiers, ghosts and the flight are drawn out in docs/design/the-centre.md; the reasoning
- * is docs/decisions/0004-the-centre-and-its-neighbourhood.md, with the viewport rule above
- * in docs/decisions/0025-when-a-ghost-stands.md, and
- * docs/decisions/0003-graph-exploration-demo-stack.md for the world model underneath.
+ * Four discrete tiers, recomputed when the accent changes and again when a reply lands on
+ * it. Ghosts are the one exception to all of it, and the one thing here the camera decides.
  */
 import cytoscape, {
   type BoundingBox12,
@@ -57,8 +36,7 @@ const GHOST_MARGIN = 160
 
 /**
  * Flight speed across the screen, in pixels per millisecond. Chosen by eye against three
- * timings of one 543px flight, which 720ms won —
- * docs/decisions/0004-the-centre-and-its-neighbourhood.md.
+ * timings of one 543px flight, which 720ms won.
  *
  * Screen pixels rather than world units, because zoomed out the same world distance is a
  * shorter visual move and must not take longer to cross.
@@ -249,8 +227,7 @@ function buildStyle(p: Palette): StylesheetJson {
         opacity: 0.55,
       },
     },
-    // The ring: the name *is* the node. Why it keeps a plate instead of floating as bare
-    // type is docs/decisions/0012-the-name-is-the-node.md.
+    // The ring: the name *is* the node, on a plate rather than as bare type.
     {
       selector: "node[tier = 1]",
       style: {
@@ -260,7 +237,7 @@ function buildStyle(p: Palette): StylesheetJson {
         padding: pad,
         "background-color": p.surface,
         // Near-opaque, so where two pills overlap the front one reads whole instead of the
-        // two interleaving. Why they are allowed to overlap: docs/design/the-centre.md.
+        // two interleaving.
         "background-opacity": 0.92,
         label: "data(label)",
         color: p.hop[0]!,
@@ -993,7 +970,7 @@ export class MapView {
    * the camera finishes centring it.
    *
    * This is the one place anything on the map moves. `autolock` normally makes every
-   * position immutable, which is what keeps ADR 0003's frozen seating honest, so it comes
+   * position immutable, which is what keeps the frozen seating honest, so it comes
    * off for the flight and goes straight back on. `autoungrabify` is untouched throughout:
    * a drag still pans, and nothing the user does can move a node.
    */

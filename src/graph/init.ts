@@ -1,37 +1,8 @@
 /**
- * Make the index item tell the truth about the table.
+ * The reckoning: make what is derived match the table. Writes nothing else.
  *
- *   npm run graph:init            # write it
- *   npm run graph:init -- --check # say what it would write, write nothing
- *
- * The only graph command with no destructive mode. It reads, derives, and puts back what it
- * derived; it never drops a table and never deletes a row, so unlike its two neighbours it
- * needs no guard against being pointed at somewhere real.
- *
- * Two derived things live here now. The index item, which is the argument below; and which
- * component each node belongs to, which is maintained one edge at a time by writes that are
- * allowed to fail (src/graph/islands.ts) and so needs somewhere it can be recomputed from
- * the graph rather than from the last thing that happened to it. A split is the case that
- * makes this necessary rather than merely tidy: union-find has no un-union, so a part that
- * breaks a component in two can only be recounted, never undone.
- *
- * It exists because `graph#index` is a precondition rather than a summary. Every write is a
- * transaction carrying a conditional update on it (src/graph/edge.ts, src/graph/node.ts), so
- * a table without one refuses the first node as readily as the ten-thousandth — and until
- * now the only things that wrote it were the seed and a restore. Starting a real graph meant
- * generating six hundred invented ones first, or having a graph already to export.
- *
- * The same item is the only record of where the map starts, and nothing maintains it after a
- * write: `createNode` and `deleteNode` move the counts and leave `rootId` alone. A root that
- * is parted from its edges and deleted takes the page's first read with it
- * (web/src/main.ts), and no amount of writing fixes what only a reckoning can. This is that
- * reckoning, and it is the same one `graph:restore` performs on the way in — the difference
- * being that this one reads the table rather than a file, and puts back one item rather than
- * all of them.
- *
- * Faults found on the way are reported and do not stop the write. The index is derived, and
- * a true derivation of a damaged graph is worth more than a stale one; `--check` is the mode
- * that refuses instead. See docs/decisions/0018-the-graph-outlives-the-seed.md.
+ * Two derived things — the index item, and which component each node belongs to. Faults
+ * found on the way are reported and do not stop the write; `--check` refuses instead.
  */
 import { pathToFileURL } from "node:url"
 import { PutCommand } from "@aws-sdk/lib-dynamodb"

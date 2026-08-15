@@ -1,45 +1,9 @@
 /**
- * Add a graph read out of a text file to the one already in the table.
+ * Survey a reading against the table, then add it one write at a time.
  *
- *   npm run graph:load -- graph.txt
- *   npm run graph:load -- graph.txt --dry-run   # say what it would write, write nothing
- *
- * The file is lines of names — a node and whoever it joins — and what one means is
- * src/graph/text.ts, which reads them and writes them back out. This is what is done with a
- * reading: survey it against the table, then apply it one write at a time.
- *
- * A line's reading is not visible in the line, which is why `--dry-run` prints the pairs it
- * read rather than leaving them to be assumed.
- *
- * Names are the identity (docs/decisions/0012-the-name-is-the-node.md), and what that costs
- * is the one failure this cannot catch: a misspelled name is a new node, not an error, and
- * it looks exactly like a node you meant to add. Which is why the plan prints every name it
- * is about to create, and why `--dry-run` exists.
- *
- * Two things it deliberately is not:
- *
- * - **Authoritative.** The file is a patch, not a picture. Deleting a line does not part an
- *   edge and nothing here removes anything, so this is the one graph command needing no
- *   guard against being pointed somewhere real. `graph:export` is the way back out.
- * - **Its own writer.** Every node goes through `createNode` and every edge through
- *   `addEdge`, one transaction each, so a bulk load defends `degree` and the label claims
- *   exactly as the terminal and the page do
- *   (docs/decisions/0009-the-first-write-outside-the-seed.md). Running it twice is a no-op:
- *   both refuse what is already there, and those two refusals are counted rather than
- *   raised, which is the whole of what makes the file editable.
- *
- * Sequential, and that is the price. Every one of those transactions carries a conditional
- * update on the single `graph#index` item, so running them at once makes them contend, and
- * a transaction conflict comes back as a cancellation with no condition in it — which
- * `reasonFor` can only hand back raw (src/graph/refused.ts). So a file costs about one
- * round trip per new name and four per new pair, in series: a thousand-edge file is around
- * twenty seconds against DynamoDB Local and minutes against AWS.
- *
- * `rootId` is left alone, as it is by every single write. A load large enough to change
- * where the map should start wants `npm run graph:init` after it — which is also what
- * repairs the island index if any `settle` lagged on the way through.
- *
- * See docs/decisions/0021-a-graph-in-a-text-file.md.
+ * Additive only, and sequential: a file costs about one round trip per new name and four per
+ * new pair. A thousand-edge file is around twenty seconds against DynamoDB Local, minutes
+ * against AWS.
  */
 import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"

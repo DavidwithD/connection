@@ -7,9 +7,7 @@ the node, while the node's own item carries index keys that put the label somewh
 `begins_with` can reach. The box on the page hands back nodes rather than text, and arriving
 by name puts the found node on the map beside the camera, joined to nothing.
 
-The reasoning is [ADR 0008](../decisions/0008-finding-a-node-by-name.md); the panel these
-boxes live in is [ADR 0013](../decisions/0013-one-box-that-grows-into-an-edge.md). What the
-box *writes* is [writing-to-the-graph.md](writing-to-the-graph.md).
+What the box *writes* is [writing-to-the-graph.md](writing-to-the-graph.md).
 
 ## The pieces
 
@@ -119,8 +117,9 @@ label index lives on two attributes on the meta item alone, so a node missing th
 invisible to search while being perfectly reachable by id.
 
 **Search is a prefix, at the front of a name only.** These keys cannot reach the middle of
-one. That is not a gap to patch with another index — it is a different store, and
-[ADR 0008](../decisions/0008-finding-a-node-by-name.md) records the cost going up.
+one, and no key on this table can: `begins_with` reaches a sort key and nothing else.
+Serving a substring means a second store rather than a third index — something to write to
+and hold in step on every write, which is a larger thing to own than this box is worth.
 
 ## Where the numbers are
 

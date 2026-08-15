@@ -2,11 +2,11 @@
 """ADR quality gate.
 
 Checks decision records for structure, concision, accuracy hygiene, duplication,
-and maintainability. Rules and budgets are documented in docs/decisions/GATE.md.
+and maintainability. The rules and budgets are documented; this is what enforces them.
 
 Usage:
     scripts/adr-gate.py                 # check every ADR + the index
-    scripts/adr-gate.py docs/decisions/0002-foo.md
+    scripts/adr-gate.py <record>.md     # one record
     scripts/adr-gate.py --stats         # add the metrics table
     scripts/adr-gate.py --strict        # warnings fail too
     scripts/adr-gate.py --json          # machine-readable findings
@@ -650,9 +650,9 @@ def check_inbound(root: Path, docs: list[Doc], skip: set[Path],
                   out: list[Finding]) -> dict[str, int]:
     """Count references pointing *at* each record.
 
-    Findability is inbound. A reader hits a constraint in the code and asks why it is
-    like this — they do not browse the index. A record nothing points at is unreachable
-    at the only moment it was needed.
+    A reader hits a constraint in the code and asks why it is like this — they do not
+    browse the index. The code carries no pointers, so the living documents are the whole
+    route in, and a record nothing points at is unreachable at the moment it was needed.
     """
     targets: list[tuple[Doc, str, re.Pattern]] = []
     for doc in docs:
@@ -688,8 +688,8 @@ def check_inbound(root: Path, docs: list[Doc], skip: set[Path],
         if counts[str(doc.path)] == 0:
             out.append(Finding("M010", "warn", str(doc.path), 1,
                                "nothing outside the index points at this record — link "
-                               "it from the code or spec that carries the constraint, "
-                               "or it will not be read when it matters"))
+                               "it from the design page or spec describing what it "
+                               "settled, or it will not be read when it matters"))
     return counts
 
 

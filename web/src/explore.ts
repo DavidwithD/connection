@@ -1,27 +1,9 @@
 /**
- * When to ask for more graph, and when to draw it.
+ * What the centre reads once the camera settles, and what it draws.
  *
- * Those are two questions now, and they have different answers. Only the centre is *drawn*:
- * a node reaches the map because the centre it neighbours was read, and it sits there
- * unexpanded — wearing the dashed border that says there is more behind it — until someone
- * puts it in the middle of the screen. What is drawn is still the route taken, and nothing
- * besides.
- *
- * Reading runs one hop ahead of that. Landing somewhere also reads the ring around it and
- * keeps the replies unspent, so the next step lands on a neighbourhood already in hand
- * instead of a round trip. Nothing arrives on the map from a read-ahead reply: `World`
- * seats against the occupancy of the moment, and seating a node for a place nobody walked
- * to would freeze it against a map that never existed.
- *
- * The trigger is a *settled* camera, never a moving one, so panning waits on nothing and a
- * gesture crossing six nodes draws only the one it stops on. Every reply is additive, so
- * one landing mid-gesture cannot disturb what is on screen.
- *
- * A read whose node stopped being the centre before it landed is abandoned, and its claim
- * handed back so arriving there later asks again.
- *
- * Stated as an invariant in docs/design/architecture.md. The reasoning, and what the
- * read-ahead costs, is docs/decisions/0006-only-the-centre-reads.md.
+ * Two questions with different answers: only the centre is drawn, and reading runs one hop
+ * ahead of that. A read whose node stopped being the centre before it landed is abandoned,
+ * and its claim handed back so arriving there later asks again.
  */
 import { Cancelled, fetchNeighbourhood, type Neighbourhood } from "./api.js"
 import type { MapView } from "./map-view.js"

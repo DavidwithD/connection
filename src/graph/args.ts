@@ -1,11 +1,5 @@
 /**
- * The command line, where two commands read it the same way.
- *
- * `graph:restore` and `graph:load` each take one file and one flag that stops the run
- * before anything is written. That is an agreement about spelling — what `--dry-run` is
- * called, and what happens when a second path arrives — and holding it in two places is
- * two places for it to drift. The drift would not look like a bug either: a command that
- * has quietly stopped recognising a flag reads it as a filename.
+ * The command line, for the two commands that take a file.
  *
  * The usage line stays with the caller. It names the command, and nothing here knows which
  * one is running.

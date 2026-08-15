@@ -1,15 +1,36 @@
 # The centre and its neighbourhood
 
 What the map draws around the node in the middle, and what has to stay true while it does.
-The constraints behind it are [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md),
-for what is drawn, and [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it
-is drawn as.
+The centre is whichever node is nearest the middle of the screen. It and its neighbours are
+the only named nodes, and a named node is drawn as its name; everything else is a disc. A
+neighbour the camera has taken off screen is stood in for by a ghost in the ring, and
+clicking one flies to the node it stands for. Nothing on the map moves except a ghost in
+flight.
+
+## What the renderer may do
+
+Only *add*. [map-view.ts](../../web/src/map-view.ts) never moves an element, never restyles
+one per frame, and never removes one, so a pan is camera work and costs nothing beyond the
+redraw. Panning triggers no fetch and no layout, because there is no layout.
+
+Cytoscape's own gestures are already the convention a map wants — drag pans, wheel zooms
+toward the cursor — so none of that is reimplemented. `autoungrabify` turns a drag that
+starts on a node into a pan rather than a move, which both matches a map and protects the
+frozen positions.
+
+Ghosts are the one exception, and it is deliberate. They are also the one thing here the
+camera decides.
 
 ## The names
 
-A named node draws *as* its name: a pill sized to the label, with no disc beside it. Only
-the centre and its ring are named, so only they are pills — everything else is still a disc,
-and the reason for the split is [ADR 0012](../decisions/0012-the-name-is-the-node.md).
+A named node draws *as* its name: a pill sized to the label, with no disc beside it. A disc
+with a label beside it is two marks carrying one fact, and a reader has to bind them before
+reading either. The pill is Cytoscape's own node box rather than drawn text, so it keeps the
+hit target, the place an edge stops, and a border the finer marks can use.
+
+Only the centre and its ring are named, so only they are pills. Everything else stays a
+disc: a field node is seen rather than read, and nothing about it has to be legible for the
+map to work.
 
 Seven kinds of thing, and one of them is not a node.
 
@@ -63,10 +84,13 @@ a ghost stands while its neighbour's drawn box is off screen. So zooming out dis
 doorways into the nodes they stood for, and zooming in raises them for the neighbourhood you
 zoomed past.
 
-Reading the camera at all is [ADR 0025](../decisions/0025-when-a-ghost-stands.md); the ghost
-itself is 0004's. The rule reads the canvas, which is not quite what the reader sees: the HUD,
-the islands and the legend float over it, so a neighbour parked under one counts as on screen
-and gets no ghost while being as hidden as one that left.
+The camera decides it because nothing else can. How far a neighbour sits from the centre is
+fixed when it is seated and never changes; whether the reader can see it changes with every
+zoom and every pan. Only the camera knows the second.
+
+The rule reads the canvas, which is not quite what the reader sees: the HUD, the islands and
+the legend float over it, so a neighbour parked under one counts as on screen and gets no
+ghost while being as hidden as one that left.
 
 The box and not the seat, because a ring node draws as its name: a seat just past the edge
 still has half its label readable, and a ghost raised for it would be the same name twice.
@@ -99,8 +123,11 @@ How many can stand is what the rings have room for, not a number written down:
 widest name in the plan, and a neighbourhood wider than one ring uses the next one out. Only
 rings the viewport can show are used, because a doorway off screen opens for nobody, and two
 slots that would touch are refused — a name half under a sibling is still readable, a doorway
-half under one has lost its click. [ADR 0027](../decisions/0027-a-ring-holds-what-it-holds.md)
-is why this is measured rather than declared.
+half under one has lost its click.
+
+A constant could not stay true. Every input to that division moves — the type, the plan,
+the viewport — so a number fixed against one ring stops matching the next, and nothing
+reports the gap: doorways simply stop appearing.
 
 The rings still run out on a hub at close zoom, so the order they are offered in decides who
 gets one. Ranked unlined first — a neighbour reached by two tethers has almost nothing pointing
@@ -150,3 +177,14 @@ clear the screen by, the pill's inset and type, and the paint bands for the ring
 in [map-view.ts](../../web/src/map-view.ts), and the settle delay and accent hysteresis in
 [main.ts](../../web/src/main.ts). Each carries the reason for its value in a comment. Copying one
 here would make this the stale copy.
+
+## Records behind it
+
+| Record | What it settled |
+|---|---|
+| [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | That the centre shows every neighbour it has, and what a ghost is |
+| [0012](../decisions/0012-the-name-is-the-node.md) | The pill, and which nodes get one rather than a disc |
+| [0025](../decisions/0025-when-a-ghost-stands.md) | The camera rather than the seat as what raises a ghost |
+| [0027](../decisions/0027-a-ring-holds-what-it-holds.md) | How many doorways a ring offers, and that the number is measured |
+| [0006](../decisions/0006-only-the-centre-reads.md) | That drawing is the centre's neighbourhood, and reading runs a hop past it |
+| [0003](../decisions/0003-graph-exploration-demo-stack.md) | One frozen position per node, and a camera panned over it |

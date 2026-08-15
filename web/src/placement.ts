@@ -1,18 +1,8 @@
 /**
- * Where nodes go in world space. Pure geometry — no Cytoscape, no DOM.
+ * Seating geometry and the spatial index. Pure — no Cytoscape, no DOM.
  *
- * Positions are frozen, so seating a new node cannot nudge an existing one out of the
- * way: it has to find room. That is what `Occupancy` and `seat` are for. Candidates are
- * generated on rings expanding outward from the parent and the first one clear of every
- * placed node wins, so neighbours land close when there is space and further out when
- * there is not.
- *
- * `SEAT_SEP` is sized against the *largest* a node ever draws — the accent size, not the
- * resting size. A node swells when it becomes the accent, and seating against the resting
- * size would let it grow into its neighbours as you pan past.
- *
- * These are the separations docs/design/the-centre.md points at rather than copies. See
- * docs/decisions/0003-graph-exploration-demo-stack.md.
+ * Candidates are generated on rings expanding outward from the parent, and the first one
+ * clear of every placed node wins.
  */
 
 const TAU = Math.PI * 2
@@ -20,7 +10,13 @@ const TAU = Math.PI * 2
 /** Node diameters. Which one a node draws at depends on its distance from the accent. */
 export const NODE_SIZE = { accent: 50, neighbour: 34, resting: 24 } as const
 
-/** Minimum centre-to-centre distance between any two placed nodes. */
+/**
+ * Minimum centre-to-centre distance between any two placed nodes.
+ *
+ * Sized against the *largest* a node ever draws — the accent size, not the resting size. A
+ * node swells when it becomes the accent, and seating against the resting size would let it
+ * grow into its neighbours as you pan past.
+ */
 export const SEAT_SEP = NODE_SIZE.accent + 16
 
 /**
@@ -228,8 +224,7 @@ export function seat(
  *
  * The number a ring can hold used to be stated as a literal, and the literal was this
  * calculation done once by hand for the first ring and a typical name. Computing it stays
- * true for a long name and keeps meaning something on a ring further out — see
- * docs/decisions/0027-a-ring-holds-what-it-holds.md.
+ * true for a long name and keeps meaning something on a ring further out.
  */
 export const pillsAround = (radius: number, slotWidth: number): number =>
   Math.max(1, Math.floor((TAU * radius) / slotWidth))

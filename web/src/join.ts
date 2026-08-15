@@ -1,36 +1,10 @@
 /**
- * The panel at the top of the map: two ends, and the line between them.
+ * The panel at the top: two ends, and the writes.
  *
- * It is one box until a name lands in it, and then it is an edge — two boxes joined by a
- * constant line, which is why neither carries a label. Both ends write. Naming a node while
- * the other end holds one joins them, whichever end you typed in, because the store keeps no
- * direction to tell them apart (src/graph/edge.ts). See
- * docs/decisions/0013-one-box-that-grows-into-an-edge.md.
- *
- * The end that fired empties, so a run of names needs no reaching. Whichever end you leave
- * alone is the anchor: hold the near end and you fan out from one node, hold the far end and
- * you fan in to one. `⌘↵` moves the anchor, which is how a path is named — one name per node
- * instead of each one twice. `Esc` puts the whole widget away.
- *
- * The widget shrinks when its last name goes.
- *
- * Every pick writes immediately — no queue, no commit step. What makes that bearable is that
- * every write can be taken back: each one leaves a receipt carrying an `undo`, and taking it
- * reverses the whole write, the created node included. The panel is fast because `↵` is the
- * only key it needs, and safe because `↵` is not final. See
- * docs/decisions/0011-taking-a-write-back.md.
- *
- * A receipt names both ends, and either name loads back into the near end. It reaches what
- * `⌘↵` cannot: any write that landed, however far back, rather than only the one just fired.
- * Loading never writes — a pick inside an end is the only thing that does — so reaching back
- * through the receipts can never cost an edge.
- *
- * Every write goes down the one line the page keeps (web/src/writes.ts), undos included —
- * behind whatever is already queued, so an undo can never overtake the write it reverses.
- *
- * A name that does not exist yet is created first, in its own transaction, and only then
- * joined. Two writes, so a create that lands followed by a join that is refused leaves a
- * real node with no edges — reachable by name, attached to nothing.
+ * One box until a name lands in it, and then an edge. The end that fired empties, so a run of
+ * names needs no reaching; whichever end you leave alone is the anchor, and `⌘↵` moves it.
+ * `Esc` puts the whole widget away. Every pick writes immediately, and every write can be
+ * taken back.
  */
 import {
   Refused,
@@ -172,7 +146,7 @@ export class JoinPanel {
    * a pair is an edge. The first click arms, the second writes, and everything after the
    * write is this panel's ordinary business — a receipt that reverses it, and an anchor left
    * standing for the click after that. `⌘` moves the anchor instead, exactly as it does over
-   * a row of the list. See docs/decisions/0029-a-click-that-joins.md.
+   * a row of the list.
    *
    * The caret ends in whichever end is free once that has happened, so the name after this
    * one can be typed or clicked with nothing to reach for either way.
@@ -246,8 +220,7 @@ export class JoinPanel {
 
     // The *other* end — the one you are not typing in — so the caret stays where it is and
     // the next name has somewhere to go. Two ends hold one anchor, so the one this replaces
-    // is let go of; that is what the gesture spends. Which end takes it, and what the near
-    // end would have cost, is docs/decisions/0028-where-a-chained-name-lands.md.
+    // is let go of; that is what the gesture spends.
     //
     // The same object the queued write holds, not a copy, so a name this write has yet to
     // create becomes a node in both the moment it exists. The write keeps the pair it was
@@ -355,8 +328,7 @@ export class JoinPanel {
    * Let go of a node that has left the store, in whichever end is holding it.
    *
    * The undo above is one way a node goes; the map deleting from the centre is the other
-   * (web/src/main.ts), and both call this. What an end left holding a dead name costs is in
-   * docs/design/writing-to-the-graph.md.
+   * (web/src/main.ts), and both call this.
    */
   forget(node: NodeMeta): void {
     for (const side of [this.near, this.far]) {

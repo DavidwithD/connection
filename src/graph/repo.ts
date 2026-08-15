@@ -1,17 +1,4 @@
-/**
- * Primitive reads. One partition per node holds the node and its whole adjacency:
- *
- *   Query     pk = node#<id>          -> the meta item, then every edge item
- *   BatchGet  node#<other>/#meta      -> labels and true degrees, in bulk
- *   Query     island index            -> one row per component, largest first
- *
- * `#meta` sorts ahead of `edge#`, so the node item is always the first result and a
- * Limit can only ever truncate edges. Degree is read from the meta item rather than
- * counted from the edge items, which keeps it exact even when a Query was truncated.
- *
- * That last sentence is an invariant the frontend leans on — see docs/design/architecture.md.
- * The reasoning is docs/decisions/0003-graph-exploration-demo-stack.md.
- */
+/** The reads: adjacency Query, metas BatchGet, island Query. */
 import { BatchGetCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME } from "../db/client.js"
 import { GRAPH_KEYS as KEYS, ISLAND_INDEX } from "./table.js"
@@ -114,8 +101,8 @@ export function isIslandCursor(value: unknown): value is IslandCursor {
  * The sort key carries the island's id after its size, so no two rows share one and paging
  * can neither repeat a row nor step over one — within an index that is holding still. A join
  * changes a size, which is to say it moves a row, so pages either side of a write are pages
- * of two different lists. That is the same over-listing ADR 0019 already accepts: a stale
- * address costs a wasted trip, not a wrong map.
+ * of two different lists. That is the same over-listing the island index already accepts: a
+ * stale address costs a wasted trip, not a wrong map.
  *
  * Eventually consistent, like any GSI, and that costs nothing here: an island appearing a
  * beat after the write that made it is a list that catches up, not a map that lies.
@@ -158,7 +145,7 @@ export async function readIslands(limit: number = ISLAND_LIMIT): Promise<IslandM
  * How many components there are.
  *
  * Counted rather than kept. A number on the index item would have to be maintained by the
- * same `settle` and `resettle` that ADR 0019 lets fail, so it could disagree with the rows
+ * same `settle` and `resettle` that are allowed to fail, so it could disagree with the rows
  * it counts — and a total that is wrong is worse than the cap it replaced, because nothing
  * on the page would look wrong.
  *

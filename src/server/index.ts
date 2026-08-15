@@ -13,30 +13,12 @@
  *   GET    /api/graph/export   the whole graph as JSON, to download
  *   POST   /api/graph/text     add a file of names, or say what it would add
  *
- * The client seats new nodes itself, so a read only ever answers "who is next to this?" —
- * one Query plus one BatchGet. Vite proxies /api here in development, so there is one
- * origin and no CORS to configure.
+ * This list is the contract the client reads, and the docs gate holds it to the routes
+ * registered below.
  *
- * The two writes are the same functions the terminal runs, imported rather than
- * reimplemented, so a refusal reads identically from either. Both are thin on purpose:
- * every rule that matters is a condition inside the transaction, and these routes only
- * decide which status number carries it back. A refusal is 409 and not 500 — a taken name
- * or an existing edge is an answer, not a fault.
- *
- * Edges are joined by id, never by label. The browser has already resolved a name to a
- * node through the search box, and resolving it again here would reintroduce exactly the
- * ambiguity that box exists to remove.
- *
- * The last three move whole graphs rather than one node, and they are the only routes here
- * that read the table with a Scan — the exception src/graph/bulk.ts already names, now
- * reachable by a click rather than by a command. What is *not* here is the other half of
- * that: restoring a JSON export drops the table, and its guard is an environment variable
- * and a rescue file written next to whoever ran it (src/graph/export.ts). Neither survives
- * being turned into a button, so that one stays a command.
- *
- * See docs/decisions/0003-graph-exploration-demo-stack.md,
- * docs/decisions/0010-writing-to-the-graph-from-the-browser.md and
- * docs/decisions/0023-the-graph-moves-through-the-page.md.
+ * The writes are the same functions the terminal runs, imported rather than reimplemented.
+ * These routes only decide which status number carries a result back. The last three are the
+ * only ones here that read the table with a Scan.
  */
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
@@ -211,8 +193,7 @@ app.post("/api/nodes", async (c) => {
  * Two removals behind one path, and the flag is what picks. Unflagged is the strict one an
  * undo is built on: it refuses a node that has been joined to since, and the panel reads
  * that refusal as the node having stayed (web/src/join.ts). Flagged parts every edge first
- * and is refused by nothing but a node that is not there —
- * docs/decisions/0024-taking-a-node-out-with-its-edges.md for what that costs.
+ * and is refused by nothing but a node that is not there.
  */
 app.delete("/api/nodes/:id", async (c) => {
   const id = c.req.param("id")
@@ -273,11 +254,10 @@ app.delete("/api/edges", async (c) => {
 /**
  * How much of a file one request will write.
  *
- * A load is one round trip per new name and four per new pair, in series and by design
- * (docs/decisions/0021-a-graph-in-a-text-file.md), so a large file is not slow here in the
- * way a slow query is slow — it is a request that stays open for minutes and cannot be
- * resumed if the browser gives up on it. The command has no such ceiling: it prints as it
- * goes, and nobody is waiting on a socket.
+ * A load is one round trip per new name and four per new pair, in series and by design, so
+ * a large file is not slow here in the way a slow query is slow — it is a request that
+ * stays open for minutes and cannot be resumed if the browser gives up on it. The command
+ * has no such ceiling: it prints as it goes, and nobody is waiting on a socket.
  */
 const LOAD_LIMIT = 500
 
@@ -352,9 +332,8 @@ app.get("/api/graph/export", async (c) => {
  * Add a file of names to the graph, or say what adding it would do.
  *
  * `?dry=1` is the whole reason this is two calls rather than one. The command has a dry run
- * because a misspelled name is a new node and looks exactly like one you meant
- * (docs/decisions/0021-a-graph-in-a-text-file.md); a page needs it more, not less, since
- * there is no file on disk to read back afterwards.
+ * because a misspelled name is a new node and looks exactly like one you meant; a page
+ * needs it more, not less, since there is no file on disk to read back afterwards.
  *
  * The file arrives as a plain text body — `await file.text()` in the browser — so there is
  * no multipart parser here and nothing new to depend on. It is parsed and surveyed again on

@@ -1,25 +1,8 @@
 /**
- * The line every write to the graph stands in, and the receipts it leaves.
+ * The line every write stands in, and the receipts it leaves.
  *
- * One item carries the graph's totals, and every write in the app updates it —
- * `createNode` and `deleteNode` its node count, `addEdge` and `removeEdge` its edge count
- * (src/graph/node.ts, src/graph/edge.ts). DynamoDB cancels one of two transactions that
- * reach for the same item at once, and a conflict carries no failed condition for
- * `reasonFor` to read back (src/graph/refused.ts) — so what a lost write shows on the page
- * is the SDK's own sentence, in a receipt that says the join simply did not happen. This is
- * what stops that: one chain, one write at a time, however fast the keys come. The cost is
- * nothing anybody sees, because a chip waits at `·` until its turn.
- *
- * Two browsers still race, and always did — docs/decisions/0011-taking-a-write-back.md.
- * This only keeps one reader from fighting themselves.
- *
- * Here rather than in the panel because the map writes too: taking a node out is fired from
- * the centre and never touches an end of the panel
- * (docs/decisions/0024-taking-a-node-out-with-its-edges.md). A queue that a second writer
- * cannot reach is a queue that does not do its job.
- *
- * What a chip *says* is left to whoever opened it. A join names both its ends and carries an
- * undo; a removal names one node and carries nothing. Neither shape belongs here.
+ * One chain, one write at a time, however fast the keys come. What a chip *says* is left to
+ * whoever opened it — neither shape belongs here.
  */
 
 /**

@@ -48,8 +48,7 @@
         </div>
       </section>
 
-      <!-- Every component of the graph, as somewhere to go:
-           docs/decisions/0020-the-islands-list-is-an-index.md. Its own panel, because it is
+      <!-- Every component of the graph, as somewhere to go. Its own panel, because it is
            what the map is navigated with and the HUD above it folds away. Hidden only when
            there is no graph at all — an empty heading would promise a list that never comes. -->
       <section class="panel" id="islands" hidden>
@@ -86,9 +85,9 @@
       </section>
     </div>
 
-    <!-- Two ends and the line between them: docs/decisions/0013-one-box-that-grows-into-an-edge.md.
-         The × sits out of the tab order on purpose — between two inputs, it would otherwise
-         be what Tab reached on the way from one end to the other. -->
+    <!-- Two ends and the line between them. The × sits out of the tab order on purpose —
+         between two inputs, it would otherwise be what Tab reached on the way from one end
+         to the other. -->
     <section class="panel" id="ends">
       <div class="end" id="near-end">
         <input
@@ -121,8 +120,7 @@
       <div id="receipts"></div>
     </section>
 
-    <!-- Raised on the node at the centre, and nowhere else:
-         docs/decisions/0024-taking-a-node-out-with-its-edges.md. The count rides in the row
+    <!-- Raised on the node at the centre, and nowhere else. The count rides in the row
          rather than behind a second dialogue, because the row is the asking — this is the
          one write the page cannot take back, so what it costs belongs in the thing clicked. -->
     <div class="panel" id="node-menu" hidden>

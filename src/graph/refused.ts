@@ -1,15 +1,8 @@
 /**
  * The graph declining a write, as distinct from the write failing.
  *
- * Four operations can refuse — creating a node, deleting one, joining two, parting two —
- * and each refuses through a condition inside its transaction rather than a check before
- * it. What comes back is a cancellation naming a *position*, which each module turns into
- * a sentence through its own table of reasons.
- *
- * One type for all four, because every caller wants the same split and none of them wants
- * a finer one. The terminal prints the sentence; the route answers 409 rather than 500,
- * because "they are already joined" is an outcome to act on and not a fault to page anyone
- * about. Anything that is not this is a genuine failure and is left to propagate.
+ * One type for all four writes, because every caller wants the same split and none wants a
+ * finer one. Anything that is not this is a genuine failure and is left to propagate.
  */
 export class Refused extends Error {
   constructor(reason: string) {

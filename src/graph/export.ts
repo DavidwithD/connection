@@ -1,40 +1,9 @@
 /**
- * Take a copy of the graph out of the table.
+ * Copy the graph out, as JSON or as text. Read-only.
  *
- *   npm run graph:export                       # only what was made by hand, as JSON
- *   npm run graph:export -- --all              # the seed as well
- *   npm run graph:export -- --out mine.json    # somewhere other than graph-export.json
- *   npm run graph:export -- --text             # the whole graph, as lines of names
- *   npm run graph:export -- --names            # the whole graph's names and nothing else
- *
- * Read-only, and the half of a rebuild that can be run as often as you like. Nothing here
- * touches the table; `graph:restore` is what puts the file back, and it drops the table to
- * do it. Splitting them that way means the destructive step reads a file rather than a
- * database, so it can check what it is about to write before anything is gone.
- *
- * The whole point of the JSON is its default: a seed run replaces the graph, so nodes made
- * since the last one have to leave before it and come back after. Which items those are is
- * read from the id shape alone — `n-<uuid>` against the seed's `n0000` — and nothing else in
- * the table records where an item came from (src/graph/keys.ts).
- *
- * `--text` and `--names` take no view on any of that. They write the graph as somebody would
- * have typed it (src/graph/text.ts), which is every node there is: the split above is a
- * question about surviving a re-seed, and a file of names is not a backup.
- *
- * A subset of a graph is not automatically a graph, and that is what most of this file is
- * about. Three things are corrected on the way out, because each of them is an inconsistency
- * that reads fine right up until something walks into it:
- *
- *   - an edge with one end outside the export is dropped, since half an edge left in the
- *     table is an unreachable orphan and the reason `deleteNode` refuses a node that has any
- *   - `degree` is rewritten from the edges actually kept, since a count that outlives the
- *     edges it counted makes a finished node look like it has more graph behind it
- *   - the index item is left behind entirely and recomputed on the way in, since `rootId`
- *     usually names a node the export is dropping
- *
- * Whatever it drops or corrects, it says so.
- *
- * See docs/decisions/0018-the-graph-outlives-the-seed.md.
+ * Three things are corrected on the way out: an edge with one end outside the export is
+ * dropped, `degree` is rewritten from the edges actually kept, and the index item is left
+ * behind to be recomputed on the way in. Whatever it drops or corrects, it says so.
  */
 import { writeFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"

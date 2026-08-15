@@ -1,16 +1,4 @@
-/**
- * The graph's own table.
- *
- * Every item here belongs to one graph: the nodes, their adjacency, the starting point,
- * and one claim per label. Nothing else shares it — see
- * docs/decisions/0007-a-table-for-the-graph.md for why this is not the single overloaded
- * table it grew out of.
- *
- * Two consequences fall out of the table being the graph's alone, and both are the point:
- * clearing it is dropping it, and neither index needs a trick to stay sparse. Edge items
- * carry no label, so only the node metas are ever in `label`; and only a component's root
- * carries the island keys, so `island` holds one row per component rather than per node.
- */
+/** The graph's own table, its label index and its island index. Nothing else shares it. */
 import type { CreateTableCommandInput } from "@aws-sdk/client-dynamodb"
 import { GRAPH_TABLE_NAME } from "../db/client.js"
 
@@ -62,7 +50,7 @@ export const graphTableDefinition: CreateTableCommandInput = {
       // attributes, so the index holds a row per island rather than per node. One bucket,
       // because the whole point is a single Query returning all of them and there are as
       // many as there are components. Sorted by size, so a descending read offers the
-      // largest island first — see docs/decisions/0019-every-island-has-an-address.md.
+      // largest island first.
       IndexName: ISLAND_INDEX,
       KeySchema: [
         { AttributeName: GRAPH_KEYS.islandBucket, KeyType: "HASH" },

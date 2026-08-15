@@ -1,9 +1,6 @@
 /**
- * End-to-end check that the wiring actually works, and a worked example of each
- * core operation. Writes to a `smoke#<run>` partition and deletes it afterwards,
- * so it is safe to run against a dev table.
- *
- *   npm run ddb:smoke
+ * End-to-end check of the wiring, and a worked example of each core operation. Writes to a
+ * `smoke#<run>` partition and deletes it afterwards.
  */
 import {
   PutCommand,

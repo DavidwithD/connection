@@ -1,40 +1,15 @@
 /**
  * A text box that hands back nodes, not text.
  *
- * The distinction is the whole reason this exists. Search is a prefix query capped at
- * twenty (src/graph/labels.ts), so several nodes can answer to what has been typed and a
- * string is never enough to say which one was meant. Every box in the app that names a node
- * therefore resolves it here first, and its caller only ever sees a `NodeMeta`.
- *
- * Two of these run, one at each end of the panel that names an edge. They differ in nothing
- * but which end they report to.
- *
- * Keyboard, because a box you have to click is a box you can only use once in a row:
- *
  *   ↑ ↓      move the highlight, wrapping at both ends
  *   ↵        take the highlighted row
  *   ⇧↵       create exactly what is typed, unless a node already carries that name
  *   ⌘↵       either of those, and go on from what it named
  *   Esc      close the list; again, empty the box and let the focus go
  *
- * The two Enters are the whole shape of it. `↵` takes the best match, so typing a prefix
- * and pressing it is how you reach a node that exists — the common thing, and the reason
- * this resolves names at all. Creating is a different act with a different key, and never
- * the one a half-typed name falls into: `ash` is far more often the start of `Ashanlin`
- * than a node somebody means to make.
- *
- * They meet at both ends of that. A name matching nothing has no best match to take, so
- * `↵` creates rather than doing nothing at all; a name matching exactly has nothing to
- * create, since one name is owned by one node, so `⇧↵` takes that node rather than firing
- * a create the store is bound to refuse.
- *
- * Either Enter asks before it acts when the box holds nothing resolved. The wait below is
- * long enough for a fast hand to reach `↵` before the first search has even been sent, and
- * a keystroke dropped there is a key that silently does nothing.
- *
- * ⌘ rides on either Enter rather than adding a third. It says nothing about which node is
- * meant — only what should happen once one is — and travels out on the pick as `chain`:
- * what going on from a name means belongs to whoever owns the box.
+ * Either Enter asks before it acts when the box holds nothing resolved. ⌘ rides on either
+ * rather than adding a third: it says nothing about which node is meant, only what should
+ * happen once one is, and travels out on the pick as `chain`.
  */
 import { Cancelled, searchLabels, type NodeMeta } from "./api.js"
 import { debounce } from "./explore.js"

@@ -1,25 +1,8 @@
 /**
  * Which nodes can reach which — components, as union-find over the stored graph.
  *
- * The map is walked outward from one node, so a component that node cannot reach is
- * unreachable by walking however long anyone looks. This is what tells the page those
- * components exist, and one Query on the `island` index is the whole read.
- *
- * Every node's meta item carries a `parent`; a node whose parent is itself is a *root*, and
- * a root is a component. Only roots carry the island keys, so the index holds one row per
- * component rather than one per node — there is no separate registry item, and so nothing
- * that can disagree with the pointers.
- *
- * Balanced by size rather than rank. Size is wanted anyway, to say how big an island is
- * before anyone goes there, and it survives what rank does not: a split can recount a size
- * exactly, while rank is a height bound that only ever rises and could never be corrected.
- * No path compression — union by size holds the depth at two or three at this scale, and
- * compression is the one part that would write during a read.
- *
- * What union-find cannot do is un-union, so `resettle` below is not an inverse of `settle`
- * but a recount, and it is why this index is derived rather than authoritative: every
- * failure here leaves the graph itself untouched, and `graph:init` reckons the index back
- * from the nodes and edges. See docs/decisions/0019-every-island-has-an-address.md.
+ * Balanced by size, no path compression. `settle` merges after a join; `resettle` is a
+ * recount after a part, not an inverse, because union-find has no un-union.
  */
 import { GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb"
 import { db, GRAPH_TABLE_NAME } from "../db/client.js"

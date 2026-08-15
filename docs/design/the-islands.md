@@ -8,10 +8,8 @@ roots carry the island index keys, so one Query returns one row per component, l
 first. The index is derived, maintained one edge at a time by writes that are allowed to
 fail, and reckoned back from the graph itself when it drifts.
 
-Why the store cannot simply answer *what components are there* is
-[ADR 0019](../decisions/0019-every-island-has-an-address.md): membership spans the whole
-edge set, and each node owns its own partition, so the alternative is a Scan. What the page
-does with the list is [ADR 0020](../decisions/0020-the-islands-list-is-an-index.md).
+The store cannot simply answer *what components are there*: membership spans the whole edge
+set, and each node owns its own partition, so the only other way to ask is a Scan.
 
 ## The pieces
 
@@ -122,6 +120,20 @@ the heading carries the total. A list that stops at a round number without sayin
 list claiming to be the whole graph. The total is a `COUNT` per load rather than a number
 anyone maintains — maintaining it would mean riding on the writes this index deliberately
 lets fail.
+
+## What proves it survives a sequence
+
+`npm run graph:smoke` ([smoke.ts](../../src/graph/smoke.ts)) walks one component through
+create, join, join, part. The index is maintained by writes that are allowed to fail and
+repaired by a command nobody runs on a schedule, so the thing worth testing is not any single
+write but the order they arrive in. Three of those four steps are the cases that sank the
+designs this one replaced: a pair of made nodes joined only to each other is invisible to an
+index keyed on degree, and a part is the one thing union-find cannot undo.
+
+Everything it makes, it removes. Names are scoped to the run, and the last act is to check
+the graph counts what it counted before. That is the only sense in which it is safe against a
+real table — it writes to the real graph, because a component is a property of the real graph
+and there is nowhere else to have one.
 
 ## What has to stay true
 

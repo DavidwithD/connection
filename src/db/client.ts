@@ -1,13 +1,4 @@
-/**
- * The single DynamoDB client for the process.
- *
- * One env var decides which backend you get: set `DYNAMODB_ENDPOINT` and every
- * call goes to DynamoDB Local; leave it unset and the SDK's default credential
- * chain points you at real AWS. No code changes between the two.
- *
- * This is the only file that differs between the two backends, which is what makes an
- * environment a variable rather than a code path — see docs/design/architecture.md.
- */
+/** The shared document client, and the local-vs-AWS switch. */
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb"
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb"
 
@@ -21,10 +12,7 @@ export const region = process.env.AWS_REGION?.trim() || "us-east-1"
 /** Table name, overridable per environment (dev / staging / prod). */
 export const TABLE_NAME = process.env.DYNAMODB_TABLE?.trim() || "connection"
 
-/**
- * The graph's table. Separate from the one above because nothing reads across the two —
- * see docs/decisions/0007-a-table-for-the-graph.md.
- */
+/** The graph's table. Separate from the one above because nothing reads across the two. */
 export const GRAPH_TABLE_NAME =
   process.env.DYNAMODB_GRAPH_TABLE?.trim() || "connection-graph"
 
