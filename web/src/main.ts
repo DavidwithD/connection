@@ -209,6 +209,17 @@ view.cy.on("tap", "node", (event) => {
 
   if (!world.has(id)) return
 
+  // The centre is the one node a click cannot take you to, because you are already standing
+  // on it. So it is free to mean the other thing a node can be here — a name for the panel —
+  // and what an end does with one is `take`'s (web/src/join.ts). The glide to the middle comes
+  // back down that path, on the pick that arms, rather than from here.
+  if (id === view.accent) {
+    const node = world.get(id)
+    // ⌘ alone, as over a row of the list (web/src/combobox.ts).
+    if (node) panel.take(node, (event.originalEvent as MouseEvent | undefined)?.metaKey === true)
+    return
+  }
+
   // Naming a node is not drifting past it. There is no ambiguity left about where this
   // is going, so its ring is drawn on the click rather than on the settle at the far end
   // of the flight — the same bargain the ghost above makes, and for the same reason. With
@@ -302,6 +313,9 @@ menuDelete.addEventListener("click", () => {
       // `drop` clears an accent that has gone and leaves the caller to re-pick. Nothing else
       // asks until the camera next moves, and until then the HUD would name a gap.
       trackAccent()
+      // An end of the panel may be naming it. Nothing about this write goes through the
+      // panel, so it is told: a dead name in an end is the trap its own undo clears.
+      panel.forget(node)
 
       receipt.settle("ok", `removed ${node.label}`)
       void refreshTotals()
@@ -359,7 +373,7 @@ const note = (node: NodeMeta): string =>
  * where it sits rather than re-seating it, which is the seated-once rule holding for a node
  * that arrived by being made rather than by being walked to.
  */
-new JoinPanel(
+const panel = new JoinPanel(
   {
     near: {
       field: el<HTMLDivElement>("near-end"),
@@ -425,6 +439,16 @@ window.addEventListener("keydown", (event) => {
 
   // The arrows below pan the camera. Inside an end of the panel they belong to the text.
   if (event.target instanceof HTMLInputElement) return
+
+  // The way to the box from wherever the map has left the focus: the whole middle of this
+  // page takes keys, and the panel is the one part of it a hand already on the keyboard
+  // cannot reach. Below the guard above, so a slash typed into an end stays a slash, and not
+  // with a modifier held, which belongs to the browser.
+  if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault()
+    panel.focus()
+    return
+  }
 
   const pan: Record<string, [number, number]> = {
     ArrowLeft: [NUDGE, 0],

@@ -315,6 +315,41 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   width: 320px;
   padding: 8px;
 }
+/* It recedes while the map is being read and comes back on touch: it stands over the
+   densest part of the picture and is empty most of the time. Holding a name is the middle
+   state — an armed anchor is what the next name joins to, and it outlives being panned away
+   from, so it never thins as far as an empty box.
+
+   Two properties, because they have different reaches. The plate is `background`, which
+   stops at the element; the contents are `opacity` on the ends alone, since opacity on
+   #ends would take #receipts with it — an undo has thirty seconds to be noticed and is the
+   last thing here to dim. Engaged is the absence of these rules rather than a set of its
+   own, because :has outweighs :hover and a grown box would otherwise stay dim under the
+   pointer. */
+#ends { transition: background 120ms ease, backdrop-filter 120ms ease; }
+#ends > .end, #ends > #link { transition: opacity 120ms ease; }
+
+#ends:not(:hover):not(:focus-within) {
+  background: color-mix(in srgb, var(--panel) 22%, transparent);
+  /* Not `none`: a blur that has a length to interpolate is one the fade can carry. */
+  backdrop-filter: blur(0px);
+}
+#ends:not(:hover):not(:focus-within) > .end,
+#ends:not(:hover):not(:focus-within) > #link { opacity: 0.45; }
+
+#ends:not(:hover):not(:focus-within):has(input:not(:placeholder-shown)) {
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  backdrop-filter: blur(4px);
+}
+#ends:not(:hover):not(:focus-within):has(input:not(:placeholder-shown)) > .end,
+#ends:not(:hover):not(:focus-within):has(input:not(:placeholder-shown)) > #link {
+  opacity: 0.75;
+}
+/* An end below full opacity is a stacking context, and a list inside one cannot paint over
+   the other end. Only reachable while the fade runs, which is shorter than the wait before
+   a list has rows to show — this is what keeps it true if either number moves. */
+.end:focus-within { z-index: 4; }
+
 #ends input {
   font: inherit;
   width: 100%;

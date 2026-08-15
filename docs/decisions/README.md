@@ -31,6 +31,8 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0025](0025-when-a-ghost-stands.md) | When a ghost stands | 🔵 Proposed |
 | [0026](0026-a-fourth-kind-of-document.md) | A fourth kind of document | 🔵 Proposed |
 | [0027](0027-a-ring-holds-what-it-holds.md) | A ring holds what it holds | 🔵 Proposed |
+| [0028](0028-where-a-chained-name-lands.md) | Where a chained name lands | 🔵 Proposed |
+| [0029](0029-a-click-that-joins.md) | A click that joins | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
