@@ -34,6 +34,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0028](0028-where-a-chained-name-lands.md) | Where a chained name lands | 🔵 Proposed |
 | [0029](0029-a-click-that-joins.md) | A click that joins | 🔵 Proposed |
 | [0030](0030-the-graph-moves-into-the-browser.md) | The graph moves into the browser | 🔵 Proposed |
+| [0031](0031-parting-an-edge-from-the-map.md) | Parting an edge from the map | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

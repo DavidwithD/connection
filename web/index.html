@@ -126,11 +126,12 @@
       <div id="receipts"></div>
     </section>
 
-    <!-- Right-click menu for the node at the centre. It opens on that node only. The button
-         label carries the edge count instead of showing a second confirm dialog. This is the
-         one write the page cannot undo, so the cost is written on the button itself. -->
-    <div class="panel" id="node-menu" hidden>
-      <button id="node-delete" type="button"></button>
+    <!-- Right-click menu. It opens at the centre only: on that node, or on a line reaching
+         it. One button, whose row is written when the menu opens. Taking the node out is the
+         one write the page cannot undo, so that row carries the edge count instead of a
+         second confirm dialog. Parting a pair is undone from its receipt. -->
+    <div class="panel" id="map-menu" hidden>
+      <button id="map-remove" type="button"></button>
     </div>
 
     <div class="panel" id="controls">
@@ -143,7 +144,8 @@
       <span><kbd>drag</kbd> pan &nbsp; <kbd>wheel</kbd> zoom</span>
       <span><kbd>click</kbd> glide it to the middle</span>
       <span><kbd>click the middle</kbd> name it in the box; the next name joins it</span>
-      <span><kbd>right-click</kbd> take the middle off the map</span>
+      <span><kbd>right-click the middle</kbd> take it off the map</span>
+      <span><kbd>right-click a line into the middle</kbd> part the two it joins</span>
       <span><kbd>↑↓←→</kbd> nudge the view</span>
       <!-- These two keys move focus between the map and the name box. Nothing else on the
            page says the box can be reached, or left, without a click. -->

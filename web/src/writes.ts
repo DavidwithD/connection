@@ -46,6 +46,27 @@ export class Receipt {
     this.el.title = why
     setTimeout(() => this.el.remove(), state === "ok" ? KEPT_OK_MS : KEPT_REFUSED_MS)
   }
+
+  /**
+   * Add an undo button to this receipt.
+   *
+   * The button removes itself on the first click, so the same undo cannot be queued twice.
+   * The queue is not known here: the caller passes what to run, and puts it in the line
+   * itself. Two things offer an undo — the join panel and the map — and this is the one
+   * place the button is built.
+   */
+  offerUndo(title: string, back: () => void): void {
+    const undo = document.createElement("button")
+    undo.type = "button"
+    undo.className = "undo"
+    undo.textContent = "undo"
+    undo.title = title
+    undo.addEventListener("click", () => {
+      undo.remove()
+      back()
+    })
+    this.el.append(undo)
+  }
 }
 
 export class Writes {

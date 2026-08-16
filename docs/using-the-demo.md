@@ -56,6 +56,7 @@ Pan around an undirected cyclic graph like a map. Whatever you stop on is what l
 | click the centre | Put its name in the box at the top — the next name joins the pair |
 | click a ghost | Fly to the node it stands in for |
 | right-click the centre | Take it off the map, with everything joined to it |
+| right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
 | `/` | Put the caret in the box at the top, whatever the focus was on |
@@ -143,6 +144,16 @@ Clicking loads and never writes.
 Taking a node off the map is the one write with no way back, since its edges cannot return with
 it. So it asks first rather than offering an undo after, and the row it asks with names what is
 going — `delete Ashanlin and its 3 edges`. It is offered on the centre alone.
+
+**The same right-click parts a pair.** Aim it at a line reaching the centre instead of at the
+centre, and the row reads `part Ashanlin and Vere`. Both nodes stay, so this one writes on the
+click and puts `undo` on its receipt, the way the box above does
+([ADR 0031](decisions/0031-parting-an-edge-from-the-map.md)). A ghost's dashed line is the same
+gesture: it stands for the edge between the centre and the node it names.
+
+One join is out of reach. A join too long to draw runs as two short marks instead of a line, and
+those are not a target. Pan until its far end is off screen, and the ghost that stands in for it
+can be right-clicked like any other line.
 
 The layers behind all of this are [architecture.md](design/architecture.md); the reasoning and
 what each choice cost are [ADR 0003](decisions/0003-graph-exploration-demo-stack.md),
