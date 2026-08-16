@@ -1,8 +1,9 @@
 /**
- * Watts–Strogatz small-world generator. Pure, deterministic, undirected.
+ * A Watts-Strogatz small-world generator. Pure, deterministic and undirected.
  *
- * Three passes: one ring per island, a fraction of the ring edges rewired, then a pass that
- * pulls a few nodes up into hubs. All three are held inside an island.
+ * The ids here belong to the generator and never reach the store. A node is keyed by its
+ * name, so the caller maps them across. They exist because the three passes address nodes by
+ * position: an island is a contiguous range of ids.
  */
 import { edgeKey } from "./keys.js"
 
@@ -13,32 +14,32 @@ export interface GeneratedNode {
 
 export interface GeneratedGraph {
   nodes: GeneratedNode[]
-  /** Each pair appears once; the storage layer writes both directions. */
+  /** Each pair appears once. The store holds one record per undirected edge. */
   edges: [string, string][]
 }
 
 export interface GenerateOptions {
   /** Node count. */
   n: number
-  /** Mean degree. Rounded down to even, since the lattice is symmetric. */
+  /** Mean degree. Rounded down to an even number, because the lattice is symmetric. */
   k: number
-  /** Rewiring probability. Zero is a plain ring; one is near-random. */
+  /** Rewiring probability. Zero gives a plain ring. One gives a near-random graph. */
   p: number
   seed: number
-  /** How many nodes get pulled up into hubs. Zero reproduces the plain lattice exactly. */
+  /** How many nodes become hubs. Zero reproduces the plain lattice exactly. */
   hubs?: number
-  /** Top degree. One hub reaches this exactly; the others land between it and `k`. */
+  /** The top degree. One hub reaches this exactly. The others land between it and `k`. */
   hubK?: number
-  /** Components to split the nodes across. One is a single connected graph. */
+  /** How many components to split the nodes across. One gives a connected graph. */
   islands?: number
 }
 
 /**
- * How the nodes divide between islands: halving shares, largest first.
+ * Split `n` nodes across `islands` components. Each share is half the one before it.
  *
- * These must sum to exactly `n`, so the rounding difference is settled against the largest
- * islands. Taking from them always terminates: the smallest total the floor of one can
- * produce is one per island, and `generate` has already refused more islands than nodes.
+ * The shares must sum to exactly `n`, so the rounding difference is taken from the largest
+ * islands. That always terminates: the smallest total the rounding can produce is one node
+ * per island, and `generate` has already refused more islands than nodes.
  */
 export function shares(n: number, islands: number): number[] {
   const weights = Array.from({ length: islands }, (_, i) => 0.5 ** i)
@@ -56,17 +57,17 @@ export function shares(n: number, islands: number): number[] {
 }
 
 /**
- * The lattice's reach inside one island, which is not always the one that was asked for.
+ * The lattice reach inside one island, which is not always the reach that was asked for.
  *
- * A ring needs more nodes than it has neighbours: `k` of 10 wants six before it means
- * anything, and the small end of the halving above is a pair. So the reach is whatever the
- * island can hold, and an island of one comes out with no edges at all — correctly, since
- * every candidate neighbour is itself.
+ * A ring needs more nodes than it has neighbours. A `k` of 10 needs at least six nodes to
+ * mean anything, and the smallest share above is a pair. So the reach is whatever the island
+ * can hold. An island of one node gets no edges, correctly: its only candidate neighbour is
+ * itself.
  */
 const reachIn = (size: number, want: number): number =>
   Math.max(1, Math.min(want, Math.floor((size - 1) / 2)))
 
-/** Small fast PRNG — good enough for demo data, and seedable, unlike Math.random. */
+/** A small fast PRNG. Good enough for demo data, and seedable, unlike `Math.random`. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0
   return () => {
@@ -88,11 +89,11 @@ const TAIL = [
 ]
 
 /**
- * Readable labels, so the demo does not look like a load test.
+ * Generate readable names, so the demo graph does not look like a load test.
  *
- * Three syllable slots, two of which may be empty: head × mid × tail is roughly
- * 2500 names, comfortably past the node counts this is used at. A two-slot version
- * only reached 320 and started emitting "Orinholm 13" a third of the way in.
+ * Three syllable slots, two of which may be empty. head x mid x tail gives about 2500 names,
+ * well past the node counts this is used at. A two-slot version reached only 320 and started
+ * emitting "Orinholm 13" a third of the way through.
  */
 function labeller(rand: () => number): () => string {
   const used = new Set<string>()
@@ -126,21 +127,20 @@ export function generate({
   const half = Math.max(1, Math.floor(k / 2))
   if (hubs >= n) throw new Error("hubs must be below n")
 
-  // Contiguous ranges, so which island a node is in is an arithmetic question rather than a
-  // lookup — and so the ids in one island read consecutively, which makes a seeded graph
-  // legible in the table. Every edge below is confined to one of these: the lattice, the
-  // rewiring, and the hub pass each have their own way of leaving an island, and an island
-  // this generator connects to another is one the page can never show as separate.
+  // Islands are contiguous id ranges. Finding a node's island is then arithmetic rather than
+  // a lookup, and the ids in one island read consecutively. Every edge below stays inside one
+  // range: the lattice, the rewiring and the hub pass each have their own way of crossing an
+  // island boundary, and an island joined to another is one the page cannot show as separate.
   const sizes = shares(n, islands)
   const starts: number[] = []
   for (let at = 0, i = 0; i < sizes.length; at += sizes[i]!, i++) starts.push(at)
-  // The largest island is the one the map boots into, so it is the one `k` has to mean
-  // something for. The rest give up whatever they cannot hold, quietly and by construction.
+  // The map opens on the largest island, so that is the one `k` has to mean something for.
+  // The smaller ones use whatever reach they can hold. See `reachIn`.
   if (half * 2 >= sizes[0]!) throw new Error("k must be well below the largest island")
 
-  // Two independent streams. Sharing one would let a change to how labels are drawn
-  // shift every later draw, so editing the name list would silently rewire the graph —
-  // which it did, once.
+  // Two independent random streams. With one stream, a change to how labels are drawn would
+  // shift every later draw, so editing the name list would silently rewire the graph. That
+  // happened once.
   const rand = mulberry32(seed)
   const nextLabel = labeller(mulberry32(seed ^ 0x9e3779b9))
   const id = (i: number): string => `n${String(i).padStart(4, "0")}`
@@ -151,15 +151,17 @@ export function generate({
   }))
 
   // Ring lattice: every node joins its `half` nearest neighbours on each side.
-  // Built as a key set so rewiring can reject a duplicate in constant time, with
-  // adjacency alongside it so the hub pass can read a degree without counting.
-  const edges = new Set<string>()
+  //
+  // Edges are held in a Map keyed by `edgeKey`, so rewiring rejects a duplicate in constant
+  // time. The adjacency sets beside it let the hub pass read a degree without counting. The
+  // pair is stored next to its key rather than recovered by splitting the key.
+  const edges = new Map<string, [string, string]>()
   const adjacency: Set<number>[] = Array.from({ length: n }, () => new Set())
   const add = (a: number, b: number): boolean => {
     if (a === b) return false
     const key = edgeKey(id(a), id(b))
     if (edges.has(key)) return false
-    edges.add(key)
+    edges.set(key, [id(a), id(b)])
     adjacency[a]!.add(b)
     adjacency[b]!.add(a)
     return true
@@ -171,9 +173,9 @@ export function generate({
     return true
   }
 
-  // One ring per island. The modulus is the island's size rather than the graph's, which is
-  // the whole of what keeps them apart: a ring that wrapped at `n` would close through the
-  // next island and make the two one.
+  // One ring per island. The modulus is the island's size, not the graph's. That is what
+  // keeps the islands apart: a ring that wrapped at `n` would close through the next island
+  // and join the two.
   sizes.forEach((size, island) => {
     const start = starts[island]!
     const reach = reachIn(size, half)
@@ -182,9 +184,9 @@ export function generate({
     }
   })
 
-  // Rewire one endpoint of a lattice edge with probability p. Retry a bounded
-  // number of times: a rejected rewire keeps the lattice edge, which is the
-  // standard degradation and cannot disconnect the ring.
+  // Rewire one end of each lattice edge with probability p. Retries are bounded. A rewire
+  // that fails leaves the lattice edge in place, which is the standard behaviour and cannot
+  // disconnect the ring.
   sizes.forEach((size, island) => {
     const start = starts[island]!
     const reach = reachIn(size, half)
@@ -194,8 +196,8 @@ export function generate({
         const from = start + i
         const old = start + ((i + j) % size)
         for (let attempt = 0; attempt < 16; attempt++) {
-          // Inside this island, so a shortcut shortens a path that exists rather than
-          // creating one between components that are meant to have none.
+          // Pick the new end inside this island. A shortcut then shortens a path that
+          // already exists, instead of joining two components that must stay apart.
           const to = start + Math.floor(rand() * size)
           if (to === from) continue
           if (adjacency[from]!.has(to)) continue
@@ -207,13 +209,13 @@ export function generate({
     }
   })
 
-  // Hubs. Each edge a hub gains is paid for by one dropped elsewhere, so the total edge
-  // count is unchanged. Two kinds of donor are refused: a node already down at the ring's
-  // floor, and any earlier hub. Both ends are held to the hub's own island.
+  // Hubs. Every edge a hub gains is paid for by one removed elsewhere, so the total edge
+  // count does not change. Two kinds of donor are rejected: a node already at the ring's
+  // minimum degree, and any node already made a hub. Both ends stay in the hub's own island.
   if (hubs > 0 && hubK > k) {
     const chosen = new Set<number>()
-    // Which island a node is in, by the ranges above. Read once per candidate rather than
-    // recomputed, since the hub pass asks for it thousands of times.
+    // A lookup table for which island each node is in. Built once, because the hub pass asks
+    // thousands of times.
     const islandOf = new Array<number>(n)
     sizes.forEach((size, island) => {
       for (let i = 0; i < size; i++) islandOf[starts[island]! + i] = island
@@ -233,9 +235,9 @@ export function generate({
       const home = islandOf[hub]!
       const floor = reachIn(sizes[home]!, half) + 1
 
-      // One hub is driven to `hubK` exactly, so the top of the range is where the caller
-      // asked for it. The rest are spread from just past where plain rewiring already
-      // tops out, which fills the tail instead of leaving a spike at `hubK` and a gap.
+      // The first hub is driven to `hubK` exactly, so the top of the degree range is where
+      // the caller asked for it. The rest are spread from just above where plain rewiring
+      // tops out, which fills the tail instead of leaving a spike at `hubK` and a gap below.
       const target =
         h === 0 ? hubK : Math.min(hubK, k + 2 + Math.floor(rand() * (hubK - k - 1)))
 
@@ -244,9 +246,9 @@ export function generate({
         adjacency[hub]!.size < target && attempt < 64 * hubK;
         attempt++
       ) {
-        // Drawn from the hub's own island. Picking across the whole graph and rejecting
-        // the misses would waste most attempts once the tail is small, and the small
-        // islands are exactly the ones whose few edges must not be moved away.
+        // Draw the other end from the hub's own island. Picking across the whole graph and
+        // rejecting the misses would waste most attempts once the island is small, and a
+        // small island is exactly the one whose few edges must not be taken away.
         const v = starts[home]! + Math.floor(rand() * sizes[home]!)
         if (v === hub || adjacency[v]!.has(hub)) continue
         const donors = [...adjacency[v]!].filter(
@@ -260,22 +262,5 @@ export function generate({
     }
   }
 
-  return {
-    nodes,
-    edges: [...edges].map((key) => {
-      const [a, b] = key.split("~") as [string, string]
-      return [a, b]
-    }),
-  }
-}
-
-/** Degree per node, from the undirected pair list. */
-export function degrees(graph: GeneratedGraph): Map<string, number> {
-  const out = new Map<string, number>()
-  for (const node of graph.nodes) out.set(node.id, 0)
-  for (const [a, b] of graph.edges) {
-    out.set(a, (out.get(a) ?? 0) + 1)
-    out.set(b, (out.get(b) ?? 0) + 1)
-  }
-  return out
+  return { nodes, edges: [...edges.values()] }
 }

@@ -11,7 +11,7 @@ flight.
 
 Only *add*. [map-view.ts](../../web/src/map-view.ts) never moves an element, never restyles
 one per frame, and never removes one, so a pan is camera work and costs nothing beyond the
-redraw. Panning triggers no fetch and no layout, because there is no layout.
+redraw. Panning triggers no read and no layout, because there is no layout.
 
 Cytoscape's own gestures are already the convention a map wants — drag pans, wheel zooms
 toward the cursor — so none of that is reimplemented. `autoungrabify` turns a drag that
@@ -131,14 +131,14 @@ reports the gap: doorways simply stop appearing.
 
 The rings still run out on a hub at close zoom, so the order they are offered in decides who
 gets one. Ranked unlined first — a neighbour reached by two tethers has almost nothing pointing
-at it, while one with a drawn line at least has a direction — then nearest first, which is also
-the order the read-ahead holds replies in, so a door usually opens without a fetch.
+at it, while one with a drawn line at least has a direction — then nearest first, which puts
+the doors on the neighbours close enough to be worth walking to.
 
 ## The flight
 
 Clicking a ghost runs `flyTo` ([map-view.ts](../../web/src/map-view.ts)):
 
-1. The request for the destination goes out at once, before anything moves.
+1. The read for the destination starts at once, before anything moves.
 2. The centre is pinned. Nothing may take it while a ghost is in the air.
 3. Camera and ghost travel together, for a duration set by how far the move looks on screen.
 4. On landing, the destination becomes the centre and the ghost dissolves into it.
@@ -147,14 +147,13 @@ Steps 2 and 4 are the ones that break if touched. A ghost torn down when its cen
 being the centre leaves nothing under the cursor by the second frame; a destination promoted
 before the landing shows you arriving at a place you have not reached.
 
-A round trip is symmetric in everything geometric and asymmetric in everything it knows.
-The motion mirrors: whichever ghost was clicked is the one that travels, the way back covers
-the distance the way out did, and the centre being left demotes and stands a ghost of itself
-in the new ring. What differs is what you land on. Flying out, the destination is an
-unlabelled dot whose neighbours may not be seated, and whether its ring is there on arrival
-is network-bound; flying back, every seat exists and nothing is fetched. Step 1 is what that
-asymmetry pays for — the outbound flight is otherwise idle time, and the return needs none
-of it.
+A flight out and a flight back are symmetric in everything geometric and asymmetric in
+everything they know. The motion mirrors: whichever ghost was clicked is the one that travels,
+the way back covers the distance the way out did, and the centre being left demotes and stands
+a ghost of itself in the new ring. What differs is what you land on. Flying out, the
+destination is an unlabelled dot whose neighbours may not be seated, so its ring has to be
+read; flying back, every seat exists and nothing is read at all. Step 1 is what that asymmetry
+pays for — the outbound flight is otherwise idle time, and the return needs none of it.
 
 ## Invariants
 

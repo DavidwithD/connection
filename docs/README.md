@@ -38,16 +38,15 @@ it and a second list here is the one that would go stale.
 | Find a node by name | **not written up** | [finding-a-node.md](design/finding-a-node.md) |
 | Cross to an island | **not written up** | [the-islands.md](design/the-islands.md) |
 | Seed a graph to explore | **not written up** | [the-generated-graph.md](design/the-generated-graph.md) |
-| Store a graph at all | Open — see [requirements/](requirements/) | [architecture.md](design/architecture.md), the README's data model |
+| Store a graph at all | [storing-a-graph.md](requirements/storing-a-graph.md) | [architecture.md](design/architecture.md), [the-islands.md](design/the-islands.md) |
 | Keep the docs honest | n/a — serves this directory | [checks.md](checks.md), [decisions/GATE.md](decisions/GATE.md) |
 
-Five rows are short of a requirement, in three different ways, and the column says which.
-**Not written up** is a genuine gap: all three capabilities arrived after
+Four rows are short of a requirement, in two ways, and the column says which. **Not written
+up** is a genuine gap: all three capabilities arrived after
 [exploring-a-graph.md](requirements/exploring-a-graph.md) was written and none was ever
 scoped, so what a search box, an island list or a seeded graph *must* do exists only as the
-records that built them. **Open** is the domain nobody has defined
-([ADR 0002](decisions/0002-single-table-layout.md)). **n/a** is the gates, which serve this
-directory rather than a reader of the graph.
+records that built them. **n/a** is the gates, which serve this directory rather than a
+reader of the graph.
 
 [architecture.md](design/architecture.md) sits across all of it — layers, and the invariants
 that cross them. Every other design page is one row above.

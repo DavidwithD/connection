@@ -32,11 +32,8 @@ from pathlib import Path
 # ---------------------------------------------------------------- configuration
 
 README = "README.md"
-ENV_EXAMPLE = ".env.example"
 PACKAGE_JSON = "package.json"
-API_FILE = "src/server/index.ts"
-CLIENT_FILE = "web/src/api.ts"
-TABLE_FILES = ["src/db/tables.ts", "src/graph/table.ts"]
+STORE_FILE = "web/src/store/db.ts"
 
 # Which document carries each check's half of the comparison.
 #
@@ -51,11 +48,9 @@ TABLE_FILES = ["src/db/tables.ts", "src/graph/table.ts"]
 # in two places. None of them carrying it is still X000, because a check that
 # compares nothing reports PASS for ever.
 #
-# `routes` and `paths` are absent on purpose. Routes bind to the API's own header
-# comment beside the code, and paths bind to every markdown file there is; neither
-# nominates a document, so neither has anything to declare.
+# `paths` is absent on purpose: it binds to every markdown file there is, so it
+# nominates no document and has nothing to declare.
 BOUND_DOCS = {
-    "env": [README],            # the variable table; .env.example is read as well
     "commands": [README],       # the command table
     "engines": [README],        # the prerequisites table
     "keys": [README],           # the data model table
@@ -66,24 +61,13 @@ BOUND_DOCS = {
 DECISIONS_DIR = "docs/decisions"
 
 # Trees that hold code the docs describe. Everything else is generated or vendored.
-CODE_DIRS = ["src", "web", "scripts"]
+CODE_DIRS = ["web", "scripts"]
 SKIP_DIRS = {
-    ".git", "node_modules", ".venv", "venv", "dist", "build", "__pycache__",
-    "vendor", ".dynamodb-data", ".next",
+    ".git", "node_modules", ".venv", "venv", "dist", "build", "__pycache__", ".next",
 }
 
 # What counts as a source file when comparing a directory against the layout tree.
 SOURCE_EXTS = {".ts", ".tsx", ".js", ".jsx", ".py", ".sh", ".html", ".css"}
-
-# Read by the AWS SDK rather than by this repo, so they appear in no process.env
-# call yet still belong in the docs. Naming them here is the whole exception list.
-EXTERNAL_ENV = {
-    "AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN", "AWS_DEFAULT_REGION",
-}
-
-# Directories the layout tree names that are gitignored, so absence is not drift.
-MAY_BE_ABSENT = {"vendor/", ".dynamodb-data/"}
 
 # ------------------------------------------------------------------- data model
 
@@ -267,20 +251,16 @@ def backticked(text: str) -> set[str]:
 
 # ------------------------------------------------------------------- extractors
 
-ENV_DIRECT_RE = re.compile(r"""process\.env(?:\.([A-Z][A-Z0-9_]*)|\[\s*["']([A-Z][A-Z0-9_]*)["']\s*\])""")
-ENV_SHELL_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)[:\-}]")
-ENV_ASSIGN_RE = re.compile(r"^\s*#?\s*([A-Z][A-Z0-9_]*)=")
-# A top-level declaration. Used to find the body of a helper that reads an env var
-# through a parameter, so its call sites can be read as env reads too.
-DECL_RE = re.compile(r"^(?:export\s+)?(?:const|let|function|async function)\s+(\w+)")
-
-ROUTE_RE = re.compile(r"""\bapp\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)["']""")
-ROUTE_DOC_RE = re.compile(r"^\s*\*?\s*(GET|POST|PUT|PATCH|DELETE)\s+(/\S+)")
-# The client's own idiom: a typed wrapper, then the path. `del` is DELETE.
-CLIENT_CALL_RE = re.compile(r"""\b(get|post|del)\s*<[^>]*>\s*\(\s*[`"']([^`"']+)""")
-
-KEY_VALUE_RE = re.compile(r"""^\s*(\w+):\s*["']([\w]+)["'],?\s*$""")
-INDEX_CONST_RE = re.compile(r"""^export const [A-Z0-9_]+\s*=\s*["']([\w]+)["']""")
+# The schema, as `upgrade` writes it: a store's name and its key path, then every
+# index's name and the property it is built over. Together that is every identifier
+# the data model table has to carry.
+STORE_RE = re.compile(
+    r"""createObjectStore\(\s*["'](\w+)["']\s*,\s*\{\s*keyPath:\s*(\[[^\]]*\]|["']\w+["'])"""
+)
+INDEX_RE = re.compile(
+    r"""createIndex\(\s*["'](\w+)["']\s*,\s*(\[[^\]]*\]|["']\w+["'])"""
+)
+QUOTED_RE = re.compile(r"""["'](\w+)["']""")
 
 SCRIPT_IN_DOC_RE = re.compile(r"\bnpm (?:run )?([a-z][a-z0-9:._-]*)")
 
@@ -301,129 +281,7 @@ def source_files(gate: Gate) -> list[Path]:
     return out
 
 
-def env_scan_files(gate: Gate) -> list[Path]:
-    """Files that could read an environment variable.
-
-    Includes the extensionless hooks, which is where the gates' own strict flags
-    are read.
-    """
-    out = source_files(gate)
-    hooks = gate.root / "scripts" / "hooks"
-    if hooks.is_dir():
-        out += [p.relative_to(gate.root) for p in sorted(hooks.iterdir())
-                if p.is_file() and not p.suffix]
-    return out
-
-
-def env_helpers(text: str) -> set[str]:
-    """Names of functions in `text` that read process.env through a parameter.
-
-    `num("GRAPH_N", 600)` in src/graph/seed.ts is an environment read, and nothing
-    about that call site says so — `Finding("A001", …)` looks identical. So the
-    helper is found first, by its body, and only then are its call sites believed.
-    A helper written in some shape this misses makes a knob invisible to the gate,
-    which is a check not running rather than a check reporting nonsense.
-    """
-    lines = text.split("\n")
-    starts = [(i, m.group(1)) for i, line in enumerate(lines)
-              if (m := DECL_RE.match(line))]
-    helpers = set()
-    for idx, (start, name) in enumerate(starts):
-        end = starts[idx + 1][0] if idx + 1 < len(starts) else len(lines)
-        if re.search(r"process\.env\[\s*\w+\s*\]", "\n".join(lines[start:end])):
-            helpers.add(name)
-    return helpers
-
-
-def all_doc_text(gate: Gate) -> str:
-    """Every document's text, for "is this knob written down anywhere?".
-
-    Deliberately wider than the link checks: a flag documented beside the machinery
-    that reads it — a gate's strict switch, in that gate's own rules — is documented,
-    and a rule demanding the README's table instead would be wrong.
-    """
-    parts = [gate.read(ENV_EXAMPLE)]
-    for path in sorted(gate.root.rglob("*.md")):
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        parts.append(gate.read(str(path.relative_to(gate.root)).replace("\\", "/")))
-    return "\n".join(p for p in parts if p)
-
-
-def normalise_path(path: str) -> str:
-    """A route path and the client's call to it, reduced to one comparable shape."""
-    path = path.split("?", 1)[0]
-    path = re.sub(r"\$\{[^}]*\}", "*", path)   # a template hole
-    path = re.sub(r":\w+", "*", path)          # a route parameter
-    return path.rstrip("/") or "/"
-
-
 # ----------------------------------------------------------------------- checks
-
-
-def check_env(gate: Gate) -> None:
-    """Every knob the code reads is documented, and every one documented is read.
-
-    A knob the code reads and nobody wrote down is a setting no operator can find.
-    One in the docs that nothing reads is worse: somebody will set it and wait for
-    something to happen.
-    """
-    read: dict[str, str] = {}  # name -> where it is read
-    for rel in env_scan_files(gate):
-        where = str(rel).replace("\\", "/")
-        text = gate.read(where)
-        if text is None:
-            continue
-        for m in ENV_DIRECT_RE.finditer(text):
-            read.setdefault(m.group(1) or m.group(2), where)
-        for helper in env_helpers(text):
-            pattern = rf"""\b{re.escape(helper)}\(\s*["']([A-Z][A-Z0-9_]*)["']"""
-            for m in re.finditer(pattern, text):
-                read.setdefault(m.group(1), where)
-        if rel.suffix in {".sh", ""}:
-            for m in ENV_SHELL_RE.finditer(text):
-                read.setdefault(m.group(1), where)
-
-    pkg = gate.read(PACKAGE_JSON) or ""
-    for m in ENV_SHELL_RE.finditer(pkg):
-        read.setdefault(m.group(1), PACKAGE_JSON)
-
-    if not read:
-        gate.empty("E000", PACKAGE_JSON, "environment variable reads")
-        return
-
-    prose = all_doc_text(gate)
-    for name, where in sorted(read.items()):
-        if not re.search(rf"\b{re.escape(name)}\b", prose):
-            gate.error("E001", where, 1,
-                       f"{name} is read here and no document mentions it — an "
-                       "undocumented knob is an unusable one")
-
-    # Where each name was documented, not only which line: a variable that appears
-    # solely in .env.example used to be reported against the README at that file's
-    # line number, which sends a reader to the wrong document.
-    documented: dict[str, tuple[str, int]] = {}
-    found = bound_table(gate, "env", "Variable")
-    if found:
-        for offset, row in enumerate(found.rows, start=1):
-            for token in backticked(row[0]):
-                name = token.split("=", 1)[0].strip()
-                if re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
-                    documented[name] = (found.path, found.line + 1 + offset)
-    else:
-        unbound(gate, "E000", "env", "table of environment variables")
-
-    for lineno, line in outside_code(gate.read(ENV_EXAMPLE) or ""):
-        m = ENV_ASSIGN_RE.match(line)
-        if m:
-            documented.setdefault(m.group(1), (ENV_EXAMPLE, lineno))
-
-    for name, (where, lineno) in sorted(documented.items()):
-        if name in read or name in EXTERNAL_ENV:
-            continue
-        gate.warn("E002", where, lineno,
-                  f"{name} is documented but nothing reads it — delete the row, or "
-                  "name it in EXTERNAL_ENV if a library reads it for us")
 
 
 def check_commands(gate: Gate) -> None:
@@ -506,92 +364,29 @@ def check_engines(gate: Gate) -> None:
                        f"not mention it — `{declared}` is what a reader has to meet")
 
 
-def check_routes(gate: Gate) -> None:
-    """The API's header comment lists what the API serves, and the client calls it.
-
-    The header comment is the contract both sides read, so it is the thing that has
-    to be true. The client is checked against the routes rather than the comment:
-    a page calling a path nothing serves is a broken feature, not a stale sentence.
-    """
-    api = gate.read(API_FILE)
-    if api is None:
-        gate.error("R000", API_FILE, 1, "missing")
-        return
-
-    registered: dict[tuple[str, str], int] = {}
-    for m in ROUTE_RE.finditer(api):
-        line = api[:m.start()].count("\n") + 1
-        registered[(m.group(1).upper(), normalise_path(m.group(2)))] = line
-    if not registered:
-        gate.empty("R000", API_FILE, "registered routes")
-        return
-
-    documented: dict[tuple[str, str], int] = {}
-    for lineno, line in outside_code(api):
-        m = ROUTE_DOC_RE.match(line)
-        if m:
-            documented[(m.group(1), normalise_path(m.group(2)))] = lineno
-    if not documented:
-        gate.empty("R000", API_FILE, "routes listed in the header comment")
-        return
-
-    for method, path in sorted(registered.keys() - documented.keys()):
-        gate.error("R001", API_FILE, registered[(method, path)],
-                   f"{method} {path} is served but the header comment does not "
-                   "list it — that comment is the contract the client reads")
-    for method, path in sorted(documented.keys() - registered.keys()):
-        gate.error("R002", API_FILE, documented[(method, path)],
-                   f"the header comment promises {method} {path}, which no route "
-                   "serves")
-
-    client = gate.read(CLIENT_FILE)
-    if client is None:
-        gate.error("R000", CLIENT_FILE, 1, "missing")
-        return
-    calls: dict[tuple[str, str], int] = {}
-    for m in CLIENT_CALL_RE.finditer(client):
-        if not m.group(2).startswith("/api"):
-            continue
-        method = {"get": "GET", "post": "POST", "del": "DELETE"}[m.group(1)]
-        calls[(method, normalise_path(m.group(2)))] = client[:m.start()].count("\n") + 1
-    if not calls:
-        gate.empty("R000", CLIENT_FILE, "API calls")
-        return
-
-    for method, path in sorted(calls.keys() - registered.keys()):
-        gate.error("R003", CLIENT_FILE, calls[(method, path)],
-                   f"calls {method} {path}, which {API_FILE} does not serve")
-
-
 def check_keys(gate: Gate) -> None:
-    """Every key attribute and index name reaches the README's data model table."""
-    names: dict[str, str] = {}
-    for rel in TABLE_FILES:
-        text = gate.read(rel)
-        if text is None:
-            gate.error("K000", rel, 1, "missing")
-            return
-        inside = False
-        for line in text.split("\n"):
-            if re.search(r"=\s*\{\s*$", line):
-                inside = True
-                continue
-            if inside:
-                if line.strip().startswith("}"):
-                    inside = False
-                    continue
-                m = KEY_VALUE_RE.match(line)
-                if m:
-                    names.setdefault(m.group(2), rel)
-            m = INDEX_CONST_RE.match(line)
-            if m:
-                names.setdefault(m.group(1), rel)
+    """Every store, key path and index in the schema reaches the data model table.
+
+    The schema is written once, in `upgrade`, and it is the only place the engine is
+    told anything about shape. A store or an index the table omits is a reader
+    believing the graph is held in fewer pieces than it is.
+    """
+    text = gate.read(STORE_FILE)
+    if text is None:
+        gate.error("K000", STORE_FILE, 1, "missing")
+        return
+
+    names: set[str] = set()
+    for pattern in (STORE_RE, INDEX_RE):
+        for m in pattern.finditer(text):
+            names.add(m.group(1))
+            names |= set(QUOTED_RE.findall(m.group(2)))
 
     if not names:
-        gate.empty("K000", TABLE_FILES[0], "key attributes or index names")
+        gate.empty("K000", STORE_FILE, "object stores or indexes")
         return
 
-    found = bound_table(gate, "keys", "Partition key", "Sort key")
+    found = bound_table(gate, "keys", "Store", "Key")
     if not found:
         unbound(gate, "K000", "keys", "data model table")
         return
@@ -600,9 +395,9 @@ def check_keys(gate: Gate) -> None:
         for cell in row:
             present |= backticked(cell)
 
-    for name in sorted(set(names) - present):
+    for name in sorted(names - present):
         gate.error("K001", found.path, found.line,
-                   f"`{name}` is a key attribute or index in {names[name]} and the "
+                   f"`{name}` is a store, key path or index in {STORE_FILE} and the "
                    "data model table does not mention it")
 
 
@@ -642,8 +437,6 @@ def check_layout(gate: Gate) -> None:
         return
 
     for directory, (lineno, files) in sorted(tree.items()):
-        if directory in MAY_BE_ABSENT:
-            continue
         if not gate.exists(directory):
             gate.error("L001", where, lineno,
                        f"the tree names {directory}, which does not exist")
@@ -713,10 +506,8 @@ def check_paths(gate: Gate) -> None:
 
 
 CHECKS = [
-    ("env", check_env),
     ("commands", check_commands),
     ("engines", check_engines),
-    ("routes", check_routes),
     ("keys", check_keys),
     ("layout", check_layout),
     ("paths", check_paths),

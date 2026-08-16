@@ -2,7 +2,7 @@
 /**
  * Drive the map page in a real browser and photograph what it does.
  *
- *   npm run demo                       # in another terminal
+ *   npm run web                        # in another terminal
  *   node scripts/drive-map.mjs         # shots land in .shots/
  *   node scripts/drive-map.mjs --head  # watch it happen
  *

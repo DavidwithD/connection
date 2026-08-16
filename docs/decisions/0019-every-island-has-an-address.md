@@ -13,7 +13,7 @@ as one.
 The store cannot answer "what components are there?". Membership spans the whole edge set,
 and [0007](0007-a-table-for-the-graph.md) gives each node its own partition — leaving only a
 Scan, which that key design treats as the signal it has gone wrong
-([repo.ts](../../src/graph/repo.ts)).
+(`repo.ts`).
 
 ## Decision
 Every node carries a union-find `parent`. A node pointing at itself is a root, and a root is
@@ -43,9 +43,8 @@ The index over-lists rather than under-lists. A `settle` that loses leaves two a
 one island; either lands somewhere already walked, costing a wasted trip. A `resettle` that
 loses leaves a half unlisted until the reckoning runs.
 
-`addEdge` and `removeEdge` now make a second write that is allowed to fail
-([edge.ts](../../src/graph/edge.ts)), so "a write is one transaction" holds of the graph and
-no longer of the call.
+`addEdge` and `removeEdge` now make a second write that is allowed to fail (`edge.ts`), so
+"a write is one transaction" holds of the graph and no longer of the call.
 
 The reckoning compares the partition, never the pointers: union order picks the root, so
 insisting on one answer would report drift after every join.

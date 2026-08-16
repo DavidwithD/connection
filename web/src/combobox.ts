@@ -1,68 +1,64 @@
 /**
- * A text box that hands back nodes, not text.
+ * A text box that returns nodes, not text.
  *
  *   ↑ ↓      move the highlight, wrapping at both ends
  *   ↵        take the highlighted row
- *   ⇧↵       create exactly what is typed, unless a node already carries that name
- *   ⌘↵       either of those, and go on from what it named
- *   Esc      close the list; again, empty the box and let the focus go
+ *   ⇧↵       create the typed name, unless a node already has it
+ *   ⌘↵       either of those, then continue from the node it named
+ *   Esc      close the list; press again to empty the box and drop focus
  *
- * Either Enter asks before it acts when the box holds nothing resolved. ⌘ rides on either
- * rather than adding a third: it says nothing about which node is meant, only what should
- * happen once one is, and travels out on the pick as `chain`.
+ * Both forms of Enter run a search first if the box has no rows yet. ⌘ is a modifier on
+ * both, not a third command. It does not change which node is meant, only what happens
+ * afterwards, and it is passed out on the pick as `chain`.
  */
-import { Cancelled, searchLabels, type NodeMeta } from "./api.js"
-import { debounce } from "./explore.js"
+import { searchLabels, type NodeMeta } from "./store/index.js"
 
-/**
- * How long the box waits before asking.
- *
- * Shorter than either camera settle: nothing is being drawn and no seat is at stake, so the
- * only cost of being early is a request, and the only cost of being late is a box that
- * feels slow. Roughly the gap between keystrokes at a normal typing speed.
- */
-export const SEARCH_DEBOUNCE_MS = 140
-
-/** What a pick can be. A create row carries no node, because there is not one yet. */
+/** What a pick can be. A create row has no node, because that node does not exist yet. */
 export type Picked =
   | { kind: "node"; node: NodeMeta }
   | { kind: "create"; label: string }
 
 export interface ComboboxHooks {
   /**
-   * A name was taken. `chain` is the ⌘ variant of taking it: the same pick, plus a request
-   * to go on from what it named.
+   * A name was picked. `chain` is true for the ⌘ form: the same pick, plus a request to
+   * continue from the node it named.
    */
   onPick: (picked: Picked, chain: boolean) => void
   onError: (message: string) => void
-  /** The box was emptied by `Esc`, rather than by a pick or a blur. */
+  /** The box was emptied by `Esc`, not by a pick or a blur. */
   onEmptied?: () => void
-  /** Offer `+ create "…"` when nothing already carries the typed name. */
+  /** Offer a `+ create "…"` row when no node has the typed name. */
   allowCreate?: boolean
-  /** Hover text for a row, for whatever the caller knows that this does not. */
+  /** Hover text for a row. The caller supplies what this class does not know. */
   note?: (node: NodeMeta) => string
 }
 
-/** The same shallow rule as `normaliseLabel` in src/graph/keys.ts. */
+/** The same rule as `normaliseLabel` in web/src/store/keys.ts. */
 export const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, " ")
 
 export class Combobox {
   private rows: Picked[] = []
   private at = -1
-  /** The query in the air, so a slower earlier reply cannot overwrite a later one. */
-  private searching: AbortController | null = null
-  private readonly run: (after?: number) => void
+  /**
+   * Which query the current rows came from. A slow earlier reply must not overwrite a
+   * later one.
+   *
+   * This is a counter, not an abort controller. The box used to debounce and cancel the
+   * request in flight, because each keystroke was a network request. A search is now a key
+   * range over IndexedDB: there is nothing to debounce, and the read cannot be cancelled.
+   * Only the ordering problem is left, and the counter handles that.
+   */
+  private asked = 0
 
   constructor(
     private readonly input: HTMLInputElement,
     private readonly list: HTMLUListElement,
     private readonly hooks: ComboboxHooks,
   ) {
-    this.run = debounce(() => void this.query(), SEARCH_DEBOUNCE_MS)
-    input.addEventListener("input", () => this.run())
+    input.addEventListener("input", () => void this.query())
     input.addEventListener("keydown", (event) => this.onKey(event))
-    // Losing focus closes the list, but not before a click on it has been delivered — the
-    // rows fire on mousedown for exactly this reason.
+    // Blur closes the list, but only after a click on a row has been delivered. That is why
+    // the rows listen for mousedown rather than click.
     input.addEventListener("blur", () => setTimeout(() => this.close(), 0))
   }
 
@@ -74,10 +70,11 @@ export class Combobox {
     this.input.focus()
   }
 
-  /** Empty the box and put the list away, without asking for anything. */
+  /** Empty the box and close the list. Runs no query. */
   clear(): void {
     this.input.value = ""
-    this.searching?.abort()
+    // Bump the counter so any reply still in flight is discarded.
+    this.asked++
     this.close()
   }
 
@@ -95,26 +92,24 @@ export class Combobox {
   }
 
   /**
-   * What either Enter does, once there is something to do it with.
+   * Handle both forms of Enter.
    *
-   * The rows are what a pick comes out of, and the box is holding none of them more often
-   * than it looks: before the wait has elapsed, and after `Esc` has put the list away. So
-   * this asks first when it has to, and only then reads what was typed against what the
-   * store answered — the `create` gesture included, which is the one that would otherwise
-   * fire blind.
+   * A pick comes from the rows, and the box often has no rows: before the first search has
+   * returned, and after `Esc` closed the list. So run the query first when there are none,
+   * then compare the typed text against what the store returned. The create branch needs
+   * this most, since without it that branch would act without checking for a duplicate.
    */
   private async enter(text: string, create: boolean, chain: boolean): Promise<void> {
     if (!this.rows.length) await this.query()
-    // Typed on while the query was in the air: the box now says something this keystroke
-    // was never aimed at, and the search for *that* is already on its way.
+    // The box changed while the query ran. This keystroke was aimed at the old text, and a
+    // search for the new text is already running.
     if (this.input.value.trim() !== text) return
 
     if (create) {
       if (!this.hooks.allowCreate) return
-      // A name already carried is not a name that can be made — the store owns one node per
-      // name and refuses the second, which is why the create row below is withheld for an
-      // exact match. ⇧↵ answers to the same rule: the split between the two Enters is about
-      // which node was meant, and an exact name leaves nothing to mean.
+      // A name that already exists cannot be created. The store holds one node per name and
+      // refuses the second. That is why `query` withholds the create row on an exact match,
+      // and ⇧↵ follows the same rule here: it picks the existing node instead.
       const carried = this.rows.find(
         (row) => row.kind === "node" && norm(row.node.label) === norm(text),
       )
@@ -128,17 +123,17 @@ export class Combobox {
   }
 
   private onKey(event: KeyboardEvent): void {
-    // An IME confirming a conversion fires Enter too. That keystroke belongs to the text
-    // being composed, not to the list — without this it would pick a row mid-word.
+    // An IME fires Enter when it confirms a conversion. That keystroke belongs to the text
+    // being composed, not to the list. Without this check it would pick a row mid-word.
     if (event.isComposing) return
 
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       if (!this.rows.length) return
-      // The arrows pan the camera everywhere else, and inside a text box they move the
-      // caret. Here they do neither, so both defaults have to go.
+      // The arrows pan the camera elsewhere on the page, and move the caret inside a text
+      // box. Here they do neither, so prevent both defaults.
       event.preventDefault()
-      // The extra length keeps the sum positive: `at` starts at -1 whenever the only row
-      // is a create row, and a bare modulo would hand back -0 for it.
+      // Adding `rows.length` keeps the sum positive. `at` can be -1, and a plain modulo
+      // would return a negative index for it.
       const step = event.key === "ArrowDown" ? 1 : this.rows.length - 1
       this.at = (this.at + step + this.rows.length) % this.rows.length
       this.paint()
@@ -146,8 +141,8 @@ export class Combobox {
     }
 
     if (event.key === "Enter") {
-      // ⌘ modifies both branches below rather than choosing between them, so it is read
-      // before either. Ctrl with it, for a keyboard that has no ⌘ to hold.
+      // ⌘ modifies both branches below rather than choosing between them, so read it first.
+      // Ctrl counts too, for keyboards without a ⌘ key.
       const chain = event.metaKey || event.ctrlKey
       const text = this.input.value.trim()
       if (!text) return
@@ -158,8 +153,8 @@ export class Combobox {
 
     if (event.key === "Escape") {
       event.preventDefault()
-      // Two meanings, nearest first: put the list away, or empty the box and let the focus
-      // go — what else that costs is the caller's to say, through `onEmptied`.
+      // Esc does the nearest thing first: close the list. With the list already closed it
+      // empties the box and drops focus. The caller handles the rest through `onEmptied`.
       if (this.rows.length) this.close()
       else {
         this.input.value = ""
@@ -171,32 +166,27 @@ export class Combobox {
 
   private async query(): Promise<void> {
     const text = this.input.value.trim()
-    this.searching?.abort()
+    const mine = ++this.asked
     if (!text) return this.close()
-
-    const control = new AbortController()
-    this.searching = control
 
     let found: NodeMeta[]
     try {
-      found = await searchLabels(text, control.signal)
+      found = await searchLabels(text)
     } catch (err) {
-      if (err instanceof Cancelled) return
       this.hooks.onError(err instanceof Error ? err.message : String(err))
       return
     }
-    if (control.signal.aborted) return
+    if (mine !== this.asked) return
 
     this.rows = found.map((node) => ({ kind: "node", node }) as const)
-    // Offered only when nothing already carries that exact name — otherwise the row would
-    // promise something the store is bound to refuse.
+    // Offer the create row only when no node has that exact name. Otherwise the row would
+    // offer a write the store is going to refuse.
     if (this.hooks.allowCreate && !found.some((n) => norm(n.label) === norm(text))) {
       this.rows.push({ kind: "create", label: text })
     }
-    // The best match takes the highlight. With nothing found there is no best match, and
-    // the create row is the only thing `↵` could sensibly mean, so it takes it instead —
-    // the one case where the two Enters agree. Whenever a real node is on offer the
-    // highlight is on that, and creating stays behind `⇧↵` or a deliberate `↑`.
+    // The first row takes the highlight. When nothing was found the create row is the first
+    // row, so ↵ and ⇧↵ do the same thing. When a real node was found the highlight is on
+    // that node, and creating needs ⇧↵ or an arrow key.
     this.at = this.rows.length ? 0 : -1
     this.paint(text)
   }
@@ -233,11 +223,9 @@ export class Combobox {
         button.append(name, degree)
       }
 
-      // mousedown, not click: the input's blur would close the list out from under a click
-      // before it landed. ⌘ carries here too — a row and the key that takes it are the same
-      // act, and a reader who has learned the modifier will hold it over either. Not Ctrl:
-      // holding that over a click is how a Mac asks for the other button, and a secondary
-      // click quietly moving the anchor would put the next edge somewhere nobody meant.
+      // mousedown, not click. The input's blur would close the list before a click landed.
+      // ⌘ works here as well as on the keyboard. Ctrl does not: on a Mac, Ctrl with a click
+      // is a right-click, and that would move the anchor without the user meaning to.
       button.addEventListener("mousedown", (event) => {
         event.preventDefault()
         this.take(i, event.metaKey)

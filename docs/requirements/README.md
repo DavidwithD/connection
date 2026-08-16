@@ -4,8 +4,9 @@
 an oversight; a missing one reads as a decision nobody made.
 
 The capabilities written up here are the demo's, not the product's:
-[exploring a graph](exploring-a-graph.md), [building a graph](building-a-graph.md), and
-[moving a graph](moving-a-graph.md). All three are scoped by
+[exploring a graph](exploring-a-graph.md), [building a graph](building-a-graph.md),
+[moving a graph](moving-a-graph.md), and [storing a graph](storing-a-graph.md). All four are
+scoped by
 [ADR 0003](../decisions/0003-graph-exploration-demo-stack.md), which fixed the page as
 something that exercises the store rather than something anyone asked for.
 
@@ -13,17 +14,22 @@ Exploring came first and says *Not required: writing anything*, which was true w
 written. Building and moving are the capabilities that picked that up, and each says what it
 is worth rather than restating the other.
 
+Storing arrived last and differently. The other three describe what a reader does; that one
+describes the ground they stand on, and it was written because every design argument about
+size was resting on a number nobody had put in writing.
+
 ## What is fixed
 
 | | How it got fixed | Where |
 |---|---|---|
-| The store is DynamoDB | Specified up front, not compared | [ADR 0002](../decisions/0002-single-table-layout.md) |
+| The store is the browser's IndexedDB | Chosen against alternatives, unlike the store before it | [ADR 0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
 | `connection` is a placeholder | Unsettled, and dearer to settle later | [README](../../README.md) |
 | The graph page is a demo | It exercises the store; it is not the product | [ADR 0003](../decisions/0003-graph-exploration-demo-stack.md) |
 
-Open: who uses this, what an entity is, and which access patterns matter. The key design
-cannot be judged until that closes — the cost 0002 booked, and paid by whoever defines the
-domain.
+Open: who uses this, what an entity is, and which access patterns matter. That is still the
+cost [ADR 0002](../decisions/0002-single-table-layout.md) booked, and it is still paid by
+whoever defines the domain — but it no longer blocks judging the store. The graph's access
+patterns are known, and [storing a graph](storing-a-graph.md) states the size they hold at.
 
 ## What goes here when scope arrives
 

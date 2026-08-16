@@ -55,50 +55,11 @@ jobs:
       # commit need not pay.
       - run: npm run docs:selftest
 
-      # Bundling fails in ways typecheck cannot see, and it is the step most likely
-      # to be the thing that objects to the older runtime.
+      # Bundling fails in ways typecheck cannot see, and it is the step most likely to be
+      # the thing that objects to the older runtime. With `npm ci` above it, this covers the
+      # install and every module going through Vite, on both runtimes.
+      #
+      # The README's getting-started is `npm install` and `npm run web`. Nothing here starts
+      # a dev server or opens a page, so a getting-started broken in the browser breaks on
+      # somebody's first morning.
       - run: npm run build
-      - run: npm run build:web
-
-  smoke:
-    name: the getting-started the README documents
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-
-      # DynamoDB Local is a JAR. The version here only has to clear the floor the
-      # prerequisites name.
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      # ddb:start polls the port with lsof. A runner without it would wait out the
-      # whole timeout and then report a startup failure that never happened.
-      - name: ensure lsof
-        run: command -v lsof >/dev/null || (sudo apt-get update && sudo apt-get install -y lsof)
-
-      # ~47MB from CloudFront, and it never changes within a v2 release.
-      - name: cache DynamoDB Local
-        uses: actions/cache@v4
-        with:
-          path: vendor
-          key: dynamodb-local-v2
-
-      - run: npm ci
-
-      # These four lines are the README's Getting started, run in order. A change
-      # that breaks the documented path fails here rather than on somebody's first
-      # morning with the repo.
-      - run: npm run ddb:install
-      - run: npm run dev:db
-      - run: npm test
-
-      - name: the server log, if the round trip failed
-        if: failure()
-        run: tail -50 .dynamodb-data/dynamodb-local.log || true

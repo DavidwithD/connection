@@ -1,6 +1,6 @@
 # 0007 — A table for the graph
 
-**Status:** 🔵 Proposed
+**Status:** ♻️ Superseded by [0030](0030-the-graph-moves-into-the-browser.md)
 **Date:** 2026-08-02
 **Deciders:** David HL
 
@@ -12,7 +12,7 @@ argued, so this is the first time the layout has been weighed.
 What one table buys is reading unlike items in a single request. Nothing does that. A node
 and its edges come back together, but they share a *partition*, which any table gives them;
 the starting point and each label claim are read alone. Meanwhile the graph is no longer
-hypothetical — [the seed](../../src/graph/seed.ts) writes a known shape.
+hypothetical — the seed writes a known shape.
 
 ## Decision
 The graph gets a table to itself. The overloaded one stays for entities that do not exist

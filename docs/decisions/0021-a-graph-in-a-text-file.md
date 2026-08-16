@@ -18,7 +18,7 @@ So there is no way to write a graph down.
 
 ## Decision
 A line names a node and whoever it joins. The file is a patch, applied through the writes
-that already exist ([load.ts](../../src/graph/load.ts)).
+that already exist (`load.ts`).
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
@@ -38,20 +38,19 @@ that already exist ([load.ts](../../src/graph/load.ts)).
 - **Ids in the file.** A third thing minting them, which
   [0018](0018-the-graph-outlives-the-seed.md) made load-bearing — or a lookup, which is the
   label.
-- **One batched write.** [bulk.ts](../../src/graph/bulk.ts) writes whole items, after
-  dropping the table — the one thing a loader must not do.
+- **One batched write.** `bulk.ts` writes whole items, after dropping the table — the one
+  thing a loader must not do.
 
 ## Consequences
 Sequential: every write carries a conditional update on the single index item, and parallel
-ones contend. Roughly a round trip per new name and four per new pair
-([load.ts](../../src/graph/load.ts)).
+ones contend. Roughly a round trip per new name and four per new pair (`load.ts`).
 
 A misspelling is a new node rather than an error — the format's real cost. The plan lists
 every name it would create; nothing matches one against a near miss.
 
 Two refusals are read by code as well as by people now, so each is a named constant where it
-is worded ([node.ts](../../src/graph/node.ts), [edge.ts](../../src/graph/edge.ts)). `rootId`
-is left where it was, as by every write. A name here can hold neither `|` nor `#`.
+is worded (`node.ts`, `edge.ts`). `rootId` is left where it was, as by every write. A name
+here can hold neither `|` nor `#`.
 
 ## Assumptions and unknowns
 - **Assumed a file worth typing fits in one process.** What

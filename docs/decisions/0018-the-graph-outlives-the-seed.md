@@ -1,6 +1,6 @@
 # 0018 — The graph outlives the seed
 
-**Status:** 🔵 Proposed
+**Status:** ♻️ Superseded by [0030](0030-the-graph-moves-into-the-browser.md)
 **Date:** 2026-08-08
 **Deciders:** David HL
 

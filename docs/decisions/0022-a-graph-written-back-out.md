@@ -15,7 +15,7 @@ that a graph written down is the graph you started with — cannot be checked at
 
 ## Decision
 `graph:export` learns `--text` and `--names`. The format's two directions move into
-[text.ts](../../src/graph/text.ts) and sit together.
+`text.ts` and sit together.
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
@@ -31,7 +31,7 @@ the same bytes — a round trip `diff` can check, rather than a reader.
 
 ## Alternatives considered
 - **A second command.** A second answer to "which items are the graph", drifting from
-  `select` in [export.ts](../../src/graph/export.ts).
+  `select` in `export.ts`.
 - **Both ends of every edge, as stored.** Twice the file, and `a | b` beside `b | a` reads
   as two facts.
 - **`--all` meaning something here.** It cannot: a text file is the whole graph. Refused
@@ -41,7 +41,7 @@ the same bytes — a round trip `diff` can check, rather than a reader.
 ## Consequences
 The format's rules now have one home, so a writer cannot quietly stop agreeing with its
 reader — the failure that produces files loading as a *different* graph rather than as an
-error. [load.ts](../../src/graph/load.ts) keeps only what touches a table.
+error. `load.ts` keeps only what touches a table.
 
 A text export is lossy on purpose: no ids, no degrees, no `rootId`, no `graph#index`. It is
 not a backup and the JSON still is.
@@ -52,7 +52,7 @@ not a backup and the JSON still is.
 - **Assumed the star reading is what people want back.** Untested on a file anybody typed.
 - **Assumed a graph fits in one string.** Everything the export already does assumes it.
 - **Unknown whether refusing `|` and `#` is the right end to fix.** `createNode` accepts
-  both ([node.ts](../../src/graph/node.ts)), so an unwritable name is reachable from the map.
+  both (`node.ts`), so an unwritable name is reachable from the map.
   Rejecting them at the write is a behaviour change to a path live since 0009.
 - We chose not to make the names shape describe the edges it drops.
 

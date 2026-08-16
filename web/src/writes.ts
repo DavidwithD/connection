@@ -1,22 +1,27 @@
 /**
- * The line every write stands in, and the receipts it leaves.
+ * The queue every write goes through, and the receipts it leaves on screen.
  *
- * One chain, one write at a time, however fast the keys come. What a chip *says* is left to
- * whoever opened it — neither shape belongs here.
+ * One promise chain, one write at a time, however fast the input comes. The text on a
+ * receipt is set by whoever opened it, not here.
+ *
+ * The chain was added for a reason that no longer applies. Every write used to update one
+ * shared item, and DynamoDB cancelled one of two transactions that touched it. That item is
+ * gone, and IndexedDB serialises overlapping transactions instead of cancelling either. The
+ * chain is kept for what is left: two fast writes land in the order they were made.
  */
 
 /**
- * How long a receipt stays, and so how long anything on it is reachable.
+ * How long a receipt stays on screen. This also sets how long its undo button is reachable.
  *
- * Half a minute rather than the five seconds this started as. The panel exists so names can
- * be fired in a row, and at that rate five seconds is gone before the second name is typed
- * — an undo you have already scrolled past is not one. Refusals outlast nothing; they carry
- * no undo, only a reason, and they are done being read sooner.
+ * Thirty seconds, not the five this started as. The panel is built for typing names one
+ * after another. At that rate five seconds passes before the second name is typed, and the
+ * undo is gone before it can be used. A refused write carries no undo, only a reason, so it
+ * needs less time.
  */
 const KEPT_OK_MS = 30000
 const KEPT_REFUSED_MS = 12000
 
-/** Receipts kept on screen. Past this the oldest go, undo and all. */
+/** How many receipts stay on screen. Past this the oldest is removed, undo and all. */
 const MAX_RECEIPTS = 6
 
 export type Tone = "idle" | "busy" | "error"
@@ -25,16 +30,16 @@ export type Tone = "idle" | "busy" | "error"
 export class Receipt {
   constructor(readonly el: HTMLElement) {}
 
-  /** Whether this write landed and stands — the one state anything hung on it may act on. */
+  /** True if the write landed and has not been undone. Only then is the name clickable. */
   get landed(): boolean {
     return this.el.dataset["state"] === "ok"
   }
 
   /**
-   * Done, however it went.
+   * Mark the write finished, whatever the result.
    *
-   * `undone` is a write that landed and was then reversed, which is why it keeps the shorter
-   * time: like a refusal, it is a state there is nothing left to do about.
+   * `undone` means the write landed and was then reversed. It uses the shorter time, like a
+   * refusal: there is nothing left to do about either.
    */
   settle(state: "ok" | "warn" | "undone", why: string): void {
     this.el.dataset["state"] = state
@@ -44,7 +49,7 @@ export class Receipt {
 }
 
 export class Writes {
-  /** Writes in flight, end to end. Each link catches, so one failure never stalls it. */
+  /** The queue of writes. Every link catches, so one failure does not stall the rest. */
   private chain: Promise<void> = Promise.resolve()
   private inFlight = 0
 
@@ -53,14 +58,14 @@ export class Writes {
     private readonly onStatus: (text: string, tone: Tone) => void,
   ) {}
 
-  /** A chip in the strip, before its write has a turn. Filling it is the caller's. */
+  /** Add an empty receipt to the strip. The caller fills in its text. */
   open(): Receipt {
     const chip = document.createElement("span")
     chip.className = "receipt"
     chip.dataset["state"] = "waiting"
 
     this.strip.append(chip)
-    // Oldest first, so what goes is what has been readable longest.
+    // Remove the oldest first. It has been on screen the longest.
     while (this.strip.childElementCount > MAX_RECEIPTS) {
       this.strip.firstElementChild?.remove()
     }
@@ -68,15 +73,14 @@ export class Writes {
   }
 
   /**
-   * Put a write at the back of the line.
+   * Add a write to the back of the queue.
    *
-   * The catch is what keeps the line moving. A rejected link would leave `chain` rejected
-   * for good, and every task appended after it would be skipped in silence — one failed
-   * write turning into every later one never happening.
+   * The `.catch` keeps the queue moving. Without it a rejected link would leave `chain`
+   * rejected for good, and every task added after it would be skipped without a message.
    *
-   * Counted from here rather than from the task, so a chip that is still waiting is already
-   * part of what the status line reports. A task is expected to settle its own receipt: only
-   * it knows whether the graph refused or the write failed, and what to say about either.
+   * The count is incremented here, not inside the task, so a receipt that is still waiting
+   * already shows in the status line. The task settles its own receipt: only it knows
+   * whether the graph refused the write or the write failed, and what to say about it.
    */
   run(receipt: Receipt, task: () => Promise<void>): void {
     this.inFlight++
@@ -94,10 +98,10 @@ export class Writes {
   }
 
   /**
-   * Say how many are in the line, and never that there are none.
+   * Report how many writes are queued. It never reports zero.
    *
-   * Clearing the status belongs to whoever repaints the page: an idle line is one of several
-   * things it could say, and this is not the thing that knows which.
+   * Clearing the status line belongs to whoever repaints the page. An idle line could say
+   * several things, and this class does not know which.
    */
   private report(): void {
     if (this.inFlight > 0) this.onStatus(`writing ${String(this.inFlight)}…`, "busy")

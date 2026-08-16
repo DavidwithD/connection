@@ -1,12 +1,12 @@
-/* The chrome for both pages: the panels around the map's stage, and the sheets the
-   transfer page stacks down the middle. Linked from the HTML rather than imported by the
-   bundle, so a throw in the script costs a page its behaviour and not its styling as well.
+/* Styles for both pages: the map page and the transfer page.
 
-   One stylesheet, because there is one set of tokens and one idea of what a bordered box
-   looks like. Two stylesheets would be two ideas of it. */
+   Linked from the HTML, not imported by the bundle. A script error then breaks a page's
+   behaviour but not its styling.
 
-/* Tokens from web/src/palette.ts. Both modes are chosen, not flipped: the dark
-   column is the same hues re-stepped for the dark surface. */
+   One file for both pages, so the tokens and the bordered-box style are written once. */
+
+/* Colour tokens. They match web/src/palette.ts. Dark mode is not an inversion of light
+   mode. Each dark value is picked by hand. */
 :root {
   color-scheme: light;
   --surface: #fcfcfb;
@@ -48,11 +48,11 @@ body {
   color: var(--ink);
   font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-/* The map alone. Its stage owns the wheel and the drag, so that page may not scroll —
-   which is the one thing about it the other page must not inherit. */
+/* Map page only. #stage handles the wheel and the drag, so the page must not scroll.
+   The transfer page does scroll, so this is a class and not a rule on `body`. */
 body.map { overflow: hidden; overscroll-behavior: none; }
 
-/* The stage owns the wheel and drag: nothing here scrolls or pans. */
+/* #stage handles the wheel and the drag itself. The browser must not scroll or pan it. */
 #stage {
   position: fixed;
   inset: 0;
@@ -62,8 +62,8 @@ body.map { overflow: hidden; overscroll-behavior: none; }
 }
 #stage:active { cursor: grabbing; }
 
-/* A bordered box, wherever it sits. `.panel` is one anchored to the viewport over the map;
-   `.sheet` is one in the flow of a page that scrolls. */
+/* One bordered-box style, used twice. `.panel` is fixed to the viewport on the map page.
+   `.sheet` sits in the page flow on the transfer page. */
 .panel, .sheet {
   background: var(--panel);
   backdrop-filter: blur(8px);
@@ -76,13 +76,13 @@ body.map { overflow: hidden; overscroll-behavior: none; }
   z-index: 2;
 }
 
-/* The left column, as one flow.
+/* The left column. It holds the HUD, the island list and the legend.
 
-   Everything down this side used to be fixed to the viewport on its own, which makes two
-   things unwritable: folding the HUD cannot lift what is under it, and three boxes anchored
-   to two corners can only overlap on a window short enough. One column with the legend on
-   `margin-top: auto` says both — what folds lifts the rest, and what runs out of room is the
-   list, which is the only thing here that can give some back and stay useful. */
+   These three were each fixed to the viewport before. That had two problems. Folding the HUD
+   did not move the boxes under it. On a short window the boxes overlapped.
+
+   One flex column fixes both. `margin-top: auto` on #legend pushes it to the bottom. The
+   island list is the part that gives up room when the window is short. */
 #left-rail {
   position: fixed;
   z-index: 2;
@@ -93,15 +93,14 @@ body.map { overflow: hidden; overscroll-behavior: none; }
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
-  /* Sized by its widest panel, the way each of these sized itself before there was a rail —
-     the HUD's numbers grow with the graph, and a column pinned to a round number wraps
-     "603 nodes · 2958 edges" onto a second line the moment the store gets interesting. The
-     ceiling is for the island names, which are data and have no width anyone chose. */
+  /* The width comes from the widest panel. The HUD's numbers grow with the graph, so a fixed
+     width wraps "603 nodes · 2958 edges" onto two lines. The max caps the island names, which
+     come from the data and can be any length. */
   width: max-content;
   min-width: 232px;
   max-width: 320px;
-  /* The rail is a layout, not a surface: only its panels take the pointer, so the map is
-     still draggable through the gaps between them. */
+  /* The rail takes no pointer events, only its panels do. The map stays draggable through
+     the gaps between them. */
   pointer-events: none;
 }
 #left-rail > .panel { position: static; pointer-events: auto; }
@@ -114,8 +113,8 @@ body.map { overflow: hidden; overscroll-behavior: none; }
   gap: 6px;
   border: 0;
   border-radius: 6px;
-  /* Pulled out to the panel's padding edge so the hover fills the width the title has,
-     rather than a box inset inside it. */
+  /* The negative margin pulls the button out to the panel's padding edge. The hover
+     background then spans the full width of the panel. */
   margin: -3px -6px 2px;
   padding: 3px 6px;
   width: calc(100% + 12px);
@@ -131,9 +130,8 @@ body.map { overflow: hidden; overscroll-behavior: none; }
 #hud-toggle:hover,
 #hud-toggle:focus-visible { background: var(--plane); }
 
-/* A triangle rather than a glyph, so it turns rather than swaps: the shut state and the open
-   one are the same mark under a rotation, which is what says the panel went somewhere and
-   did not go away. */
+/* A CSS triangle, not a text glyph. It rotates between the open and shut states instead of
+   being swapped for a different character. */
 .chevron {
   width: 0;
   height: 0;
@@ -145,9 +143,8 @@ body.map { overflow: hidden; overscroll-behavior: none; }
 }
 #hud-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
 
-/* Shut, the panel is a title and a chevron — and the status line is inside what it hides.
-   The tone rides out here so a failed read is still a colour on screen. It is not the
-   message, but it is the difference between quiet and silent. */
+/* #status sits inside #hud-body, which the fold hides. When the HUD is folded the tone moves
+   to the title. A failed read is then still visible as colour. */
 #hud-toggle[data-tone="busy"],
 #hud-toggle[data-tone="error"] { color: var(--accent); }
 #hud:has(#hud-toggle[aria-expanded="true"]) #hud-toggle[data-tone] { color: inherit; }
@@ -171,18 +168,16 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 #status[data-tone="busy"] { color: var(--accent); }
 #status[data-tone="error"] { color: var(--accent); font-weight: 500; }
 
-/* Every component of the graph, as an index of places. Capped and scrollable for the same
-   reason the ends' list is: the server caps the query, and a graph in pieces should not push
-   the panel off the screen.
+/* The list of islands. Capped and scrollable, so a graph in many pieces does not push the
+   panel off the screen.
 
-   The cap is a whole number of rows, which is why the row height is stated rather than
-   left to the font. A cap in round pixels lands wherever it lands — at 168px it cut the
-   eighth row through the middle, and a half-drawn name reads as a broken panel and not
-   as an invitation to scroll. Nine rows, because a default seed is ten islands. */
+   The cap is a whole number of rows. That is why --island-row states the row height instead
+   of letting the font decide it. A cap in round pixels cuts the last row in half, which
+   reads as a broken panel. Nine rows, because the default seed makes ten islands. */
 #islands {
   --island-row: 22px;
-  /* `min-height: 0` is what lets the rail shrink this rather than run the column off the
-     window: a flex item's floor is its content otherwise, and the content is the whole list. */
+  /* `min-height: 0` lets the rail shrink this panel. Without it a flex item cannot go below
+     its content height, and the content here is the whole list. */
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -196,13 +191,13 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   font-weight: 400;
   color: var(--ink-2);
 }
-/* Pushed to the far side, where the ends' list puts its number. Muted, because it is a fact
-   about the list rather than one about the graph — and it is empty most of the time. */
+/* The count sits at the right of the heading, matching the ends' list. Muted, because it
+   describes the list and is empty most of the time. */
 #islands-count { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 
-/* The foot of the list, which asks for the next page by coming into view. A row rather than
-   a spinner: it is where the rows it is about to become will be, so nothing jumps when they
-   land, and it is clickable, which is the retry when a read fails. */
+/* The last row of the list. It loads the next page when it scrolls into view. Styled as a
+   row, not a spinner, so nothing shifts when the new rows replace it. Clicking it retries
+   after a failed read. */
 .island-more {
   padding: 3px 6px;
   line-height: 16px;
@@ -217,12 +212,12 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   max-height: calc(var(--island-row) * 9);
   overflow-y: auto;
 }
-/* The same row the ends' list uses, less the number: two lists of things to pick in one
-   interface, so they are picked the same way.
+/* The same row style as the ends' list, without the degree number. Both lists are lists of
+   things to pick, so they look the same.
 
-   `line-height` is load-bearing: it plus the padding is `--island-row`, and the cap above
-   is a multiple of that. Left to the font, the row lands on a fraction of a pixel and the
-   cap cuts a name in half. */
+   `line-height` plus the padding must equal `--island-row`. The max-height above is a
+   multiple of it. Without the line-height the font decides the row height, the row lands on
+   a fraction of a pixel, and the cap cuts a name in half. */
 .island {
   display: flex;
   align-items: center;
@@ -238,17 +233,16 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 .island:focus-visible { background: var(--plane); }
 .island-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* An island whose naming node is not seated yet. The dim is the one thing a row says beyond
-   its name, and it is worth saying: clicking this one sets a whole island down on the map,
-   in water, permanently — `World` never reassigns a position. Clicking any other row only
-   moves the camera to graph that is already there. */
+/* An island with no position yet. Clicking this row places the whole island on the map for
+   good: World never moves a node once it is placed. Clicking any other row only moves the
+   camera. The muted colour marks that difference. */
 .island.off-map { color: var(--ink-muted); }
 
-/* Where you are standing.
+/* The dot that marks the current island.
 
-   Every row carries the dot and only one row fills it in. Drawing it on the marked row alone
-   would either indent that row past its neighbours or hang the dot outside the list — and
-   outside is not available, because `overflow-y: auto` above clips the other axis with it. */
+   Every row draws the dot and only the current row fills it in. A dot on the current row
+   alone would indent that row past its neighbours. There is no room outside the list either:
+   `overflow-y: auto` above clips both axes. */
 .island::before {
   content: "";
   flex: none;
@@ -271,9 +265,8 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   background: transparent;
   border: 2px dashed var(--ink-2);
 }
-/* Matches the on-map ghost: a hollow dashed pill. The pill is what separates it from the
-   frontier dot above — that dot sits on a node that is really there, this one stands in for a
-   node that is not on screen. */
+/* Legend key for a ghost node. A hollow dashed pill, the shape the map draws. The pill shape
+   tells it apart from the frontier dot above it, which marks a node that is really there. */
 .ghost-key {
   display: inline-block;
   width: 16px;
@@ -281,7 +274,7 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   border-radius: 3px;
   border: 2px dashed var(--ink-2);
 }
-/* Matches the on-map stub: a dashed lead ending in a small muted dot. */
+/* Legend key for a stub edge. A dashed line ending in a small dot, as drawn on the map. */
 .stub-key {
   display: inline-flex;
   align-items: center;
@@ -301,9 +294,9 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   background: var(--ink-muted);
 }
 
-/* Top centre, between the HUD and the controls. It grows downward, never sideways, so the
-   width it needs is the width it always has — until the foot of this file takes its
-   neighbours away, and the 320 with them. */
+/* The two name inputs, top centre between the HUD and the controls. The width is fixed: the
+   box grows downward as receipts are added, never sideways. The media query at the end of
+   this file drops the fixed width on a narrow window. */
 #ends {
   top: 16px;
   left: 50%;
@@ -315,23 +308,23 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   width: 320px;
   padding: 8px;
 }
-/* It recedes while the map is being read and comes back on touch: it stands over the
-   densest part of the picture and is empty most of the time. Holding a name is the middle
-   state — an armed anchor is what the next name joins to, and it outlives being panned away
-   from, so it never thins as far as an empty box.
+/* #ends fades while the map is being read and returns on hover or focus. It covers the
+   busiest part of the map and is empty most of the time. A box that holds a name fades less
+   than an empty one, because that name is what the next write joins to.
 
-   Two properties, because they have different reaches. The plate is `background`, which
-   stops at the element; the contents are `opacity` on the ends alone, since opacity on
-   #ends would take #receipts with it — an undo has thirty seconds to be noticed and is the
-   last thing here to dim. Engaged is the absence of these rules rather than a set of its
-   own, because :has outweighs :hover and a grown box would otherwise stay dim under the
+   Two properties fade, not one. `background` is set on #ends itself. `opacity` is set on the
+   ends only. Opacity on #ends would fade #receipts too, and an undo has thirty seconds to be
+   seen.
+
+   The active state is written as the absence of these rules, not as a rule of its own. A
+   `:has` rule outranks `:hover`, so a rule for the active state would stay faded under the
    pointer. */
 #ends { transition: background 120ms ease, backdrop-filter 120ms ease; }
 #ends > .end, #ends > #link { transition: opacity 120ms ease; }
 
 #ends:not(:hover):not(:focus-within) {
   background: color-mix(in srgb, var(--panel) 22%, transparent);
-  /* Not `none`: a blur that has a length to interpolate is one the fade can carry. */
+  /* `blur(0px)`, not `none`. A length can be interpolated, so the transition runs. */
   backdrop-filter: blur(0px);
 }
 #ends:not(:hover):not(:focus-within) > .end,
@@ -345,9 +338,9 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 #ends:not(:hover):not(:focus-within):has(input:not(:placeholder-shown)) > #link {
   opacity: 0.75;
 }
-/* An end below full opacity is a stacking context, and a list inside one cannot paint over
-   the other end. Only reachable while the fade runs, which is shorter than the wait before
-   a list has rows to show — this is what keeps it true if either number moves. */
+/* An element below full opacity makes a stacking context, and a list inside one cannot paint
+   over the other end. This only happens during the fade, which is shorter than the wait for
+   results. The rule keeps it correct if either duration changes. */
 .end:focus-within { z-index: 4; }
 
 #ends input {
@@ -363,10 +356,10 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 #ends input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
 [hidden] { display: none !important; }
 
-/* One end. Its list belongs to it and not to the panel, because two ends means two
-   lists and each opens under its own box. */
+/* One name input. `position: relative` because its results list is absolute and opens under
+   this box. There are two ends and each has its own list. */
 .end { position: relative; grid-column: 2; min-width: 0; }
-/* A name picked but not yet written reads as chosen and says it is not there yet. */
+/* A name that is not in the graph yet. Accent and a dashed border mark it as new. */
 .end input[data-state="new"] { color: var(--accent); border-style: dashed; }
 .end .clear {
   position: absolute;
@@ -382,11 +375,12 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 }
 .end .clear:hover { color: var(--ink); }
 
-/* The edge, drawn. Constant: it says what the panel is for and nothing else — write
-   state lives in the receipts, and a line that varied would say the same thing twice.
-   The rule stops 15px in from each end, which is half an input's height, and a dot
-   sits centred on each of its ends — so both land on the inputs' centre lines however
-   the rows come out. */
+/* The line and two dots drawn beside the inputs. It never changes. Write state is shown in
+   the receipts instead.
+
+   The line stops 15px from each end, which is half an input's height. A dot sits at each end
+   of the line. Both dots then line up with the inputs' centres whatever height the rows
+   take. */
 #link {
   position: relative;
   grid-column: 1;
@@ -413,9 +407,8 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   border-left: 1px solid currentColor;
 }
 
-/* Over whatever is beneath, which after a pick is the far end: choosing in one end is
-   never a moment when the other is being read. Capped, because the server caps the
-   query. */
+/* The results list. It paints over whatever is below it, which is usually the other end.
+   Only one end is in use at a time. The height is capped because the query is capped. */
 .end ul {
   position: absolute;
   top: calc(100% + 7px);
@@ -445,8 +438,8 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   padding: 4px 8px;
   text-align: left;
 }
-/* data-on is the keyboard highlight; hover is the mouse's. They look the same on
-   purpose — there is one selected row, however it got selected. */
+/* `data-on` is the keyboard highlight, `:hover` is the mouse one. They look the same on
+   purpose: there is one selected row either way. */
 .end ul button:hover,
 .end ul button:focus-visible,
 .end ul button[data-on="true"] { background: var(--plane); }
@@ -454,9 +447,9 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 .end .create { color: var(--accent); }
 .end .empty { padding: 4px 8px; color: var(--ink-muted); font-size: 11px; }
 
-/* What has been written, how it went, and the way back. Not a queue: these have
-   already landed, and `undo` is a second write rather than a cancellation. Below the
-   end that comes and goes, so shrinking the widget never takes an undo with it. */
+/* The receipts: what was written, how it went, and the undo button. This is not a queue.
+   Every write here has already happened, and undo is a second write. The row spans both
+   columns at the bottom, so it stays visible when the box above it shrinks. */
 #receipts { display: flex; flex-wrap: wrap; gap: 5px; grid-column: 1 / -1; }
 #receipts:empty { display: none; }
 .receipt {
@@ -477,14 +470,13 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 .receipt[data-state="ok"]::before { content: "✓"; }
 .receipt[data-state="warn"] { color: var(--accent); border-color: var(--accent); }
 .receipt[data-state="warn"]::before { content: "⚠"; }
-/* Undone reads as spent rather than failed: it is a thing that happened, not a
-   thing that went wrong. */
+/* An undone write is muted, not accented. It is finished, not failed. */
 .receipt[data-state="undone"] { color: var(--ink-muted); opacity: 0.6; }
 .receipt[data-state="undone"]::before { content: "↩"; }
 .receipt[data-state="undone"] .pick { text-decoration: line-through; }
 
-/* Either name, back into the near end. Only a landed write offers it — join.ts says
-   why — so the cursor is the default until one does. */
+/* Clicking either name puts it back into the near end. Only a write that landed allows this,
+   so the cursor stays `default` until then. See join.ts for why. */
 .receipt .pick {
   font: inherit;
   min-width: 0;
@@ -510,8 +502,8 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 }
 .receipt .undo:hover { color: var(--accent); border-color: var(--accent); }
 
-/* Where the pointer was, not a corner the eye has to go and find. `.panel` already fixes it
-   to the viewport, so the click's own client coordinates are the whole of the placement. */
+/* The right-click menu. It opens at the pointer. `.panel` already fixes it to the viewport,
+   so the click's client coordinates are all the placement it needs. */
 #node-menu { padding: 4px; }
 #node-menu button {
   display: block;
@@ -547,22 +539,21 @@ kbd {
 }
 #keys { bottom: 16px; right: 16px; display: grid; gap: 4px; font-size: 11px; }
 #keys span { color: var(--ink-2); }
-/* The one link out of the map, in the same ink as the lines beside it. The browser's
-   underline is what marks it; the accent is reserved for the graph saying something. */
+/* The link to the transfer page, in the same colour as the lines beside it. The underline
+   marks it as a link. The accent colour is kept for messages about the graph. */
 #keys a { color: var(--ink-2); }
 
-/* ── The room, when there is less of it ───────────────────────────────────────────
-   Five panels at the corners and the centre need no arithmetic while the room is
-   wide. Below 816px the HUD's right edge reaches #ends' left one, and two more
-   collisions follow it down. One rule settles all of them: below the first collision
-   the top strip holds exactly one panel, and it is #ends — the only one that is
-   interactive, and the only one that grows.
+/* ── Narrow and short windows ─────────────────────────────────────────────────────
+   The five panels need no media query while the window is wide. Below 816px the HUD's
+   right edge reaches #ends' left edge, and two more overlaps follow below that. One
+   rule handles all three: under that width the top strip holds #ends alone. #ends is
+   the only panel up there that is interactive, and the only one that grows.
 
-   #controls is moved rather than measured. It ends in the rendered text "Recentre"
-   at 11px, so the width at which it collides moves with the font stack and cannot be
-   pinned here; out of the strip, it never has to be. */
+   #controls is moved out of the strip rather than measured. Its width depends on how
+   the font stack renders "Recentre" at 11px, so the exact width where it overlaps
+   cannot be written here. */
 
-/* 816 plus headroom for a font stack that measures wider than this one. */
+/* The overlap starts at 816px. The extra 44px covers wider font stacks. */
 @media (max-width: 860px) {
   #ends {
     left: 16px;
@@ -571,18 +562,18 @@ kbd {
     transform: none;
   }
 
-  /* Last, so a thumb reaches it. Stacked the other way up this could not be written:
-     the HUD's height moves with how the run of numbers wraps. */
+  /* Moved to the bottom, in reach of a thumb. The other order would not work: the HUD's
+     height changes as its numbers wrap, so nothing can be offset below it. */
   #controls { top: auto; bottom: 16px; }
 
-  /* 16 at the foot, the controls' own 46 — one row of 11px buttons, and nothing about
-     that moves — and 10 between. The rail moves whole rather than the HUD alone: what is
-     in it is a column, and splitting a column between two corners is how panels come to
-     overlap on the window after next.
+  /* 72px is 16 for the page margin, 46 for #controls, 10 between. #controls is one row of
+     11px buttons and its height does not change.
 
-     `top: auto` with a height left to the content, so the column grows upward from the
-     foot and the list is what stops it — capped shorter here, since the room it is
-     growing into is room #ends and the map are using. */
+     The whole rail moves, not the HUD alone. Splitting the column between two corners is
+     what causes overlaps at the next window size.
+
+     `top: auto` lets the column grow upward from the bottom. The island list is what stops
+     it growing, so it is capped shorter here. The room above belongs to #ends and the map. */
   #left-rail {
     top: auto;
     bottom: 72px;
@@ -593,26 +584,25 @@ kbd {
   }
   #islands ul { max-height: calc(var(--island-row) * 5); }
 
-  /* The two columns become a run of text. A grid needs room for its widest value in
-     every row; a run needs only the line it is on, and the colon carries what the
-     second column used to say by being one. */
+  /* The two-column list becomes running text. A grid reserves the widest value's width in
+     every row. Running text does not. The colon replaces the column gap. */
   #hud dl { display: block; }
   #hud dt,
   #hud dd { display: inline; }
   #hud dt::after { content: ":"; }
   #hud dd { margin-right: 12px; }
 
-  /* Both are reading aids, and one of them advertises drag, wheel and the arrow keys
-     to a device that has none of the three. */
+  /* Both are reading aids. #keys lists drag, wheel and the arrow keys, which a touch device
+     does not have. */
   #legend,
   #keys { display: none; }
 }
 
-/* A phone holding the page upright. The insets are worth more as room than as margin
-   here, and the line under the title says nothing the map does not.
+/* A phone in portrait. The side margins drop to 8px, which is worth more as content width.
+   The subtitle goes: the map says the same thing.
 
-   The title itself stays, unlike before: it is the chevron now, and the chevron is how the
-   seven rows of numbers get out of the way of a small screen. */
+   The title stays. It carries the chevron, and the chevron is how the seven rows of numbers
+   are folded away on a small screen. */
 @media (max-width: 460px) {
   #ends,
   #left-rail { left: 8px; right: 8px; }
@@ -620,41 +610,37 @@ kbd {
   #hud .sub { display: none; }
 }
 
-/* A window too short for the whole column. The legend goes first and alone: it is the only
-   thing in the rail that says nothing about where you are, and it is read once where the list
-   above it is read all afternoon. Height only — the rail is a column now, and how much room a
-   column has is a question about height whatever the window's width. */
+/* A window too short for the whole column. The legend goes first and alone. It is the only
+   panel in the rail that does not say where you are, and it is read once. Height only,
+   because the rail is a column and its room is a matter of height at any width. */
 @media (max-height: 620px) {
   #legend { display: none; }
 }
 
-/* A phone on its side: the strip is nearly all there is. The HUD keeps the one line
-   that can carry bad news and drops the seven that cannot. Both dimensions, because a
-   short window that is also wide has room for all of this and loses nothing by it. */
+/* A phone in landscape. The HUD drops the title and the numbers and keeps #status, which is
+   the line that reports errors. Both dimensions are tested: a short but wide window has room
+   for all of it. */
 @media (max-height: 520px) and (max-width: 860px) {
   #hud h1,
   #hud .sub,
   #hud dl { display: none; }
-  /* The chevron goes with the title, so the fold has to be undone here rather than left
-     wherever it was last put — folded and with no chevron to unfold it, the status line
-     would be unreachable on a window it is the only thing left on. */
+  /* The rule above hides the title, and the chevron is in the title. Unfold #hud-body here.
+     A HUD left folded could not be opened, and #status would be unreachable. */
   #hud:has(#hud-toggle[aria-expanded="false"]) #hud-body { display: block; }
   #status { margin: 0; padding: 0; border-top: 0; }
-  /* The list is what runs off the bottom of a short window, being the one thing here
-     that opens downward into space it never asked for. */
+  /* The results list opens downward and is what runs off a short window. Cap it against the
+     viewport height. */
   .end ul { max-height: 40vh; }
-  /* Shortened rather than hidden, which is the reverse of what this said while the list
-     was somewhere to go: it is the index of the whole graph now, and the only thing on
-     screen that says which part of it you are in. Three rows and a scrollbar answer that.
-     None does not — and the box at the top only reaches a node whose name you already know. */
+  /* Shortened, not hidden. The island list is the only thing left on screen that says which
+     part of the graph you are in. Three rows and a scrollbar still answer that. The input
+     above only finds a node whose name you already know. */
   #islands ul { max-height: calc(var(--island-row) * 3); }
 }
 
 /* ------------------------------------------------------------------ the transfer page
 
-   Not a document. Two cards, three buttons and a drop target, on a page whose whole job is
-   "get a file in or out" — anything that has to be explained in a paragraph here is a thing
-   the controls should have said themselves. */
+   Two sheets, a set of buttons and a drop target. The page moves a file in or out. Keep the
+   button labels doing the explaining, not paragraphs of prose on the page. */
 
 #transfer {
   max-width: 40rem;
@@ -682,9 +668,8 @@ kbd {
   color: var(--ink-muted);
 }
 
-/* Three across while there is room, stacked when there is not. The labels are two lines —
-   what the file is, then what it costs you to know — so a button is readable at a glance
-   and the section needs no prose under it. */
+/* Three buttons across, stacked below 520px. Each label is two lines: what the button does,
+   then what it costs. That keeps the section readable without prose under it. */
 .acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 @media (max-width: 520px) { .acts { grid-template-columns: 1fr; } }
 
@@ -705,8 +690,7 @@ kbd {
 .act span { display: block; color: var(--ink-muted); font-size: 11px; }
 .act:disabled { color: var(--ink-muted); border-color: var(--hairline); cursor: default; }
 
-/* The one thing on the page that writes. Full width and accented, so which button is the
-   commitment is never a question. */
+/* The button that writes. Full width and accented, so it is not mistaken for the others. */
 .act.go {
   width: 100%;
   margin-top: 12px;
@@ -719,8 +703,8 @@ kbd {
 .act.go:hover { filter: brightness(1.08); }
 .act.go:disabled { filter: none; opacity: 0.55; }
 
-/* The target, and the only control in the section until a file is in it. Dashed, because
-   the same border says "not filled in yet" on the map's ghosts and its new-name box. */
+/* The drop target. It is the only control in the section until a file is chosen. A dashed
+   border means "nothing here yet", the same as on the map's ghosts and its new-name input. */
 #drop {
   display: block;
   padding: 22px 16px;
@@ -740,11 +724,11 @@ kbd {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 11px;
 }
-/* Once a file is chosen the box is a receipt for it, so the invitation and the example go. */
+/* With a file chosen the box reports that file. Hide the prompt and the example. */
 #drop.filled { padding: 14px 16px; border-style: solid; }
 #drop.filled code { display: none; }
 
-/* Three numbers, which is the whole of what a file does to a graph. */
+/* The three counts read out of a file: new nodes, new edges, and what is already here. */
 #tally {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -760,8 +744,8 @@ kbd {
 #tally b { display: block; font-size: 19px; font-weight: 500; font-variant-numeric: tabular-nums; }
 #tally span { color: var(--ink-muted); font-size: 11px; }
 
-/* The reading itself — every name and every pair. Shut by default: it is what you open when
-   you doubt the numbers above, which is not most of the time. */
+/* Every name and every pair the file contains. Closed by default. It is there for checking
+   the counts above. */
 #detail { margin-top: 10px; }
 #detail summary { color: var(--ink-2); cursor: pointer; font-size: 12px; }
 #detail-body { padding-top: 8px; }
@@ -782,8 +766,7 @@ kbd {
   font-size: 12px;
 }
 
-/* A fault is the one thing here that stops the file, and it takes the accent the map gives
-   a refused write. */
+/* A fault stops the file being applied. Accented, like a refused write on the map. */
 #faults {
   margin: 12px 0 0;
   padding: 10px 12px 10px 30px;
@@ -797,3 +780,57 @@ kbd {
 #said:empty { display: none; }
 #said[data-tone="error"] { color: var(--accent); }
 #said[data-tone="busy"] { color: var(--ink-muted); }
+
+/* The label is the button. Hide the file input inside it, the same as `#drop`. */
+#in-json-label input { display: none; }
+
+/* A line of text to read before using the buttons below it. */
+.note { margin: 0 0 10px; color: var(--ink-2); font-size: 12px; }
+
+/* The confirmation asked before anything replaces the graph. A bordered box, so it is not
+   skimmed past. */
+#ask {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+#ask-what { margin: 0 0 10px; font-size: 12px; }
+/* `.act.go` has a top margin for the place where it follows a box. Here it is a grid cell
+   and has to line up with the buttons beside it. */
+#ask .act.go { margin-top: 0; }
+
+/* Faults from a whole-graph action, styled like #faults above. Scrollable, because a broken
+   graph reports many faults at once. */
+#report {
+  margin: 12px 0 0;
+  padding: 10px 12px 10px 30px;
+  max-height: 14rem;
+  overflow-y: auto;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+/* Results from the whole-graph actions and from a download. Same style as #said, which
+   reports on the file in the section below. */
+#told, #downloaded { margin: 10px 0 0; color: var(--ink-2); font-size: 12px; }
+#told:empty, #downloaded:empty { display: none; }
+#told[data-tone="error"] { color: var(--accent); }
+#told[data-tone="busy"] { color: var(--ink-muted); }
+
+/* Shown when there is no graph to draw. It sits in the centre, where the map would be.
+   `.panel` fixes the element to the viewport but does not place it, so the offsets are
+   set here. */
+#empty {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  max-width: 300px;
+  text-align: center;
+}
+#empty p { margin: 0 0 8px; color: var(--ink-2); font-size: 12px; }
+#empty p:last-child { margin-bottom: 0; }
+#empty a { color: var(--accent); }

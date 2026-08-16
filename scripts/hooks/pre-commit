@@ -28,7 +28,7 @@ DECISIONS="docs/decisions"
 # Anything whose shape is a commitment rather than a detail. Changing one of these
 # is usually a decision, and decisions are the thing no script can notice going
 # unrecorded.
-WEIGHTY="package.json src/db/tables.ts src/graph/table.ts src/graph/keys.ts"
+WEIGHTY="package.json web/src/store/db.ts web/src/store/keys.ts"
 
 if ! command -v python3 >/dev/null 2>&1; then
 	echo "pre-commit: python3 not found, cannot run the gates." >&2

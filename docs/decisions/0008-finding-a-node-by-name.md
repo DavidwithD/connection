@@ -1,14 +1,13 @@
 # 0008 — Finding a node by name
 
-**Status:** 🔵 Proposed
+**Status:** ♻️ Superseded by [0030](0030-the-graph-moves-into-the-browser.md)
 **Date:** 2026-08-02
 **Deciders:** David HL
 
 ## Context
-Every read starts from an id ([repo.ts](../../src/graph/repo.ts)), and an id is only known
-by having walked to it. Asking for a node by its label meant reading the whole table —
-the outcome [ADR 0007](0007-a-table-for-the-graph.md) inherited as the sign of a key design
-gone wrong.
+Every read starts from an id (`repo.ts`), and an id is only known by having walked to it.
+Asking for a node by its label meant reading the whole table — the outcome
+[ADR 0007](0007-a-table-for-the-graph.md) inherited as the sign of a key design gone wrong.
 
 [ADR 0006](0006-only-the-centre-reads.md) already listed a search box among the things that
 would reopen it, on the grounds that something other than the centre would then draw.
@@ -51,8 +50,7 @@ question needs a different store, not another index — the cost of answering it
 - Normalising folds case and whitespace and nothing else, so accented and unaccented
   spellings are separate names. Untested against data that has any.
 - Assumed a first-character bucket spreads well enough. The seeded labels are drawn from a
-  fixed syllable list ([generate.ts](../../src/graph/generate.ts)), so real names may skew
-  harder.
+  fixed syllable list (`generate.ts`), so real names may skew harder.
 - Unknown whether an island on the map reads as arrival or as a glitch. Nobody but the
   author has used the box.
 

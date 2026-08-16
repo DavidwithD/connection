@@ -2,54 +2,30 @@
   "name": "connection",
   "version": "0.1.0",
   "private": true,
-  "description": "DynamoDB-backed service (name provisional)",
+  "description": "A graph you pan around, stored in the browser (name provisional)",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
   "packageManager": "npm@12.0.2",
   "scripts": {
-    "build": "tsc",
-    "build:web": "vite build",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
-    "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: gates installed'",
+    "web": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "adr": "python3 scripts/adr-gate.py",
     "docs": "python3 scripts/docs-gate.py",
     "docs:selftest": "python3 scripts/docs-gate-selftest.py",
-    "ddb:install": "./scripts/dynamodb-local.sh install",
-    "ddb:start": "./scripts/dynamodb-local.sh start",
-    "ddb:stop": "./scripts/dynamodb-local.sh stop",
-    "ddb:restart": "./scripts/dynamodb-local.sh restart",
-    "ddb:status": "./scripts/dynamodb-local.sh status",
-    "ddb:reset": "./scripts/dynamodb-local.sh reset",
-    "ddb:migrate": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/db/migrate.ts",
-    "ddb:smoke": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/db/smoke.ts",
-    "dev:db": "npm run ddb:start && npm run ddb:migrate",
-    "graph:seed": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/seed.ts",
-    "graph:init": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/init.ts",
-    "graph:export": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/export.ts",
-    "graph:restore": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/restore.ts",
-    "graph:edge": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/edge.ts",
-    "graph:load": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/load.ts",
-    "graph:node": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/node.ts",
-    "graph:smoke": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/graph/smoke.ts",
-    "api": "DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT-http://localhost:8000} tsx src/server/index.ts",
-    "web": "vite",
-    "demo": "trap 'kill 0' EXIT; npm run api & npm run web",
-    "test": "npm run typecheck && npm run adr && npm run docs && npm run ddb:smoke"
+    "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: gates installed'",
+    "test": "npm run typecheck && npm run adr && npm run docs"
   },
   "keywords": [],
   "license": "UNLICENSED",
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.1096.0",
-    "@aws-sdk/lib-dynamodb": "^3.1096.0",
-    "@hono/node-server": "^2.0.12",
     "cytoscape": "^3.34.0",
-    "hono": "^4.12.32"
+    "idb": "^8.0.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
-    "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.5"
   }

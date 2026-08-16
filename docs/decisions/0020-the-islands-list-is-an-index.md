@@ -7,7 +7,7 @@
 ## Context
 [0019](0019-every-island-has-an-address.md) gave every component an address, and the page a
 list of them — built as errands. The API withheld the component holding `rootId`
-([index.ts](../../src/server/index.ts)); the page dropped a row on landing.
+(`index.ts`); the page dropped a row on landing.
 
 So the list only shrank. Getting back meant typing a node's name from memory, and a short
 window hid the list outright — no way to cross at all.

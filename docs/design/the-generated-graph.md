@@ -1,12 +1,16 @@
 # The generated graph
 
-`npm run graph:seed` writes a graph nobody typed. It is built in three passes over a fixed
-set of ids: one ring per component, a fraction of the ring edges rewired, then a pass that
-pulls a few nodes up into hubs. The result is deterministic — the same seed gives the same
-graph — and it exists to give the map something worth exploring, not to model anything real.
+**Seed a demo graph** on the transfer page writes a graph nobody typed. It is built in three
+passes over a fixed set of ids: one ring per component, a fraction of the ring edges rewired,
+then a pass that pulls a few nodes up into hubs. The result is deterministic — the same seed
+gives the same graph — and it exists to give the map something worth exploring, not to model
+anything real.
 
-Everything the generator produces is thrown away by the next seed run. What survives one is
+Everything the generator produces is replaced by the next seed. What survives one is
 [a-graph-as-text.md](a-graph-as-text.md).
+
+The generator itself is pure and always was. What changed is where its output goes: it used
+to be a command that dropped a table, and it is now a button that asks first.
 
 ## The pieces
 
@@ -48,7 +52,8 @@ way, so the difference is settled against the largest islands: the only ones wit
 spare, and the only ones a few either way says nothing about.
 
 Islands are **contiguous ranges of ids**, so which island a node is in is arithmetic rather
-than a lookup, and the ids in one island read consecutively in the table.
+than a lookup. Those ids are internal to the generator now: what it writes is names, because
+the name is the key ([finding-a-node.md](finding-a-node.md)).
 
 All three passes are held inside an island, and each has its own way of escaping one:
 
@@ -100,11 +105,10 @@ small end of the halving is a pair.
 
 ## Where the numbers are
 
-The defaults, and the environment variables that override them, in
-[seed.ts](../../src/graph/seed.ts). The retry bounds on rewiring and on the hub pass, the
-syllable lists, and the guards on `n`, `k` and the island count, in
-[generate.ts](../../src/graph/generate.ts). Each carries the reason for its value in a
-comment.
+The defaults the button seeds with, in [transfer.ts](../../web/src/transfer.ts). The retry
+bounds on rewiring and on the hub pass, the syllable lists, and the guards on `n`, `k` and the
+island count, in [generate.ts](../../web/src/store/generate.ts). Each carries the reason for
+its value in a comment.
 
 ## Records behind it
 
@@ -112,4 +116,5 @@ comment.
 |---|---|
 | [0003](../decisions/0003-graph-exploration-demo-stack.md) | A generated small-world graph as the demo's data, and that the graph is reproducible while the layout is not |
 | [0019](../decisions/0019-every-island-has-an-address.md) | Components as a thing the page must be able to reach, which is why the generator makes them |
-| [0018](../decisions/0018-the-graph-outlives-the-seed.md) | That a seed run replaces the graph, and what has to leave before it |
+| [0018](../decisions/0018-the-graph-outlives-the-seed.md) | That a seed replaces the graph, and what has to leave before it |
+| [0030](../decisions/0030-the-graph-moves-into-the-browser.md) | That seeding is a button now, and asks before it replaces anything |

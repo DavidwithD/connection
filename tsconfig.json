@@ -1,12 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "types": ["node"],
-    "outDir": "dist",
-    "rootDir": "src",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -14,12 +12,10 @@
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
 
-    "declaration": true,
-    "sourceMap": true,
-    "esModuleInterop": true,
+    "noEmit": true,
+    "isolatedModules": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["dist", "node_modules", "vendor"]
+  "include": ["web/src/**/*.ts", "vite.config.ts"]
 }

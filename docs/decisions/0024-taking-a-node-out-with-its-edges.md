@@ -24,8 +24,8 @@ through the delete that already refuses one holding any.
 
 ## Alternatives considered
 - **One transaction, chunked.** Fewer round trips and one repair, but it wants a reason table
-  of its own — and `resettle` ([islands.ts](../../src/graph/islands.ts)) answers for one edge
-  parting a component, not a node scattering it.
+  of its own — and `resettle` (`islands.ts`) answers for one edge parting a component, not a
+  node scattering it.
 - **Parting every edge by hand first.** Already in the panel. A chore on any real node, and
   nothing says which part makes the delete legal.
 - **Taking the edges and leaving the node.** A name with nothing behind it, which a refused
@@ -36,7 +36,7 @@ through the delete that already refuses one holding any.
 
 ## Consequences
 A hub costs a round trip and a component walk per edge, since every part asks whether it was a
-bridge ([edge.ts](../../src/graph/edge.ts)). The wait grows with the degree.
+bridge (`edge.ts`). The wait grows with the degree.
 
 A run that stops partway leaves the node holding fewer edges — a graph, and asking again
 finishes the job, index included, since each part repairs it in passing.
@@ -44,8 +44,8 @@ finishes the job, index included, since each part repairs it in passing.
 The map gains a write the panel does not own, so the line writes queue in leaves the panel
 ([join.ts](../../web/src/join.ts)) first.
 
-`rootId` can now name a node that has gone ([init.ts](../../src/graph/init.ts)), and the page
-reads it before drawing anything — so boot takes that absence for an answer.
+`rootId` can now name a node that has gone (`init.ts`), and the page reads it before drawing
+anything — so boot takes that absence for an answer.
 
 ## Assumptions and unknowns
 - **Assumed a hub is removed seldom enough for the wait to pass.** Unmeasured; the first
