@@ -7,11 +7,14 @@ drawn, [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it is
 
 The centre is named, never inferred. A click, a doorway, a search hit, a crossing to an island
 — each of those hands the mark over, and nothing else does. Panning and zooming are looking, so
-the middle of the screen is where the centre was put rather than what defines it. The centre
-and its neighbours are the only named nodes, and a named node is drawn as its name; everything
-else is a disc. A neighbour the camera has taken off screen is stood in for by a ghost in the
-ring, and clicking one flies to the node it stands for. Nothing on the map moves except a ghost
-in flight.
+the middle of the screen is where the centre was put rather than what defines it. A reader who
+wants the older rule can tick **walk by pan**. The camera then names the centre again, at the
+price [ADR 0032](../decisions/0032-the-centre-is-named.md) sets out.
+
+The centre and its neighbours are the only named nodes, and a named node is drawn as its name;
+everything else is a disc. A neighbour the camera has taken off screen is stood in for by a
+ghost in the ring, and clicking one flies to the node it stands for. Nothing on the map moves
+except a ghost in flight.
 
 ## What the renderer may do
 
@@ -190,9 +193,10 @@ never on screen at the same time as the node it stands for.
 Beside the code that reads them, once: separations, ring geometry and the long-edge threshold in
 [placement.ts](../../web/src/placement.ts), flight speed and its clamps, the margin a seat must
 clear the screen by, the pill's inset and type, and the paint bands for the ring and the doorways
-in [map-view.ts](../../web/src/map-view.ts), and the settle delays and the keyboard pan step in
-[main.ts](../../web/src/main.ts). Each carries the reason for its value in a comment. Copying one
-here would make this the stale copy.
+in [map-view.ts](../../web/src/map-view.ts), and the settle delays, the keyboard pan step and the
+accent hysteresis in [main.ts](../../web/src/main.ts). Each carries the reason for its value in a
+comment. Copying one here would make this the stale copy. The one stored key is in
+[settings.ts](../../web/src/settings.ts), beside the guard that reads it.
 
 ## Records behind it
 
@@ -203,4 +207,5 @@ here would make this the stale copy.
 | [0025](../decisions/0025-when-a-ghost-stands.md) | The camera rather than the seat as what raises a ghost |
 | [0027](../decisions/0027-a-ring-holds-what-it-holds.md) | How many doorways a ring offers, and that the number is measured |
 | [0006](../decisions/0006-only-the-centre-reads.md) | That drawing is the centre's neighbourhood, and reading runs a hop past it |
+| [0032](../decisions/0032-the-centre-is-named.md) | What moves the mark, and what it costs to let the camera move it |
 | [0003](../decisions/0003-graph-exploration-demo-stack.md) | One frozen position per node, and a camera panned over it |

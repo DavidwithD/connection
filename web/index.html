@@ -36,7 +36,11 @@
         </h1>
 
         <div id="hud-body">
-          <p class="sub">one map, panned freely — the centre is the node you clicked</p>
+          <!-- One of these is always hidden. Which one is decided by the checkbox below, in
+               app.css, so the sentence that is true is the one on the page and nothing in
+               main.ts writes copy. -->
+          <p class="sub when-pinned">one map, panned freely — the centre is the node you clicked</p>
+          <p class="sub when-walking">one map, walked by panning — the centre is what you stop on</p>
           <dl>
             <dt>at centre</dt>
             <dd id="stat-centre">—</dd>
@@ -51,6 +55,14 @@
             <dt>in store</dt>
             <dd id="stat-total">—</dd>
           </dl>
+          <!-- Off by default: panning is looking, and the centre is whatever was named. Ticked,
+               the node nearest the middle takes it as the camera moves — and keeps whatever
+               that placed on the way. The box's own checkedness is the state; a checkbox has
+               that natively, so nothing repeats it as an attribute. -->
+          <label class="setting">
+            <input id="walk-by-pan" type="checkbox" />
+            <span>walk by pan</span>
+          </label>
           <p id="status" data-tone="idle">starting…</p>
         </div>
       </section>
@@ -141,7 +153,8 @@
     </div>
 
     <div class="panel" id="keys">
-      <span><kbd>drag</kbd> pan &nbsp; <kbd>wheel</kbd> zoom</span>
+      <span class="when-pinned"><kbd>drag</kbd> pan &nbsp; <kbd>wheel</kbd> zoom</span>
+      <span class="when-walking"><kbd>drag</kbd> pan to the next centre &nbsp; <kbd>wheel</kbd> zoom</span>
       <span><kbd>click</kbd> make it the centre</span>
       <span><kbd>click the centre</kbd> name it in the box; the next name joins it</span>
       <span><kbd>right-click the centre</kbd> take it off the map</span>

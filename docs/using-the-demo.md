@@ -32,7 +32,7 @@ arrives as a file, leaves as one, and is seeded, checked and repaired.
 
 In this browser profile, and nowhere else. That is worth reading twice:
 
-- Clearing site data for the origin destroys the graph.
+- Clearing site data for the origin destroys the graph, and the map's settings with it.
 - A different browser, a different profile, or a private window is a different graph.
 - The browser may evict it under storage pressure. The page asks it not to at boot, which is
   a request rather than a promise.
@@ -60,6 +60,7 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
 | **Recentre** | Go back to the centre, wherever the panning left it |
+| **walk by pan** | Tick it, and panning hands the centre to whatever it passes |
 | `/` | Put the caret in the box at the top, whatever the focus was on |
 
 The node you clicked is the **centre**, and it stays the centre however far you pan away from
@@ -70,9 +71,15 @@ doorways standing around it; **Recentre** is the way back, and clicking anything
 the way on. What the map draws around the centre, and why none of it moves, is
 [the-centre.md](design/the-centre.md).
 
-Which is why **islands** exists. A graph in pieces has components no walk from here can reach,
-however long you look — and a node you make is one until you join it to something. The list is
-every component, biggest first.
+**walk by pan** is the box under the numbers, and it hands the centre back to the camera. Tick
+it and the node nearest the middle takes the centre as you drag. A sweep across a region then
+fills it in without your choosing a route. Every node the middle crosses is placed for good.
+Unticking the box does not take them off again — the map keeps what the panning drew. The box is
+remembered for this browser, so a session that starts ticked stays ticked.
+
+A walk from the centre reaches only what the graph joins to it, which is why **islands** exists.
+A graph in pieces has components no walk from here can reach, however long you look — and a node
+you make is one until you join it to something. The list is every component, biggest first.
 
 Rows do not leave when you use them, so crossing back is a click rather than a name typed from
 memory. The marked row is the island you are standing in. A dim one is not on the map yet:
