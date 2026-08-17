@@ -5,8 +5,8 @@
 **Deciders:** David HL
 
 ## Context
-A click on the map glides a node to the middle. The node already there has nowhere to glide,
-so that click spends itself. Its name is the one thing on screen the
+A click on the map names a centre. The centre cannot be named twice, so a click on it has
+nothing to do. Its name is the one thing on screen the
 [panel](0013-one-box-that-grows-into-an-edge.md) cannot be handed — it has to be read off the
 HUD and typed back in.
 
@@ -15,7 +15,7 @@ was the box *mirroring* the middle: refilled wherever the camera drifted, arming
 nobody asked for. A click is not drift. It names one node, at a moment somebody chose.
 
 ## Decision
-Clicking the node the middle holds hands its name to the end of the panel that is free.
+Clicking the centre hands its name to the end of the panel that is free.
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|

@@ -11,10 +11,13 @@ the middle of the screen is where the centre was put rather than what defines it
 wants the older rule can tick **walk by pan**. The camera then names the centre again, at the
 price [ADR 0032](../decisions/0032-the-centre-is-named.md) sets out.
 
-The centre and its neighbours are the only named nodes, and a named node is drawn as its name;
-everything else is a disc. A neighbour the camera has taken off screen is stood in for by a
-ghost in the ring, and clicking one flies to the node it stands for. Nothing on the map moves
-except a ghost in flight.
+A click takes no camera. It names a node **where it stands**
+([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)), so the centre sits as often at an
+edge as at the middle. The search box, an island row and a doorway do still move the camera to
+their node. The centre and its neighbours are the only named nodes, and a named node is drawn as
+its name; everything else is a disc. A neighbour off screen is stood in for by a ghost in the
+ring, and clicking one flies to the node it stands for. Nothing on the map moves except a ghost
+in flight.
 
 ## What the renderer may do
 
@@ -136,12 +139,16 @@ window too small to hold the root's ring.
 
 How many can stand is what the rings have room for, not a number written down:
 `pillsAround` ([placement.ts](../../web/src/placement.ts)) divides a ring's circumference by the
-widest name in the plan, and a neighbourhood wider than one ring uses the next one out. Only
-rings the viewport could show when the visit began are used, because a doorway off screen opens
-for nobody — a bound on how far out to plan, measured once, not a promise about later: the reach
-is held for the visit for the same reason the slots are, and a visit lasts as long as the reader
-stays on one centre. Two slots that would touch are refused — a name half under a sibling is
-still readable, a doorway half under one has lost its click.
+widest name in the plan, and a neighbourhood wider than one ring uses the next one out. How far
+out is half the viewport's smaller span — measured once, when the visit began, and measured
+*from the centre* rather than from the frame. The two agree while the centre sits at the middle,
+which is the arrangement the bound was cut for: a doorway off screen opens for nobody. They part
+company when a click names a node where it stands
+([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)). A centre near an edge then plans
+doorways that fall outside the frame. **Recentre** brings them back within reach on the next
+visit, not this one. `slotsFor` rebuilds the plan when the centre changes, not when the camera
+moves. Two slots that would touch are refused — a name half under a sibling is still readable,
+a doorway half under one has lost its click.
 
 A constant could not stay true. Every input to that division moves — the type, the plan, the
 viewport — so a number fixed against one ring stops matching the next, and nothing reports the
@@ -208,4 +215,5 @@ comment. Copying one here would make this the stale copy. The one stored key is 
 | [0027](../decisions/0027-a-ring-holds-what-it-holds.md) | How many doorways a ring offers, and that the number is measured |
 | [0006](../decisions/0006-only-the-centre-reads.md) | That drawing is the centre's neighbourhood, and reading runs a hop past it |
 | [0032](../decisions/0032-the-centre-is-named.md) | What moves the mark, and what it costs to let the camera move it |
+| [0033](../decisions/0033-a-click-takes-no-camera.md) | That a click names a node where it stands, and what that costs the doorways |
 | [0003](../decisions/0003-graph-exploration-demo-stack.md) | One frozen position per node, and a camera panned over it |

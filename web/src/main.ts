@@ -2,10 +2,11 @@
  * The map page: wiring, the centre and the HUD.
  *
  * The centre is the node somebody named: a click, a search hit, a doorway, a crossing. Under
- * **walk by pan** the camera names one too, whatever it stops nearest. Otherwise the map can be
- * panned until the centre is off screen, and Recentre is the way back. How long the camera must
- * be still before it counts as stopped depends on what moved it. Naming a node skips the wait.
- * A drag waits longest.
+ * **walk by pan** the camera names one too, whatever it stops nearest. A click never takes the
+ * camera. A clicked node becomes the centre where it stands, ring and all, so the centre can
+ * end up off screen, and Recentre is the way back. The search box, the islands list and a
+ * doorway do still travel to their node. How long the camera must be still before it counts as
+ * stopped depends on what moved it. A drag waits longest.
  */
 import {
   Missing,
@@ -174,6 +175,12 @@ function becomeCentre(id: string): void {
   const late = world.seatPending(id)
   if (late.nodes.length || late.edges.length) view.add(late.nodes, late.edges)
   render()
+  // `setAccent` has just taken down the doorways the last centre raised, and nothing else here
+  // puts them back. A click moves no camera, so there is no `viewport` to schedule this on, and
+  // a node whose ring was already read asks `Explorer` for nothing either — the centre would
+  // stand with no way out of it until the reader happened to pan. The early return above is
+  // what keeps this off a naming that changed nothing.
+  settle()
 }
 
 /**
@@ -281,10 +288,10 @@ view.cy.on("tap", "node", (event) => {
 
   if (!world.has(id)) return
 
-  // Clicking the centre cannot move the camera, because the camera is already there. So a
-  // click on the centre means the other thing a node can be: a name for the join panel.
-  // `take` in web/src/join.ts handles it. The camera move comes back through that path, on
-  // the pick that sets the anchor.
+  // A click on the centre belongs to the panel. No click moves the camera now, so this is not
+  // the centre having nowhere to glide: the page already shows this node's name, and naming it
+  // again would say nothing. `take` in web/src/join.ts handles it. The camera does move on that
+  // path, on the pick that sets the anchor.
   if (id === view.accent) {
     const node = world.get(id)
     // ⌘ only, as on a list row. See web/src/combobox.ts.
@@ -292,13 +299,12 @@ view.cy.on("tap", "node", (event) => {
     return
   }
 
-  // The click is what makes this the centre — nothing about the glide that follows will.
-  // Promoted before the camera moves rather than on the settle at the far end, so the ring
-  // draws on the click and the camera lands on a finished picture instead of completing one
-  // a beat after it stops. With the read usually fast, that costs nothing.
+  // Named where it stands. This handler was the last place the page moved the camera on its
+  // own: a click drew the node to the middle whether or not anyone wanted to be moved. The
+  // node's ring now draws around it wherever it sits, off the edge of the screen included.
+  // **Recentre** is how the middle is asked for.
   explorer.prefetch(id)
   becomeCentre(id)
-  view.focus(id)
 })
 
 /**
@@ -535,11 +541,12 @@ function goTo(node: NodeMeta, at?: Point): void {
   if (!world.has(node.id)) {
     view.add([world.place(node, at ?? world.landing(view.centre(), node.id))], [])
   }
-  // From here on this is the click path: name a destination, read it now rather than on
-  // the settle at the far end, and glide. Named whether or not it had to be placed — a hit
-  // already on the map is still being arrived at, and the glide alone would leave the centre
-  // behind on the node the reader came from. `becomeCentre` is what repaints, so nothing here
-  // needs to: a destination that is already the centre has changed nothing to repaint for.
+  // From here on this is the named-destination path, and the glide separates it from a click.
+  // Somebody who names a node is asking to be taken there; somebody who clicks one can already
+  // see it. Read it now rather than on the settle at the far end. Named whether or not it had to
+  // be placed — a hit already on the map is still being arrived at, and the glide alone would
+  // leave the centre behind on the node the reader came from. `becomeCentre` is what repaints,
+  // so nothing here needs to: a destination that is already the centre has nothing to repaint.
   explorer.prefetch(node.id)
   becomeCentre(node.id)
   view.focus(node.id)
