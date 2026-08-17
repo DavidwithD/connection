@@ -11,6 +11,9 @@
   "scripts": {
     "web": "vite",
     "build": "vite build",
+    "drive:map": "node scripts/drive-map.mjs",
+    "drive:join": "node scripts/drive-join.mjs",
+    "drive:part-edge": "node scripts/drive-part-edge.mjs",
     "typecheck": "tsc --noEmit",
     "adr": "python3 scripts/adr-gate.py",
     "docs": "python3 scripts/docs-gate.py",

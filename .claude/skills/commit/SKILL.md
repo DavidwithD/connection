@@ -142,9 +142,13 @@ multi-line where a pointer would do, or measuring the code against an alternativ
 from the repo, which no reader can check · `W027` provenance outside its home — "confirmed
 by X on date Y", a threshold derived from one sample sitting in a general algorithm
 comment, or first-person narrative in a doc ("my guess was wrong"). The rationale stays;
-the log goes to a record · `W028` "not A but B" and its disguises: "A isn't enough — you
-need B", `Aではなく`, `Aではない` trailed by the positive. Grep for `ではなく`, `ではない`,
-`rather than`, `isn't`, then read the sentence that follows. Write only B · `W029` a
+the log goes to a record · `W028` "not A but B", its disguises ("A isn't enough — you need
+B", `Aではなく`/`Aではない` trailed by the positive), and the bare `X, not Y` / `X and not Y`.
+Grep for `ではなく`, `ではない`, `rather than`, `isn't`, `, not `, `— not `, ` and not `, then
+read the sentence and ask: **would a reader have assumed A?** If yes it disambiguates — "the
+degree in the stored graph, not the number of edges loaded" names the wrong reading a caller
+would reach for. If no, A is a strawman; write only B. Plain negation is not this finding —
+"whichever end is not the anchor" has no B · `W029` a
 struck-through list item (`~~#2~~ — resolved: …`) or a gap left by an earlier deletion —
 delete resolved items outright, renumber from 1, keep it contiguous · `W030` a paragraph
 or bullet breaking the section's established pattern — inline formula where the section

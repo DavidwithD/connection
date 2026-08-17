@@ -11,7 +11,9 @@ import {
   deleteNodeWithEdges,
   fetchNeighbourhood,
   fetchOpening,
+  joinNodes,
   persist,
+  unjoinNodes,
   whenEvicted,
 } from "./store/index.js"
 import type { Neighbourhood, NodeMeta, Opening } from "./store/index.js"
@@ -21,8 +23,8 @@ import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { distance, type Point } from "./placement.js"
-import { World } from "./world.js"
-import { Writes } from "./writes.js"
+import { World, type WorldNode } from "./world.js"
+import { Writes, type Receipt } from "./writes.js"
 
 /**
  * How long the camera must be still before the centre node is read.
@@ -231,21 +233,25 @@ view.cy.on("tap", "node", (event) => {
 })
 
 /**
- * Delete the centre node and all its edges.
+ * The menu that takes something out of the graph.
  *
- * Right-click, and only on the centre node. The centre is what the reader walked to, and it
- * is the only node whose degree is shown on the page, so it is the only one whose cost the
- * menu can state. A ghost is never the centre.
+ * Right-click, and only at the centre: the centre node itself, or one of the lines that
+ * reaches it. The centre is what the reader walked to, and it is the only node whose degree
+ * is shown on the page, so it is the only one whose cost the menu can state. A ghost is never
+ * the centre.
  *
- * The edge count is in the button label because this is the one write that cannot be undone.
- * Everywhere else the panel writes on `↵` and offers an undo afterwards. Here there is no
- * undo, so the question is asked first and says how much is going.
+ * The two writes are not alike, and the menu says so. Taking a node out cannot be undone,
+ * because its edges cannot come back with it, so the button names how much is going and the
+ * question is asked before the write. Parting two nodes leaves both where they are, so it
+ * writes on the click and carries an undo after, like every write from the box above.
  */
-const menu = el<HTMLDivElement>("node-menu")
-const menuDelete = el<HTMLButtonElement>("node-delete")
+const menu = el<HTMLDivElement>("map-menu")
+const menuButton = el<HTMLButtonElement>("map-remove")
 
-/** The node the menu would delete, or null when the menu is closed. */
-let doomed: string | null = null
+/** What the menu would take out, or null when the menu is closed. */
+type Doomed = { kind: "node"; id: string } | { kind: "edge"; a: string; b: string }
+
+let doomed: Doomed | null = null
 
 function closeMenu(): void {
   // Return early when there is nothing to close. A pan calls this on every frame.
@@ -254,11 +260,31 @@ function closeMenu(): void {
   menu.hidden = true
 }
 
+/** Put the menu under the pointer, with the row it is offering. */
+function openMenu(target: Doomed, label: string, at: MouseEvent | undefined): void {
+  doomed = target
+  menuButton.textContent = label
+  menu.style.left = `${String(at?.clientX ?? 0)}px`
+  menu.style.top = `${String(at?.clientY ?? 0)}px`
+  menu.hidden = false
+}
+
 /** The button label, with the edge count when the node has edges. */
 function priced(node: NodeMeta): string {
   if (!node.degree) return `delete ${node.label}`
   const edges = node.degree === 1 ? "1 edge" : `${String(node.degree)} edges`
   return `delete ${node.label} and its ${edges}`
+}
+
+/**
+ * The node at one end of a drawn line, or null if that end is not one.
+ *
+ * A ghost is not a node on the map, but it names one, and its dashed lead stands for that
+ * node's edge to the centre. A stub names nothing, so a stub's lead ends here and the line
+ * it draws cannot be parted.
+ */
+function ended(id: string): WorldNode | null {
+  return world.get(ghostTarget(id) ?? id) ?? null
 }
 
 // Without this the browser's own context menu opens on top of this one.
@@ -276,18 +302,36 @@ view.cy.on("cxttap", "node", (event) => {
   const node = world.get(id)
   if (!node) return
 
-  doomed = id
-  menuDelete.textContent = priced(node)
-  const at = event.originalEvent as MouseEvent | undefined
-  menu.style.left = `${String(at?.clientX ?? 0)}px`
-  menu.style.top = `${String(at?.clientY ?? 0)}px`
-  menu.hidden = false
+  openMenu({ kind: "node", id }, priced(node), event.originalEvent as MouseEvent | undefined)
 })
 
-menuDelete.addEventListener("click", () => {
-  const id = doomed
+view.cy.on("cxttap", "edge", (event) => {
+  const a = ended(String(event.target.source().id()))
+  const b = ended(String(event.target.target().id()))
+  if (!a || !b) return
+  // One end has to be the centre, the same rule the node above follows. A ghost's lead
+  // already meets it: a ghost belongs to the centre that created it.
+  if (a.id !== view.accent && b.id !== view.accent) return
+
+  // The centre first, so the row reads out from where the reader is standing.
+  const [near, far] = a.id === view.accent ? [a, b] : [b, a]
+  openMenu(
+    { kind: "edge", a: near.id, b: far.id },
+    `part ${near.label} and ${far.label}`,
+    event.originalEvent as MouseEvent | undefined,
+  )
+})
+
+menuButton.addEventListener("click", () => {
+  const target = doomed
   closeMenu()
-  if (id === null) return
+  if (!target) return
+  if (target.kind === "node") removeNode(target.id)
+  else partEdge(target.a, target.b)
+})
+
+/** Take a node out of the graph, with every edge that reaches it. */
+function removeNode(id: string): void {
   const node = world.get(id)
   if (!node) return
 
@@ -335,7 +379,75 @@ menuDelete.addEventListener("click", () => {
       setStatus(`⚠ ${reason} — edges may already have gone; ask again to finish`, "error")
     }
   })
-})
+}
+
+/** Part two nodes: the store write, then the map, then a receipt carrying the way back. */
+function partEdge(aId: string, bId: string): void {
+  const a = world.get(aId)
+  const b = world.get(bId)
+  if (!a || !b) return
+
+  const receipt = writes.open()
+  receipt.el.textContent = `${a.label} — ${b.label}`
+  writes.run(receipt, async () => {
+    try {
+      await unjoinNodes(aId, bId)
+      partOnMap(aId, bId)
+
+      receipt.settle("ok", `parted ${a.label} and ${b.label}`)
+      receipt.offerUndo("join them again", () => {
+        writes.run(receipt, () => rejoin(receipt, a, b))
+      })
+      void refreshTotals()
+      // Set the status after `render`, never before. `render` writes the idle hint over
+      // whatever the status line holds.
+      render()
+      setStatus(`parted ${a.label} and ${b.label}`, "idle")
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      receipt.settle("warn", reason)
+      setStatus(`⚠ ${reason}`, "error")
+    }
+  })
+}
+
+/** Take a parted edge off the map. The store has already dropped it. */
+function partOnMap(a: string, b: string): void {
+  // Unlink and lower the degrees together. `missing` is degree minus the edges loaded, so
+  // unlinking without both decrements makes a finished node claim graph that is gone. See
+  // World.unlink.
+  world.unlink(a, b)
+  world.lowerDegree(a)
+  world.lowerDegree(b)
+  view.drop([], [[a, b]])
+  // `drop` does not run this, and it is the only thing that takes down a ghost whose target
+  // has stopped being a neighbour. Without it the ghost and its dashed lead stand until the
+  // next camera settle, naming an edge this write has just removed.
+  view.reviseGhosts()
+}
+
+/** Join the pair again, from the receipt's undo. */
+async function rejoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void> {
+  try {
+    await joinNodes(a.id, b.id)
+    // Raise the degrees and link together, the mirror of parting above. See World.bumpDegree.
+    world.bumpDegree(a.id)
+    world.bumpDegree(b.id)
+    if (world.linkExisting(a.id, b.id)) view.add([], [[a.id, b.id]])
+    // The mirror of the ghost pass in `partOnMap`. The far end is a neighbour again, and an
+    // off-screen one gets its ghost back now instead of on the next settle.
+    view.reviseGhosts()
+
+    receipt.settle("undone", `joined ${a.label} and ${b.label} again`)
+    void refreshTotals()
+    render()
+    setStatus(`undid parting ${a.label} and ${b.label}`, "idle")
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    receipt.settle("warn", reason)
+    setStatus(`⚠ ${reason}`, "error")
+  }
+}
 
 /**
  * Go to a node that arrived by name rather than by walking.

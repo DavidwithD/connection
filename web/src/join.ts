@@ -405,18 +405,11 @@ export class JoinPanel {
   }
 
   private offerUndo(receipt: Receipt, done: Done): void {
-    const undo = document.createElement("button")
-    undo.type = "button"
-    undo.className = "undo"
-    undo.textContent = "undo"
-    undo.title = done.created
+    const title = done.created
       ? `part them again and delete ${done.b.label}`
       : "part them again"
-    undo.addEventListener("click", () => {
-      // Remove the button on click, so a second click cannot queue the same undo twice.
-      undo.remove()
+    receipt.offerUndo(title, () => {
       this.writes.run(receipt, () => this.revert(receipt, done))
     })
-    receipt.el.append(undo)
   }
 }

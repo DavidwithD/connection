@@ -504,15 +504,15 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 
 /* The right-click menu. It opens at the pointer. `.panel` already fixes it to the viewport,
    so the click's client coordinates are all the placement it needs. */
-#node-menu { padding: 4px; }
-#node-menu button {
+#map-menu { padding: 4px; }
+#map-menu button {
   display: block;
   width: 100%;
   text-align: left;
   white-space: nowrap;
   border-color: transparent;
 }
-#node-menu button:hover { color: var(--accent); border-color: var(--hairline); }
+#map-menu button:hover { color: var(--accent); border-color: var(--hairline); }
 
 #controls { top: 16px; right: 16px; display: flex; gap: 6px; padding: 8px; }
 button {
