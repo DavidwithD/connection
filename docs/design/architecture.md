@@ -136,6 +136,27 @@ a node with more graph behind it report that it is finished, and unlinking witho
 refuse otherwise. The store's reason changed — an edge is one record now, so there is no orphan
 half to strand — but the refusal is reader-visible and the panel's undo is built on it.
 
+## What measures them
+
+No part of `npm test` runs a line of `web/src/`. A person reading the code is all that holds
+the invariants above. The geometric ones are the exception: three scripts drive the real page
+in Chrome and report numbers.
+
+| Command | Drives |
+|---|---|
+| `npm run drive:map` | Seating, ghosts, the camera, the islands list |
+| `npm run drive:join` | The join panel's keyboard |
+| `npm run drive:part-edge` | The right-click that parts a pair |
+
+They are instruments rather than gates. Playwright is not a dependency, so a person runs them,
+and neither CI nor `npm test` ever will. They do the arithmetic a reader cannot: slot overlap,
+the nodes a pan seated, and a ghost drawn beside the node it stands in for. The screenshots
+left in `.shots/` are a by-product, since anyone can open the page and look.
+
+Each seeds its own graph first, because Playwright opens a profile with none in it. What that
+costs, and why the geometry they re-derive is allowed to be a second copy, is
+[ADR 0034](../decisions/0034-what-reading-cannot-check.md).
+
 ## When the store itself fails
 
 `Refused` and `Missing` cover the graph *declining*. They say nothing about the store being
@@ -191,6 +212,9 @@ want to know what it beat, or what nobody knew at the time.
 | [app.css](../../web/app.css) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md) |
 | [vite.config.ts](../../vite.config.ts) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0023](../decisions/0023-the-graph-moves-through-the-page.md) |
 | [docs-gate.py](../../scripts/docs-gate.py) | [checks.md](../checks.md) | [0014](../decisions/0014-binding-the-docs-to-the-code.md) |
+| [drive-map.mjs](../../scripts/drive-map.mjs) | this page, [the-centre.md](the-centre.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
+| [drive-join.mjs](../../scripts/drive-join.mjs) | this page, [finding-a-node.md](finding-a-node.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
+| [drive-part-edge.mjs](../../scripts/drive-part-edge.mjs) | this page, [writing-to-the-graph.md](writing-to-the-graph.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
 | [hooks/pre-commit](../../scripts/hooks/pre-commit) | [checks.md](../checks.md), the README's prerequisites | [0015](../decisions/0015-bash-as-the-script-shell.md), [0016](../decisions/0016-the-gates-run-in-ci.md) |
 | [ci.yml](../../.github/workflows/ci.yml) | [checks.md](../checks.md) | [0016](../decisions/0016-the-gates-run-in-ci.md) |
 | [using-the-demo.md](../using-the-demo.md) | [docs/README.md](../README.md) | [0026](../decisions/0026-a-fourth-kind-of-document.md) |
