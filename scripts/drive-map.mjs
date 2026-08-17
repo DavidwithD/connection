@@ -70,6 +70,20 @@ async function main() {
   })
 
   console.log(`→ ${WEB}`)
+
+  // The graph lives in this profile's IndexedDB, and Playwright opens a fresh profile every
+  // run — so there is nothing to drive until this writes one. Through the page's own buttons
+  // rather than the store, because that is the only seam a browser has. Seeding overwrites, so
+  // it asks in the page rather than in a native dialog: two clicks, not one.
+  await page.goto(`${WEB}/transfer.html`, { waitUntil: "domcontentloaded" })
+  await page.locator("#seed").click()
+  await page.locator("#ask-yes").click()
+  await page.waitForFunction(
+    () => /Seeded/.test(document.querySelector("#told")?.textContent ?? ""),
+    { timeout: 30000 },
+  )
+  console.log(`  seeded: ${(await page.locator("#told").textContent())?.trim() ?? ""}`)
+
   await page.goto(WEB, { waitUntil: "domcontentloaded" })
 
   // The map draws its first frame from two reads, so wait for the HUD to stop saying
@@ -93,7 +107,11 @@ async function main() {
         box.x2 >= view.x1 && box.x1 <= view.x2 && box.y2 >= view.y1 && box.y1 <= view.y2
       const standing = cy.nodes("[?ghost]").map((ghost) => {
         const id = ghost.id()
-        const target = cy.$id(id.slice(id.indexOf(":", 2) + 1))
+        // Split on the second NUL, as `ghostTarget` in map-view.ts does. Splitting on a colon
+        // finds nothing, and `slice(0)` then hands back the ghost's own id — so the twin test
+        // below was asking whether each ghost could see itself, and every visible one said yes.
+        const cut = id.indexOf("\0", 2)
+        const target = cut < 0 ? cy.collection() : cy.$id(id.slice(cut + 1))
         return {
           label: ghost.data("label"),
           at: `${String(Math.round(ghost.position("x")))},${String(Math.round(ghost.position("y")))}`,
