@@ -52,6 +52,7 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 |---|---|
 | drag | Pan |
 | wheel | Zoom toward the cursor |
+| hover a node | Show its name, until you point at something else |
 | click a node | Make it the centre, where it stands. Nothing moves |
 | click the centre | Put its name in the box at the top, and on the clipboard |
 | click a ghost | Fly to the node it stands in for |

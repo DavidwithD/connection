@@ -14,10 +14,10 @@ price [ADR 0032](../decisions/0032-the-centre-is-named.md) sets out.
 A click takes no camera. It names a node **where it stands**
 ([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)), so the centre sits as often at an
 edge as at the middle. The search box, an island row and a doorway do still move the camera to
-their node. The centre and its neighbours are the only named nodes, and a named node is drawn as
-its name; everything else is a disc. A neighbour off screen is stood in for by a ghost in the
-ring, and clicking one flies to the node it stands for. Nothing on the map moves except a ghost
-in flight.
+their node. The centre and its neighbours are the only nodes named at rest, and a named node is
+drawn as its name; everything else is a disc. A disc draws as its name while the pointer rests
+on it. A neighbour off screen is stood in for by a ghost in the ring, and clicking one flies to
+the node it stands for. Nothing on the map moves except a ghost in flight.
 
 ## What the renderer may do
 
@@ -33,6 +33,10 @@ frozen positions.
 Ghosts are the one exception, and it is deliberate. They are also the one thing here the
 camera decides.
 
+A hover is the one restyle. It writes one flag on the node the pointer entered, and clears the
+one it left. The cost is per pointer crossing rather than per frame, and `setTiers` already
+writes more than that per read.
+
 ## The names
 
 A named node draws *as* its name: a pill sized to the label, with no disc beside it. A disc
@@ -44,7 +48,13 @@ Only the centre and its ring are named, so only they are pills. Everything else 
 disc: a field node is seen rather than read, and nothing about it has to be legible for the
 map to work.
 
-Seven kinds of thing, and one of them is not a node.
+Until it is pointed at. A disc under the pointer draws as its name, in the ring's pill at the
+ring's size. It goes back to a disc when the pointer leaves, so reading a field node costs no
+click. The ink is the page's own rather than the ring's, because this node is not a neighbour of
+the centre. The pill is wider than the disc it replaces, and it takes the taps inside it. A
+neighbour whose seat falls under it has to be approached from outside.
+
+Eight kinds of thing, and one of them is not a node.
 
 | Name | What it is | In the code |
 |---|---|---|
@@ -53,6 +63,7 @@ Seven kinds of thing, and one of them is not a node.
 | arrival | A ring node that turns up *while* its parent is the centre | born at `tier 1` |
 | backdrop | Near the centre, connected to something else, dimmed | `tier 3` |
 | field | Everything else, at rest | `tier 2` |
+| pointed at | A field or backdrop node named for as long as the pointer rests on it | `hover` |
 | frontier | Has connections that were never read | `more` |
 | tether | A dashed stub standing in for an edge too long to draw | `stub` |
 | ghost | A hollow stand-in, in the ring, for a neighbour that is off screen | `ghost` |
@@ -199,11 +210,12 @@ never on screen at the same time as the node it stands for.
 
 Beside the code that reads them, once: separations, ring geometry and the long-edge threshold in
 [placement.ts](../../web/src/placement.ts), flight speed and its clamps, the margin a seat must
-clear the screen by, the pill's inset and type, and the paint bands for the ring and the doorways
-in [map-view.ts](../../web/src/map-view.ts), and the settle delays, the keyboard pan step and the
-accent hysteresis in [main.ts](../../web/src/main.ts). Each carries the reason for its value in a
-comment. Copying one here would make this the stale copy. The one stored key is in
-[settings.ts](../../web/src/settings.ts), beside the guard that reads it.
+clear the screen by, the pill's inset and type, and the paint bands for the ring, the doorways
+and the node under the pointer in [map-view.ts](../../web/src/map-view.ts), and the settle
+delays, the keyboard pan step and the accent hysteresis in [main.ts](../../web/src/main.ts).
+Each carries the reason for its value in a comment. Copying one here would make this the stale
+copy. The one stored key is in [settings.ts](../../web/src/settings.ts), beside the guard that
+reads it.
 
 ## Records behind it
 

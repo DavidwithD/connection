@@ -126,6 +126,17 @@ const RING_Z = { top: 24, bottom: 10 } as const
 const GHOST_Z = { top: 29, bottom: 26 } as const
 
 /**
+ * The z-index of the node under the pointer: one above the top of the ring's band, one below
+ * the bottom of a ghost's.
+ *
+ * Above the ring, because a name not readable over the names always drawn is not worth showing.
+ * Below a ghost and below the centre, because this pill is wider than the disc it replaces and
+ * the topmost element takes the tap. A ghost's tap is a flight and the centre's is the
+ * clipboard. `RING_Z` and `GHOST_Z` leave exactly this one value between them.
+ */
+const HOVER_Z = 25
+
+/**
  * Extra width added to a ghost's slot beyond the pill that goes in it.
  *
  * `nameWidth` measures on its own 2D context and Cytoscape measures on another, so the two
@@ -361,6 +372,42 @@ function buildStyle(p: Palette): StylesheetJson {
       },
     },
     { selector: "node.loading", style: { "border-width": 3, "border-style": "solid", "border-color": p.accent, "border-opacity": 1 } },
+    // The node under the pointer draws as its name, the way a ring node does. Scoped to the
+    // nodes that draw as discs: the centre and the ring are already named, and naming one twice
+    // says nothing. A ghost carries no `tier`, which this comparison cannot match, and a stub
+    // sets `events: "no"`, so neither reaches here.
+    //
+    // Last but for `.hidden`, so it beats the base rule's blank label and the backdrop's
+    // dimming. It sets no border property, so the frontier dash and `loading` both survive.
+    {
+      selector: "node[?hover][tier >= 2]",
+      style: {
+        shape: "round-rectangle",
+        width: "label",
+        height: "label",
+        padding: pad,
+        label: "data(label)",
+        "background-color": p.surface,
+        // Opaque, unlike a ring pill's 0.92. Two ring pills overlap and the loser should stay
+        // partly visible. There is only ever one of these, and legibility is its whole job.
+        "background-opacity": 1,
+        // The page's own ink, not `p.hop[0]`. The ring's ink says "a neighbour of the centre",
+        // and this node is not one. It is also the pair validated against the surface.
+        color: p.textPrimary,
+        "font-size": RING_FONT_SIZE,
+        "font-weight": 500,
+        "outline-width": PILL_HALO,
+        "outline-color": p.surface,
+        // The backdrop's 0.22 multiplies the label as well as the fill.
+        opacity: 1,
+        // The fill would otherwise cross-fade from the disc's hop colour while the box snaps.
+        // That shows a tinted pill for the length of the base rule's transition. This covers
+        // the way in only: leaving, the base rule governs again, and its fade runs on a disc
+        // rather than on a name.
+        "transition-property": "none",
+        "z-index": HOVER_Z,
+      },
+    },
     // Hidden rather than removed. A stub the centre replaced with a ghost comes back when
     // the centre moves on, and rebuilding it would mean recounting `stubbed`.
     { selector: ".hidden", style: { display: "none" } },
@@ -373,6 +420,8 @@ export class MapView {
   private stubbed = 0
   /** True while the camera is flying. Nothing may take the accent until it lands. */
   private flying = false
+  /** The node whose name the pointer is holding open, or null. */
+  private hovered: string | null = null
   /** The ghosts the current centre created, and the node each one stands in for. */
   private ghosts: Ghost[] = []
   /** Ghost positions for the current centre. Built on the first pass, then only extended. */
@@ -923,6 +972,14 @@ export class MapView {
       if (previous) this.setTiers(previous, false)
       this.setTiers(id, true)
     })
+
+    // A hovered node promoted to the centre or its ring has left the hover rule's scope. The
+    // flag draws nothing at those two tiers, so dropping it here costs no mark. It stops the
+    // node drawing as a hovered pill when it demotes again with the pointer elsewhere.
+    // Cytoscape will not drop it: the pointer crossed no element, so the element it last
+    // reported was never rewritten. Reading the tier back covers both tiers without repeating
+    // `setTiers`'s neighbour list.
+    if (this.hovered && Number(this.cy.$id(this.hovered).data("tier")) < 2) this.hover(null)
     return true
   }
 
@@ -939,6 +996,28 @@ export class MapView {
     const node = this.cy.$id(id)
     if (active) node.addClass("loading")
     else node.removeClass("loading")
+  }
+
+  /**
+   * Name the node under the pointer, or clear the one that is named.
+   *
+   * One at a time, and cleared here rather than by the caller. Cytoscape emits `mouseout` on
+   * the element being left before `mouseover` on the one being entered, so this normally finds
+   * nothing to clear.
+   *
+   * A node `drop` removes while hovered needs no guard there. The flag went with the element,
+   * and `$id` of an id that is gone writes to no elements.
+   *
+   * Nothing else may clear this. Cytoscape writes the element it last reported only on a
+   * pointer move that changes which one that is. A flag cleared from anywhere else would not be
+   * set again until the pointer left the node and came back. A node under a resting pointer
+   * would then show nothing.
+   */
+  hover(id: string | null): void {
+    if (id === this.hovered) return
+    if (this.hovered) this.cy.$id(this.hovered).data("hover", false)
+    this.hovered = id
+    if (id) this.cy.$id(id).data("hover", true)
   }
 
   /**

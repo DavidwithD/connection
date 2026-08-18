@@ -288,6 +288,18 @@ view.cy.on("viewport", () => {
   nudged = false
 })
 
+// A disc under the pointer draws as its name. The flag goes on whatever node the pointer
+// enters, and the style rule in map-view.ts is what scopes the mark to the discs.
+//
+// `mouseover` and `mouseout`, not `tapdragover` and `tapdragout`. The touch handlers emit only
+// the second pair, so a finger dragging across the map would light every disc it crossed.
+view.cy.on("mouseover", "node", (event) => {
+  view.hover(String(event.target.id()))
+})
+view.cy.on("mouseout", "node", () => {
+  view.hover(null)
+})
+
 view.cy.on("tap", "node", (event) => {
   const id = String(event.target.id())
 
