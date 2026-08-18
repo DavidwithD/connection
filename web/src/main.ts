@@ -288,14 +288,12 @@ view.cy.on("tap", "node", (event) => {
 
   if (!world.has(id)) return
 
-  // A click on the centre belongs to the panel. No click moves the camera now, so this is not
-  // the centre having nowhere to glide: the page already shows this node's name, and naming it
-  // again would say nothing. `take` in web/src/join.ts handles it. The camera does move on that
-  // path, on the pick that sets the anchor.
+  // A click on the centre belongs to the panel. The page already shows this node's name, so
+  // naming it again would say nothing. `take` in web/src/join.ts puts it in the box. Nothing
+  // is written to the graph, and the camera does not move.
   if (id === view.accent) {
     const node = world.get(id)
-    // ⌘ only, as on a list row. See web/src/combobox.ts.
-    if (node) panel.take(node, (event.originalEvent as MouseEvent | undefined)?.metaKey === true)
+    if (node) panel.take(node)
     return
   }
 

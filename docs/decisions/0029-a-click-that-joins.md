@@ -1,6 +1,6 @@
 # 0029 — A click that joins
 
-**Status:** 🔵 Proposed
+**Status:** ♻️ Superseded by [0036](0036-a-click-that-writes-nothing.md)
 **Date:** 2026-08-14
 **Deciders:** David HL
 
