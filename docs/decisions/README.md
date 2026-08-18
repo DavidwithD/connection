@@ -32,26 +32,34 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0026](0026-a-fourth-kind-of-document.md) | A fourth kind of document | 🔵 Proposed |
 | [0027](0027-a-ring-holds-what-it-holds.md) | A ring holds what it holds | 🔵 Proposed |
 | [0028](0028-where-a-chained-name-lands.md) | Where a chained name lands | 🔵 Proposed |
-| [0029](0029-a-click-that-joins.md) | A click that joins | 🔵 Proposed |
+| [0029](0029-a-click-that-joins.md) | A click that joins | ♻️ Superseded |
 | [0030](0030-the-graph-moves-into-the-browser.md) | The graph moves into the browser | 🔵 Proposed |
 | [0031](0031-parting-an-edge-from-the-map.md) | Parting an edge from the map | 🔵 Proposed |
 | [0032](0032-the-centre-is-named.md) | The centre is named | 🔵 Proposed |
 | [0033](0033-a-click-takes-no-camera.md) | A click takes no camera | 🔵 Proposed |
 | [0034](0034-what-reading-cannot-check.md) | What reading cannot check | 🔵 Proposed |
 | [0035](0035-a-rule-for-new-sentences.md) | A rule for new sentences | 🔵 Proposed |
+| [0036](0036-a-click-that-writes-nothing.md) | A click that writes nothing | 🔵 Proposed |
+| [0037](0037-the-centres-name-on-the-clipboard.md) | The centre's name on the clipboard | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
 ## How to add one
 
-1. Take the next unused number (zero-padded to 4 digits). Numbers are spent once and
+1. **Check that there is one to record.** A fork, an option that lost, and somebody who
+   pays for the choice. Name that somebody before anything else; if the only one you can
+   name is a reader who might turn up, stop — you have a note, and a note goes in the
+   document it explains. The tests no script runs are at the foot of [GATE.md](GATE.md),
+   and they are worth answering before a number is spent rather than after a shape is
+   filled in.
+2. Take the next unused number (zero-padded to 4 digits). Numbers are spent once and
    never reused, so records start at 0002 — 0001 was withdrawn before it was decided.
-2. Copy [template.md](template.md) to `NNNN-<kebab-case-title>.md` — that file is the
+3. Copy [template.md](template.md) to `NNNN-<kebab-case-title>.md` — that file is the
    one copy of the shape, so it does not get restated here.
-3. Add a row to the table above **in the same change** — the index is the map.
-4. Link the record from the code or spec that carries the constraint. A record nothing
+4. Add a row to the table above **in the same change** — the index is the map.
+5. Link the record from the code or spec that carries the constraint. A record nothing
    points at is unreachable at the moment it was needed.
-5. Never renumber or delete a *decided* ADR. A reversal gets a *new* ADR, and the old
+6. Never renumber or delete a *decided* ADR. A reversal gets a *new* ADR, and the old
    one flips to ♻️ Superseded with a link forward. A record whose Decision was never
    made is a note, not a decision, and may be withdrawn — its number stays spent.
 

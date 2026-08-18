@@ -128,6 +128,21 @@ function setStatus(text: string, tone: "idle" | "busy" | "error"): void {
   hudToggle.dataset["tone"] = tone
 }
 
+/**
+ * Put a name on the clipboard. The click that names the centre in the box copies it too.
+ *
+ * Silent when it works, because the box is already showing what was copied. A denied
+ * permission stops it. So does an insecure origin: `navigator.clipboard` is undefined there,
+ * and the property lookup throws before any write. The status line reports both.
+ */
+async function copyLabel(label: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(label)
+  } catch {
+    setStatus(`⚠ could not copy ${label}`, "error")
+  }
+}
+
 const explorer = new Explorer(world, view, {
   onChange: () => {
     render()
@@ -288,14 +303,16 @@ view.cy.on("tap", "node", (event) => {
 
   if (!world.has(id)) return
 
-  // A click on the centre belongs to the panel. No click moves the camera now, so this is not
-  // the centre having nowhere to glide: the page already shows this node's name, and naming it
-  // again would say nothing. `take` in web/src/join.ts handles it. The camera does move on that
-  // path, on the pick that sets the anchor.
+  // A click on the centre belongs to the panel. The page already shows this node's name, so
+  // naming it again would say nothing. `take` in web/src/join.ts puts it in the box, and the
+  // copy below puts it on the clipboard. Neither writes to the graph, and neither moves the
+  // camera.
   if (id === view.accent) {
     const node = world.get(id)
-    // ⌘ only, as on a list row. See web/src/combobox.ts.
-    if (node) panel.take(node, (event.originalEvent as MouseEvent | undefined)?.metaKey === true)
+    if (node) {
+      panel.take(node)
+      void copyLabel(node.label)
+    }
     return
   }
 

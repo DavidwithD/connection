@@ -43,9 +43,8 @@ The click path had no settle of its own. The glide's `viewport` events scheduled
 raises doorways, and a node already read asks the store for nothing. Naming a node now
 schedules that pass itself.
 
-Clicking the same node twice still moves the camera. The second click arms a join
-([0029](0029-a-click-that-joins.md)), and arming follows its anchor
-([0013](0013-one-box-that-grows-into-an-edge.md)).
+Clicking the same node twice moves nothing. [0036](0036-a-click-that-writes-nothing.md) took
+the arming write off that click, and the camera with it.
 
 ## Assumptions and unknowns
 - **Assumed a reader who clicks a node wants to read it, not travel to it.** The two were never

@@ -71,6 +71,8 @@ export interface PanelHooks {
    * Called on becoming the anchor only, never on completing a pair. The anchor is what the
    * reader is working from and should be in view. Following every name in a fast run would
    * drag the camera after each one.
+   *
+   * `take` is the one exception. It sets the anchor without calling this, and says why.
    */
   onArm: (node: NodeMeta) => void
   onStatus: (text: string, tone: "idle" | "busy" | "error") => void
@@ -141,19 +143,23 @@ export class JoinPanel {
    * Take a name from outside the panel. The map calls this when the centre node is clicked.
    * See web/src/main.ts.
    *
-   * The name goes into whichever input is not the anchor, which is where typing it would put
-   * it. The two inputs hold one anchor between them, so a name reaching the free input makes
-   * a pair, and a pair is an edge. The first click sets the anchor, the second writes. After
-   * that this is the panel's normal behaviour: a receipt that can reverse it, and an anchor
-   * left for the next click. `⌘` moves the anchor instead, as it does on a list row.
+   * The name lands in the near input as the anchor, over whatever that input held. The far
+   * input is emptied, so a click leaves one name in the panel however it found it. Nothing
+   * is written.
    *
-   * The caret ends up in whichever input is free afterwards, so the next name can be typed
-   * or clicked without moving it.
+   * The camera does not move. The reader clicked a node already on screen. A name picked in
+   * the box still travels, because that name may be anywhere in the graph.
+   *
+   * The caret goes to the far input, since the next step is naming what this joins to.
    */
-  take(node: NodeMeta, chain: boolean): void {
-    this.pick(this.free(), { kind: "node", node }, chain)
-    // Ask again, because the pick moved it. The input that took the name is the anchor now.
-    this.free().ui.input.focus()
+  take(node: NodeMeta): void {
+    this.far.box.clear()
+    this.far.anchor = null
+    this.near.anchor = { label: node.label, node }
+    // Set here rather than in `paint`, which does not touch an input being typed in.
+    this.near.ui.input.value = node.label
+    this.paint()
+    this.far.ui.input.focus()
   }
 
   /**
@@ -177,15 +183,6 @@ export class JoinPanel {
 
   private other(side: Side): Side {
     return side === this.near ? this.far : this.near
-  }
-
-  /**
-   * The input a name from outside goes into: the one not holding the anchor.
-   *
-   * The near input when neither holds one. A first name always goes there.
-   */
-  private free(): Side {
-    return this.near.anchor ? this.far : this.near
   }
 
   /** A name was picked in one input. Make it the anchor, or join it to the other input. */
