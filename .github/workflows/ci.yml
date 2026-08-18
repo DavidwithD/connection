@@ -55,6 +55,11 @@ jobs:
       # commit need not pay.
       - run: npm run docs:selftest
 
+      # The linter reads a payload shape Claude Code owns rather than this repo. A rename
+      # there costs nothing at import time: the hook returns 0, prints nothing, and the
+      # rule stops being enforced with no signal. This is what notices.
+      - run: npm run prose:selftest
+
       # Bundling fails in ways typecheck cannot see, and it is the step most likely to be
       # the thing that objects to the older runtime. With `npm ci` above it, this covers the
       # install and every module going through Vite, on both runtimes.
