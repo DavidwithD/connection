@@ -155,7 +155,12 @@ or bullet breaking the section's established pattern — inline formula where th
 uses code blocks, outputs mixed into a list of inputs, an item wedged between two
 paragraphs that belong together · `W031` a claim about a schema, column, API shape, config
 value, or enum meaning asserted with no primary source — verify it, or mark it unverified.
-A guess in the body reads as a fact forever.
+A guess in the body reads as a fact forever · `W033` a sentence written for its sound: a
+metaphor, an abstract noun standing in for the file or function that is the real subject, an
+inverted or aphoristic clause, a run past 25 words. The rule and the one thing it exempts are
+in `docs/README.md`, and it reaches `docs/**` with records included, comments under
+`web/src/`, and §4's message. Read each added sentence once and ask what its subject is — if
+finding that takes a second pass, rewrite it.
 
 ### Notes
 

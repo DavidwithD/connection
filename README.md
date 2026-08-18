@@ -54,6 +54,7 @@ around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 | `npm run adr` | Run the decision gate over `docs/decisions/` |
 | `npm run docs` | Run the docs gate: the living documents against the code |
 | `npm run docs:selftest` | Prove each bound check still compares something — mutates a throwaway copy |
+| `npm run prose` | Lint files against the writing rule — `npm run prose -- docs/README.md` |
 | `npm run drive:map` | Drive the map in a real browser and photograph it into `.shots/` |
 | `npm run drive:join` | Drive the join panel's keyboard and report what each Enter does |
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
@@ -110,6 +111,7 @@ scripts/
   adr-gate.py          the decision gate — shape, budgets, wiring
   docs-gate.py         the docs gate — the living docs against the code
   docs-gate-selftest.py  proves each bound check still compares something
+  prose-lint.py        the writing rule, on newly written text, as it is written
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it

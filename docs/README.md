@@ -80,6 +80,26 @@ Which makes those two tables load-bearing. A capability with no row, or a file w
 nothing names, is a document nothing reaches. A record is reached the other way — through
 the design page it sits under.
 
+## How it is written
+
+Plain sentences. One point per sentence, a concrete subject — a file, a function, a person, a
+capability — and a full stop before 25 words. A metaphor, an inverted clause or a chain of
+relative clauses costs the reader above a second pass to work out what the subject was.
+
+Every page here is in scope, records included. Record titles are not. A title is also the
+filename, so rewording a landed record breaks the links into it, and a new title matches its
+neighbours. Prose already committed is left where it is. A record is append-only, and
+rewriting a living page for its voice alone would bury the next real change in a diff nobody
+can review.
+
+[prose-lint.py](../scripts/prose-lint.py) counts the words in a newly written sentence and
+matches a few patterns, on every write. It cannot see a metaphor: "A doorway loses its click"
+is five words of clean grammar. So this section is kept by whoever is writing, and the linter
+settles only the part arithmetic can. Neither gate in *What is enforced* reads a sentence at
+all ([checks.md](checks.md), [ADR 0014](decisions/0014-binding-the-docs-to-the-code.md)).
+Why the linter advises rather than blocks, and why prose already committed stays as it is,
+is [ADR 0035](decisions/0035-a-rule-for-new-sentences.md).
+
 ## What is enforced
 
 One gate per lifecycle, following the split at the top of this page.
