@@ -1,10 +1,12 @@
 /**
- * The map page: wiring, accent tracking and the HUD.
+ * The map page: wiring, the centre and the HUD.
  *
- * The accent is the node nearest the middle of the screen. It is recomputed at most once per
- * frame, with hysteresis so it does not flicker between two close nodes. How long the camera
- * must be still before it counts as stopped depends on what moved it. Naming a node skips
- * the wait. A drag waits longest.
+ * The centre is the node somebody named: a click, a search hit, a doorway, a crossing. Under
+ * **walk by pan** the camera names one too, whatever it stops nearest. A click never takes the
+ * camera. A clicked node becomes the centre where it stands, ring and all, so the centre can
+ * end up off screen, and Recentre is the way back. The search box, the islands list and a
+ * doorway do still travel to their node. How long the camera must be still before it counts as
+ * stopped depends on what moved it. A drag waits longest.
  */
 import {
   Missing,
@@ -23,29 +25,38 @@ import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { distance, type Point } from "./placement.js"
+import { walkByPan, setWalkByPan } from "./settings.js"
 import { World, type WorldNode } from "./world.js"
 import { Writes, type Receipt } from "./writes.js"
 
 /**
- * How long the camera must be still before the centre node is read.
+ * Camera stillness before the doorways are revised.
  *
- * The wait is not for the read, which is usually fast. It is for drift. A drag or a wheel
- * sweeps the middle of the screen over every node between the start and the end. Reading
- * each one would place its neighbours on the map for good, because World never reassigns a
- * position. The wait keeps the map to what the reader stopped on.
+ * A pan no longer changes the centre, so nothing here is about what a gesture drifts across
+ * any more. What is left answers to the viewport: a doorway stands while its neighbour is off
+ * screen, and a doorway is an element, so raising and lowering them through the frames of a
+ * fling would strobe. The wait is for the picture the camera finished on, not for any of the
+ * ones it passed through.
  */
 const SETTLE_MS = 190
 
 /**
  * The same wait, for an input that stops at once.
  *
- * Most of the 190 covers inertia: a drag's fling, a wheel's momentum. An arrow key has
- * none. The camera moves 120px and stops. All that is left to wait for is another key, and
- * a held arrow repeats faster than this, so a run across six nodes still ends in one read.
+ * Most of the 190 is inertia — a drag's fling, a wheel's momentum. An arrow has none: the
+ * camera moves its 120px and is still. What is left to wait for is only whether another key
+ * is coming, and a held arrow repeats faster than this on a stock keyboard, so a run of them
+ * still costs the one revision at the end of it.
  */
 const NUDGE_SETTLE_MS = 110
 
-/** A node must be this much closer to the middle than the accent before it takes over. */
+/**
+ * How much closer to the middle a rival must be before it takes the centre from the incumbent.
+ *
+ * Only **walk by pan** reads this. It is a ratio rather than a length, because it compares two
+ * distances to the same point. It prevents the flicker a bare nearest-wins test gives when the
+ * middle passes between two nodes.
+ */
 const ACCENT_HYSTERESIS = 0.78
 
 /** Keyboard pan step, in screen pixels. */
@@ -66,6 +77,7 @@ const statPending = el<HTMLSpanElement>("stat-pending")
 const statTotal = el<HTMLSpanElement>("stat-total")
 const status = el<HTMLParagraphElement>("status")
 const hudToggle = el<HTMLButtonElement>("hud-toggle")
+const walkToggle = el<HTMLInputElement>("walk-by-pan")
 /** Shown only when the store holds no graph at all. Raised and lowered by `showTotals`. */
 const empty = el<HTMLDivElement>("empty")
 
@@ -144,31 +156,93 @@ function render(): void {
   else setStatus("drag to pan · wheel to zoom · click to centre", "idle")
 }
 
-/** Whatever is nearest the middle becomes the accent, with a bias toward the incumbent. */
-const trackAccent = perFrame(() => {
+/**
+ * Name a node the centre, and take whatever its arrival makes possible.
+ *
+ * Every way in comes through here: a click, a search, an island, the claim below for a map
+ * that has just lost its centre, and the tracker below that when the reader has handed the
+ * centre back to the camera. `flyTo` is the one exception, promoting its own destination on
+ * landing so that the ghost has something to dissolve into.
+ *
+ * The early return is load-bearing, not tidiness. `setAccent` reports whether the mark
+ * actually moved, and the tracker calls this on every frame of a pan — so a frame that finds
+ * the same node nearest costs one comparison and touches neither the DOM nor the store.
+ */
+function becomeCentre(id: string): void {
+  if (!view.setAccent(id)) return
+  // Room is a property of the map at one moment. Arriving is the moment to ask again
+  // whether the neighbours this node never had space for can be fitted now.
+  const late = world.seatPending(id)
+  if (late.nodes.length || late.edges.length) view.add(late.nodes, late.edges)
+  render()
+  // `setAccent` has just taken down the doorways the last centre raised, and nothing else here
+  // puts them back. A click moves no camera, so there is no `viewport` to schedule this on, and
+  // a node whose ring was already read asks `Explorer` for nothing either — the centre would
+  // stand with no way out of it until the reader happened to pan. The early return above is
+  // what keeps this off a naming that changed nothing.
+  settle()
+}
+
+/**
+ * A centre for a map that has just lost one, or that has just been told to find its own.
+ *
+ * Called on a loss — a centre deleted, a join undone that took its node with it — and when
+ * **walk by pan** is switched on, which is the reader asking the camera to name one now. A
+ * camera that has merely moved leaves the centre exactly where it is.
+ *
+ * Nearest the middle, bounded by `reach` so a map with nothing on screen is left without a
+ * centre rather than given one nobody can see. No hysteresis, in either case: on a loss there
+ * is no incumbent left to be biased toward, and on a switch the bias would sometimes leave the
+ * mark where it was and read as a control that did nothing.
+ *
+ * Never during a flight. `setAccent` clears the ghosts, so a claim landing mid-journey would
+ * take down the one in the air — and the flight names its own destination anyway.
+ */
+function claimCentre(): void {
+  if (view.inFlight) return
+  const candidate = world.nearestTo(view.centre(), view.reach())
+  if (candidate) becomeCentre(candidate.id)
+}
+
+/**
+ * The centre, handed back to the camera: whatever is nearest the middle takes it.
+ *
+ * Off by default, and the whole of 0032 is why. On, a seat is still permanent, so every node
+ * the middle crosses has its ring read and placed for good — the drift is the cost the reader
+ * is choosing, not a bug to be fixed here.
+ *
+ * Hysteresis because this runs against an incumbent: a bare nearest-wins test flickers between
+ * two nodes as the midpoint passes between them, which `claimCentre` never has to deal with.
+ */
+const trackCentre = perFrame(() => {
   // A flight pans the camera over every node between the start and the target. Letting the
-  // accent follow would give it to each in turn, and would remove the ghost being flown to.
+  // centre follow would give it to each in turn, and would take down the ghost being flown to.
   if (view.inFlight) return
 
-  const centre = view.centre()
-  const candidate = world.nearestTo(centre, view.reach())
+  const middle = view.centre()
+  const candidate = world.nearestTo(middle, view.reach())
   if (!candidate) return
 
   const current = view.accent ? world.get(view.accent) : null
   if (current && current.id !== candidate.id) {
-    const rival = distance(candidate, centre)
-    const incumbent = distance(current, centre)
+    const rival = distance(candidate, middle)
+    const incumbent = distance(current, middle)
     if (rival > incumbent * ACCENT_HYSTERESIS) return
   }
-  // Only touch the DOM when the accent moved. This runs on every frame of a pan.
-  if (view.setAccent(candidate.id)) {
-    // Free space changes as the map grows. Arriving at a node is the moment to check whether
-    // the neighbours it had no room for can be placed now.
-    const late = world.seatPending(candidate.id)
-    if (late.nodes.length || late.edges.length) view.add(late.nodes, late.edges)
-    render()
-  }
+  becomeCentre(candidate.id)
 })
+
+/**
+ * The tracker and the switch it answers to.
+ *
+ * Tested here rather than inside `trackCentre`, because `perFrame` schedules a frame before the
+ * body can decline it. Guarding within would have a map with the setting off pay a callback on
+ * every frame of every pan for a feature it is not using. A frame already queued when the
+ * reader unticks still lands, which matches having flipped the box one frame later.
+ */
+const walk = (): void => {
+  if (walkByPan()) trackCentre()
+}
 
 /**
  * Everything that waits for the camera to stop.
@@ -194,7 +268,7 @@ view.cy.on("viewport", () => {
   // The menu opened over a node at a screen position. Moving the map under it would leave it
   // pointing at whatever drifted under the pointer instead.
   closeMenu()
-  trackAccent()
+  walk()
   settle(nudged ? NUDGE_SETTLE_MS : SETTLE_MS)
   nudged = false
 })
@@ -214,10 +288,10 @@ view.cy.on("tap", "node", (event) => {
 
   if (!world.has(id)) return
 
-  // Clicking the centre cannot move the camera, because the camera is already there. So a
-  // click on the centre means the other thing a node can be: a name for the join panel.
-  // `take` in web/src/join.ts handles it. The camera move comes back through that path, on
-  // the pick that sets the anchor.
+  // A click on the centre belongs to the panel. No click moves the camera now, so this is not
+  // the centre having nowhere to glide: the page already shows this node's name, and naming it
+  // again would say nothing. `take` in web/src/join.ts handles it. The camera does move on that
+  // path, on the pick that sets the anchor.
   if (id === view.accent) {
     const node = world.get(id)
     // ⌘ only, as on a list row. See web/src/combobox.ts.
@@ -225,11 +299,12 @@ view.cy.on("tap", "node", (event) => {
     return
   }
 
-  // Clicking a node is not drifting past it: the destination is known. So read it now
-  // rather than on the settle at the end of the flight, as the ghost branch above does. The
-  // camera then lands on a finished picture instead of completing one after it stops.
+  // Named where it stands. This handler was the last place the page moved the camera on its
+  // own: a click drew the node to the middle whether or not anyone wanted to be moved. The
+  // node's ring now draws around it wherever it sits, off the edge of the screen included.
+  // **Recentre** is how the middle is asked for.
   explorer.prefetch(id)
-  view.focus(id)
+  becomeCentre(id)
 })
 
 /**
@@ -356,9 +431,10 @@ function removeNode(id: string): void {
       // same rule the store's delete enforces.
       const gone = world.forget(id) ? [id] : []
       view.drop(gone, dropped)
-      // `drop` clears an accent that has gone and leaves the caller to pick a new one.
-      // Nothing else does until the camera moves, and the HUD would show a missing node.
-      trackAccent()
+      // `drop` clears an accent that has gone and leaves the caller to re-pick. This is the
+      // only thing that will: the camera no longer hands the mark around, so without the
+      // claim the map would sit with no centre and the HUD would name a gap.
+      claimCentre()
       // An input in the panel may be holding this name. This write does not go through the
       // panel, so tell it. A name that no longer exists must not stay in an input.
       panel.forget(node)
@@ -464,13 +540,16 @@ async function rejoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void>
 function goTo(node: NodeMeta, at?: Point): void {
   if (!world.has(node.id)) {
     view.add([world.place(node, at ?? world.landing(view.centre(), node.id))], [])
-    view.setAccent(node.id)
   }
-  // The rest is the click path: read the destination now rather than on the settle at the
-  // far end, then move the camera.
+  // From here on this is the named-destination path, and the glide separates it from a click.
+  // Somebody who names a node is asking to be taken there; somebody who clicks one can already
+  // see it. Read it now rather than on the settle at the far end. Named whether or not it had to
+  // be placed — a hit already on the map is still being arrived at, and the glide alone would
+  // leave the centre behind on the node the reader came from. `becomeCentre` is what repaints,
+  // so nothing here needs to: a destination that is already the centre has nothing to repaint.
   explorer.prefetch(node.id)
+  becomeCentre(node.id)
   view.focus(node.id)
-  render()
 }
 
 /** Hover text for a search result. Says whether the node is already on the map. */
@@ -534,9 +613,9 @@ const panel = new JoinPanel(
       world.lowerDegree(b.id)
       const gone = removed && world.forget(removed.id) ? [removed.id] : []
       view.drop(gone, [[a.id, b.id]])
-      // The removed node may have been the accent. Nothing else picks a new one until the
-      // camera moves, and until then the HUD would show a node that is gone.
-      if (gone.length) trackAccent()
+      // A removed node may have been the centre, and nothing else will ask. Without this the
+      // HUD would go on naming something that is gone.
+      if (gone.length) claimCentre()
       void refreshTotals()
       render()
     },
@@ -549,8 +628,10 @@ window.addEventListener("keydown", (event) => {
   // the focus is.
   if (event.key === "Escape") closeMenu()
 
-  // The arrow keys below pan the camera. Inside an input they belong to the text.
-  if (event.target instanceof HTMLInputElement) return
+  // The arrow keys below pan the camera. Inside an input they belong to the text — but a
+  // checkbox holds no text, and the one in the HUD keeps the focus after it is ticked, so
+  // catching every input here would cost the keyboard the map for the rest of the session.
+  if (event.target instanceof HTMLInputElement && event.target.type !== "checkbox") return
 
   // `/` moves focus to the name input. It is the only part of the page a hand on the
   // keyboard cannot otherwise reach. After the guard above, so a slash typed into an input
@@ -599,15 +680,43 @@ hudToggle.addEventListener("click", () => {
   hudToggle.setAttribute("aria-expanded", String(!open))
 })
 
+/**
+ * The switch that hands the centre to the camera, and back.
+ *
+ * The box's own checkedness is the state, as `aria-expanded` is above — CSS reads it for the
+ * two captions that stop being true, and storage only mirrors it. The markup ships unticked,
+ * so this is also what applies a setting left on in an earlier session.
+ */
+walkToggle.checked = walkByPan()
+
+walkToggle.addEventListener("change", () => {
+  setWalkByPan(walkToggle.checked)
+
+  // Nothing to undo going the other way, and that is the honest answer rather than an
+  // oversight: a seat is permanent, so what the panning placed stays placed, and the centre
+  // keeps whatever the last frame gave it. Off means the camera stops naming one, not that an
+  // earlier centre comes back — nothing recorded one.
+  if (!walkToggle.checked) return
+
+  // Applied now rather than on the next pan. The box says the middle names the centre, and a
+  // HUD still naming the node that was clicked would be the control appearing to do nothing.
+  // `claimCentre` rather than the tracker: one application has no flicker to bias against.
+  claimCentre()
+})
+
 function renderedCentre(): { x: number; y: number } {
   return { x: stage.clientWidth / 2, y: stage.clientHeight / 2 }
 }
 
 onThemeChange((palette) => view.restyle(palette))
 
+// A window that changed shape is not a loss: the centre is wherever it was, whether or not the
+// new viewport still shows it. The doorways answer to the shape, and the settle revises those.
+// The middle of the screen moves in world coordinates too, so the walk runs here as well for a
+// reader who has handed the centre to the camera.
 window.addEventListener("resize", () => {
   view.resize()
-  trackAccent()
+  walk()
   settle()
 })
 

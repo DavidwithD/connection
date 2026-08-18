@@ -32,7 +32,7 @@ arrives as a file, leaves as one, and is seeded, checked and repaired.
 
 In this browser profile, and nowhere else. That is worth reading twice:
 
-- Clearing site data for the origin destroys the graph.
+- Clearing site data for the origin destroys the graph, and the map's settings with it.
 - A different browser, a different profile, or a private window is a different graph.
 - The browser may evict it under storage pressure. The page asks it not to at boot, which is
   a request rather than a promise.
@@ -46,30 +46,44 @@ neither is told when the other writes, so the second one drifts until you reload
 
 ## The map — `/`
 
-Pan around an undirected cyclic graph like a map. Whatever you stop on is what loads.
+Pan around an undirected cyclic graph like a map. Whatever you click is what loads.
 
 | Gesture | Does |
 |---|---|
 | drag | Pan |
 | wheel | Zoom toward the cursor |
-| click a node | Glide it to the middle |
+| click a node | Make it the centre, where it stands. Nothing moves |
 | click the centre | Put its name in the box at the top — the next name joins the pair |
 | click a ghost | Fly to the node it stands in for |
 | right-click the centre | Take it off the map, with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
+| **Recentre** | Go back to the centre, wherever the panning left it |
+| **walk by pan** | Tick it, and panning hands the centre to whatever it passes |
 | `/` | Put the caret in the box at the top, whatever the focus was on |
 
-The node nearest the middle of the screen is the **centre**, which is what gliding a node to
-the middle is for. It is the only node the map draws around, so what you see is the route you
-walked — and nothing already on screen ever moves on its own. Panning does no work either: the
-next read waits for the camera to go still. What the map draws around the centre, and why none
-of it moves, is [the-centre.md](design/the-centre.md).
+Whatever you click becomes the **centre**, where it stands. The map does not jump, and its
+neighbours draw around the node wherever it sits. A drag only changes what is on screen, and the
+centre stays the centre however far you go. It is the only node the map draws around, so what
+you see is the route you walked and nothing besides: drift adds nothing, and nothing already on
+screen ever moves on its own.
 
-Which is why **islands** exists. A graph in pieces has components no walk from here can reach,
-however long you look — and a node you make is one until you join it to something. The list is
-every component, biggest first.
+So the centre can end up near an edge, or off it. Click near a border and some of its ring lands
+outside the frame. **Recentre** brings the centre to the middle, and clicking anything you can
+see is the way on. A search hit, an island row and a doorway all take you to their node instead.
+What the map draws around the centre, and why none of it moves, is
+[the-centre.md](design/the-centre.md).
+
+**walk by pan** is the box under the numbers, and it hands the centre back to the camera. Tick
+it and the node nearest the middle takes the centre as you drag. A sweep across a region then
+fills it in without your choosing a route. Every node the middle crosses is placed for good.
+Unticking the box does not take them off again — the map keeps what the panning drew. The box is
+remembered for this browser, so a session that starts ticked stays ticked.
+
+A walk from the centre reaches only what the graph joins to it, which is why **islands** exists.
+A graph in pieces has components no walk from here can reach, however long you look — and a node
+you make is one until you join it to something. The list is every component, biggest first.
 
 Rows do not leave when you use them, so crossing back is a click rather than a name typed from
 memory. The marked row is the island you are standing in. A dim one is not on the map yet:
@@ -122,9 +136,9 @@ alone, since Control-click is the other mouse button on a Mac.
 A path is then one name per node. `Kavara` `↵` arms the near end, `Tab` crosses to the far one,
 and the rest — `Corwen` `⌘↵`, `Thessa` `⌘↵` — runs without the caret moving again.
 
-The map is the other way to fill an end. Click the node the middle is holding and its name goes
-to whichever end is free, so the first click arms an anchor and the second joins the pair —
-leaving the same receipt and the same `undo` as a name typed. `⌘` on the click moves the anchor
+The map is the other way to fill an end. Click the centre and its name goes to whichever end is
+free. The first click arms an anchor and the second joins the pair, leaving the same receipt and
+the same `undo` as a name typed. `⌘` on the click moves the anchor
 exactly as it does on a pick, which is how a path is drawn by clicking along it as you walk.
 The caret follows into the end left free, which is what makes the next name typeable and what
 stops the arrows panning until `Esc` hands the map back

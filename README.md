@@ -87,11 +87,12 @@ web/src/
   map-view.ts   Cytoscape render; additive only, no layout engine
   explore.ts    what the centre reads once the camera settles
   palette.ts    validated colour tokens, light and dark
+  settings.ts   what the reader has asked the page to do, kept in the browser
   combobox.ts   a text box that hands back nodes, not text
   writes.ts     the line every write stands in, and the receipts it leaves
   join.ts       the panel at the top: two ends, and the writes
   islands.ts    the panel down the left: every component, as somewhere to go
-  main.ts       wiring, accent tracking, the HUD
+  main.ts       wiring, the centre, the HUD
   transfer.ts   the file page, and everything that changes a whole graph
 web/src/store/
   db.ts         the schema: two object stores, three indexes, one connection

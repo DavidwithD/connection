@@ -158,6 +158,26 @@ dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
 dt { color: var(--ink-2); font-size: 11px; }
 dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 
+/* One switch, under the numbers. Sized like a caption rather than a control: the panel is
+   mostly there to be glanced at, and this is set once and then left alone. */
+.setting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--ink-2);
+  font-size: 11px;
+  cursor: pointer;
+}
+.setting input { margin: 0; accent-color: var(--accent); }
+
+/* The two sentences that stop being true when the camera names the centre. Both pairs are in
+   the markup and the checkbox picks which shows, so the state stays in the one place the box
+   already keeps it. Rooted at body because #keys is outside #hud and a :has() on the panel
+   could not reach it. */
+body:not(:has(#walk-by-pan:checked)) .when-walking,
+body:has(#walk-by-pan:checked) .when-pinned { display: none; }
+
 #status {
   margin: 10px 0 0;
   padding-top: 9px;
@@ -623,6 +643,7 @@ kbd {
 @media (max-height: 520px) and (max-width: 860px) {
   #hud h1,
   #hud .sub,
+  #hud .setting,
   #hud dl { display: none; }
   /* The rule above hides the title, and the chevron is in the title. Unfold #hud-body here.
      A HUD left folded could not be opened, and #status would be unreachable. */
