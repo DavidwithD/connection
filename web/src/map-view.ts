@@ -25,10 +25,9 @@ const STUB_REACH = 44
  * How far past the edge of the screen a node must be before a ghost is created for it, in
  * screen pixels. Divided by the zoom to get world units.
  *
- * A length, not a ratio. `ACCENT_HYSTERESIS` in main.ts compares two distances, so a ratio
- * suits it. Here there is one distance, and what has to be bounded is how far the reader
- * panned. Wider than main.ts's keyboard pan step, so a nudge and the nudge back give the
- * same picture.
+ * A length, not a ratio. What has to be bounded here is how far the reader panned, and that
+ * is one distance — a ratio wants two to compare. Wider than main.ts's keyboard pan step, so
+ * a nudge and the nudge back give the same picture.
  *
  * A ghost is removed as soon as its target is visible at all, with no margin at that end.
  * This whole distance is therefore dead band on the way up. That is what stops a name being
@@ -418,12 +417,12 @@ export class MapView {
   }
 
   /**
-   * Half the viewport's smaller side, in world units. This is the search radius for the
-   * accent.
+   * Half the viewport's smaller span, in world units — how far a claim on the centre may look.
    *
-   * The smaller side, halved, so any node within this distance of the middle is on screen. A
-   * larger radius would give the accent to a node the reader cannot see, and the neighbours
-   * and ghosts are drawn around the accent.
+   * The smaller span and halved, so a node within reach of the middle is a node on screen. The
+   * claim runs when a centre has been taken off the map and something has to replace it, and a
+   * wider reach would replace it with a node the reader cannot see. It is not what keeps the
+   * centre in view: nothing does, and an off-screen centre is a picture the reader asked for.
    */
   reach(): number {
     const box = this.cy.extent()
@@ -556,9 +555,9 @@ export class MapView {
       }
     })
     // No ghost pass here, on purpose. A read can leave new nodes off screen with no ghost
-    // standing in for them, but `trackAccent` also calls this for a late placement, and
-    // creating elements here would put that work on a pan's frame budget. Ghosts are only
-    // created on a settled camera, and main.ts schedules a settle when a read lands.
+    // standing in for them, but this also runs for a late placement, and creating elements
+    // here would put that work on a pan's frame budget. Ghosts are only created on a settled
+    // camera, and main.ts schedules a settle when a read lands.
   }
 
   /**
@@ -676,8 +675,8 @@ export class MapView {
    * how far out the outermost ring can sit, and a reach that followed the zoom would move
    * ghosts already shown. So a visit is measured once, at the zoom it started at.
    *
-   * Built here rather than in `setAccent`, because `trackAccent` moves the accent on every
-   * frame of a pan, and `seat` must not run on that budget.
+   * Built here rather than in `setAccent`, so `seat` runs with the rest of the ghost work on a
+   * settled camera. Naming a centre is a click's worth of work; cutting a plan is not.
    */
   private slotsFor(
     centre: string,
@@ -784,8 +783,14 @@ export class MapView {
    * One pass can therefore never both remove and create a ghost for the same neighbour, and
    * a name is never readable at its own position and shown as a ghost at the same time.
    *
-   * Nothing is written to the occupancy grid. A ghost holds no position, which is also what
-   * stops `nearestTo` returning one and making a ghost the centre.
+   * Runs whether or not the centre is itself on screen. A pan carries the centre off the edge
+   * and its doorways with it now that neither answers to the camera, and skipping the pass for
+   * a picture nobody is looking at is the obvious saving — but a neighbour can come back into
+   * view while the centre is still outside it, and the pass that did not run is the one that
+   * would have taken that ghost down. Measuring regardless is what the invariant above costs.
+   *
+   * Nothing is written to the occupancy grid — a ghost holds no ground, which is also what
+   * stops `nearestTo` ever returning one and making a ghost the centre.
    */
   reviseGhosts(): void {
     const centre = this.accentId

@@ -35,6 +35,9 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0029](0029-a-click-that-joins.md) | A click that joins | 🔵 Proposed |
 | [0030](0030-the-graph-moves-into-the-browser.md) | The graph moves into the browser | 🔵 Proposed |
 | [0031](0031-parting-an-edge-from-the-map.md) | Parting an edge from the map | 🔵 Proposed |
+| [0032](0032-the-centre-is-named.md) | The centre is named | 🔵 Proposed |
+| [0033](0033-a-click-takes-no-camera.md) | A click takes no camera | 🔵 Proposed |
+| [0034](0034-what-reading-cannot-check.md) | What reading cannot check | 🔵 Proposed |
 | [0035](0035-a-rule-for-new-sentences.md) | A rule for new sentences | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
