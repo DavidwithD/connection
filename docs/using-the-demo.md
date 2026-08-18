@@ -53,7 +53,7 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | drag | Pan |
 | wheel | Zoom toward the cursor |
 | click a node | Make it the centre, where it stands. Nothing moves |
-| click the centre | Put its name in the box at the top |
+| click the centre | Put its name in the box at the top, and on the clipboard |
 | click a ghost | Fly to the node it stands in for |
 | right-click the centre | Take it off the map, with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
@@ -143,6 +143,10 @@ far end: type a name into it and press `↵`.
 
 The caret goes into the far end, so the arrows stop panning until `Esc` returns the focus to
 the map ([ADR 0036](decisions/0036-a-click-that-writes-nothing.md)).
+
+The same click copies that name to the clipboard. It says nothing when it works, and the
+status line reads *could not copy …* when the browser refuses
+([ADR 0037](decisions/0037-the-centres-name-on-the-clipboard.md)).
 
 `Esc` collapses the whole widget, not just the end you are in — both names go, the far end with
 them, and the focus is handed back to the map. It is the way out, and `/` is the way back in.
