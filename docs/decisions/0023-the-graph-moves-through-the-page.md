@@ -17,8 +17,7 @@ seating, its own renderer, a stylesheet copied and left to drift.
 
 ## Decision
 [transfer.html](../../web/transfer.html), its own Vite entry, sharing the stylesheet and the
-API client and importing none of the map. Three routes carry the files
-([index.ts](../../src/server/index.ts)).
+API client and importing none of the map. Three routes carry the files (`index.ts`).
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
@@ -41,8 +40,8 @@ Two entries, two boot scripts, one stylesheet: the duplication 0017 warned about
 part that made it expensive. Nothing here draws a graph, so a fix to the map is not a fix
 here as well, and no renderer reaches this bundle.
 
-Both downloads Scan the whole table, which [bulk.ts](../../src/graph/bulk.ts) permits and
-nothing else served does. A click now costs what a command cost.
+Both downloads Scan the whole table, which `bulk.ts` permits and nothing else served does. A
+click now costs what a command cost.
 
 A load past the cap is refused with the command that has no cap, so the page has a floor
 rather than a ceiling.

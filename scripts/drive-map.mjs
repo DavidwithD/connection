@@ -2,7 +2,7 @@
 /**
  * Drive the map page in a real browser and photograph what it does.
  *
- *   npm run demo                       # in another terminal
+ *   npm run web                        # in another terminal
  *   node scripts/drive-map.mjs         # shots land in .shots/
  *   node scripts/drive-map.mjs --head  # watch it happen
  *
@@ -70,6 +70,20 @@ async function main() {
   })
 
   console.log(`→ ${WEB}`)
+
+  // The graph lives in this profile's IndexedDB, and Playwright opens a fresh profile every
+  // run — so there is nothing to drive until this writes one. Through the page's own buttons
+  // rather than the store, because that is the only seam a browser has. Seeding overwrites, so
+  // it asks in the page rather than in a native dialog: two clicks, not one.
+  await page.goto(`${WEB}/transfer.html`, { waitUntil: "domcontentloaded" })
+  await page.locator("#seed").click()
+  await page.locator("#ask-yes").click()
+  await page.waitForFunction(
+    () => /Seeded/.test(document.querySelector("#told")?.textContent ?? ""),
+    { timeout: 30000 },
+  )
+  console.log(`  seeded: ${(await page.locator("#told").textContent())?.trim() ?? ""}`)
+
   await page.goto(WEB, { waitUntil: "domcontentloaded" })
 
   // The map draws its first frame from two reads, so wait for the HUD to stop saying
@@ -93,7 +107,11 @@ async function main() {
         box.x2 >= view.x1 && box.x1 <= view.x2 && box.y2 >= view.y1 && box.y1 <= view.y2
       const standing = cy.nodes("[?ghost]").map((ghost) => {
         const id = ghost.id()
-        const target = cy.$id(id.slice(id.indexOf(":", 2) + 1))
+        // Split on the second NUL, as `ghostTarget` in map-view.ts does. Splitting on a colon
+        // finds nothing, and `slice(0)` then hands back the ghost's own id — so the twin test
+        // below was asking whether each ghost could see itself, and every visible one said yes.
+        const cut = id.indexOf("\0", 2)
+        const target = cut < 0 ? cy.collection() : cy.$id(id.slice(cut + 1))
         return {
           label: ghost.data("label"),
           at: `${String(Math.round(ghost.position("x")))},${String(Math.round(ghost.position("y")))}`,
@@ -129,6 +147,11 @@ async function main() {
         ring: ring.length,
         offScreen: offScreen.length,
         collisions,
+        // Whether the centre is in the frame at all. A pan no longer hands the mark to whatever
+        // it passes, so the doorways can be out of sight with the centre they belong to — which
+        // is what makes the warning below a judgement about the picture rather than about one
+        // element.
+        centreShown: centre.nonempty() && shows(centre.boundingBox()),
         // How many rings the doorways spread over, which is the thing a single circle could not
         // do. Distance from the centre, bucketed to the nearest ten so that two slots on one
         // ring count once whatever rounding did to them.
@@ -149,13 +172,18 @@ async function main() {
     if (!seen) return console.log(`  ${what}: no map on the page`)
     const hidden = seen.standing.filter((g) => !g.shown).map((g) => g.label)
     const both = seen.standing.filter((g) => g.twin).map((g) => g.label)
+    // A doorway out of frame is a fault only while the centre is in it. Panned away from, the
+    // centre takes its rings along, and every doorway being out of sight is the picture working
+    // as decided rather than a slot that missed the viewport.
+    const stranded = seen.centreShown ? hidden : []
     console.log(
       `  ${what}: zoom ${seen.zoom} · ring ${String(seen.ring)}` +
         ` · ${String(seen.offScreen)} off screen` +
         ` · ${String(seen.standing.length)} standing in over ${String(seen.rings)} ring(s)` +
+        (seen.centreShown ? "" : " · centre out of frame") +
         (seen.dashed ? "" : " · ⚠ ghost edge is not dashed") +
         (both.length ? ` · ⚠ drawn twice: ${both.join(", ")}` : "") +
-        (hidden.length ? ` · ⚠ raised off screen: ${hidden.join(", ")}` : "") +
+        (stranded.length ? ` · ⚠ raised off screen: ${stranded.join(", ")}` : "") +
         (seen.collisions ? ` · ⚠ ${String(seen.collisions)} overlapping doorway pair(s)` : ""),
     )
     return seen
@@ -211,6 +239,42 @@ async function main() {
     if (cy) cy.zoom(1)
   })
   await page.waitForTimeout(400)
+
+  // The centre is named and a pan is looking. Both readouts, because handing the mark over was
+  // never only a label change — every node the middle crossed had its ring read and seated for
+  // good, and a seat is permanent.
+  //
+  // By key rather than by drag, for the reason the nudge check above gives: a press cannot land
+  // on a node and glide the map somewhere on its own. A press is `NUDGE` in main.ts, so enough
+  // of them to carry the viewport past its own width — and spaced under the settle they
+  // provoke, so the run costs the one revision at the end of it rather than one per press.
+  {
+    const presses = Math.ceil(1440 / 120) + 2
+    const hud = async () => ({
+      centre: await page.locator("#stat-centre").textContent(),
+      nodes: await page.locator("#stat-nodes").textContent(),
+    })
+    const before = await hud()
+    for (let i = 0; i < presses; i++) {
+      await page.keyboard.press("ArrowRight")
+      await page.waitForTimeout(80)
+    }
+    await page.waitForTimeout(500)
+    const after = await hud()
+    const held = before.centre === after.centre && before.nodes === after.nodes
+    console.log(
+      `  panned a screen: centre ${before.centre} → ${after.centre}` +
+        ` · ${before.nodes} nodes placed → ${after.nodes}` +
+        (held ? " · held" : " · ⚠ the pan named a centre or seated a neighbourhood"),
+    )
+    report("panned away", await drawn(page))
+    await shot(page, "4-panned")
+
+    // Recentre, which is the way back to a centre the panning left behind — and it puts the
+    // camera where the legs below expect it.
+    await page.locator("#home").click()
+    await page.waitForTimeout(600)
+  }
 
   const islands = page.locator("#islands")
   const listed = await islands.isVisible()
@@ -284,7 +348,7 @@ async function main() {
         { timeout: 10000 },
       )
       console.log(`  crossed to ${target}: ${before} nodes placed → ${await seated()}`)
-      await shot(page, "4-crossed")
+      await shot(page, "5-crossed")
 
       // The row is the point: it stays, it is the marked one now, and it is no longer dim.
       const row = page.locator("#islands .island", { hasText: target }).first()
@@ -317,7 +381,7 @@ async function main() {
             (dim ? " — ⚠ its row was dim, so that click seated an island" : " — already on the map"),
         )
       }
-      await shot(page, "5-back")
+      await shot(page, "6-back")
     }
 
     // The reason the rows are built once and then only re-marked. Rebuilding empties the box,
@@ -356,7 +420,7 @@ async function main() {
     // happened to be on the way.
     await page.waitForTimeout(200)
     console.log(`  folded: ${await fold(page)}`)
-    await shot(page, "6-folded")
+    await shot(page, "7-folded")
     await page.locator("#hud-toggle").click()
   }
 

@@ -1,6 +1,6 @@
 # 0006 — Read ahead of what is drawn
 
-**Status:** 🔵 Proposed
+**Status:** ♻️ Superseded by [0030](0030-the-graph-moves-into-the-browser.md)
 **Date:** 2026-08-02
 **Deciders:** David HL
 
@@ -17,8 +17,7 @@ neighbourhoods. Driven headlessly, five presses took a boot of 17 seated nodes t
 
 So the picture was mostly nodes nobody asked for, not the route
 [the requirements](../requirements/exploring-a-graph.md) describe. Narrowing to the centre
-fixed that and bought a wait: a 190ms settle, then a read
-[the API](../../src/server/index.ts) floors at 120ms.
+fixed that and bought a wait: a 190ms settle, then a read the API floors at 120ms.
 
 ## Decision
 Reading and drawing answer to different rules. Drawing is the centre's neighbourhood.

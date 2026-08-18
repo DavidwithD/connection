@@ -48,8 +48,8 @@ legible node until the settle fires.
 
 ## Assumptions and unknowns
 - **Assumed a ghost is itself on screen.** Slots come from `seat`, which knows nothing about
-  the camera, so a crowded hub can strand the stand-in too. Not seen since the reach
-  correction, in [drive-map.mjs](../../scripts/drive-map.mjs).
+  the camera, so a crowded hub can strand the stand-in too. Held by the reach correction until
+  [0033](0033-a-click-takes-no-camera.md).
 - **Assumed the canvas is what the reader sees.** The panels float over it, so a neighbour
   under one passes this test and is hidden in fact.
 - **`GHOST_MARGIN` outruns a keyboard nudge.** Untested against a flick that stops on it.

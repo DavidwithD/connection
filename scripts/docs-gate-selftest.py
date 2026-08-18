@@ -4,8 +4,8 @@
 The docs gate's own worst failure is silence. Every extractor is a pattern over how
 this repo happens to write things, so a reorganised document or a refactored helper
 can leave a check matching nothing at all — and a check that compares nothing
-reports PASS for ever. docs/checks.md calls that "worse than no gate because it is
-believed", and the `X000` rules exist to catch it.
+reports PASS for ever. That is worse than no gate, because it is believed, and the
+`X000` rules exist to catch it.
 
 Nothing proved the X000 rules themselves fire. This does.
 
@@ -69,8 +69,7 @@ BOUND_DOCS = load_gate().BOUND_DOCS
 # Copying the tree is the whole cost of this script, so skip what the gate never
 # reads. These are the gate's own SKIP_DIRS plus the two big gitignored trees.
 SKIP = {
-    ".git", "node_modules", ".venv", "venv", "dist", "build", "__pycache__",
-    "vendor", ".dynamodb-data", ".next",
+    ".git", "node_modules", ".venv", "venv", "dist", "build", "__pycache__", ".next",
 }
 
 # A document with no tables and no fenced blocks. Enough to be readable, not enough
@@ -150,10 +149,9 @@ def drop_fenced(text: str) -> str:
 # follow from it — `commands` raises N000 and `engines` raises G000 — and a test that
 # guesses them tests its own guess.
 BOUND = {
-    "env": (lambda t: drop_table(t, "Variable"), "E000"),
     "commands": (lambda t: drop_table(t, "Command"), "N000"),
     "engines": (lambda t: drop_table(t, "Why"), "G000"),
-    "keys": (lambda t: drop_table(t, "Partition key", "Sort key"), "K000"),
+    "keys": (lambda t: drop_table(t, "Store", "Key"), "K000"),
     "layout": (drop_fenced, "L000"),
 }
 
@@ -161,7 +159,7 @@ BOUND = {
 # still comparing, where X000 only proves it is still looking.
 DRIFT = {
     "commands": (lambda t: drop_row(t, "Command"), "N001"),
-    "keys": (lambda t: drop_row(t, "Partition key", "Sort key"), "K001"),
+    "keys": (lambda t: drop_row(t, "Store", "Key"), "K001"),
 }
 
 

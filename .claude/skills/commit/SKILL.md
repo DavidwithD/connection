@@ -32,21 +32,24 @@ Run it. An unverified commit is a claim, not a change.
 
 ```
 npm run typecheck     # always; needs nothing running
-npm run ddb:smoke     # needs DynamoDB Local (`npm run ddb:status`)
+npm run build         # bundling fails in ways typecheck cannot see
 scripts/adr-gate.py   # docs/** touched, or a file a record links to moved
 ```
 
 Verification answers for the **index**, not the disk. Staging the whole working tree makes
-the two the same, and `npm test` runs both legs at once. A partial stage — §5's
+the two the same, and `npm test` runs every leg at once. A partial stage — §5's
 `git add -p` — does not: the file on disk is not the file being committed. Run against the
 staged tree instead, either `git stash push --keep-index --include-untracked` around the
 run, or `git checkout-index -a --prefix=` into a temp dir, which is what
 `scripts/hooks/pre-commit` does and why.
 
-Typecheck always blocks. If the database isn't up, offer `npm run dev:db`; left down, the
-smoke test blocks a diff that touches `src/db/`, `src/graph/` or `src/server/`, and
-elsewhere is reported as uncovered. Never quietly count a skipped leg as a pass — name the
-leg that didn't run and what it would have covered.
+Typecheck always blocks, and so does the build.
+
+Nothing in `npm test` executes a line of `web/src/`. There is no behavioural test in this
+repo at all, so a diff that changes what the graph *does* — anything under
+`web/src/store/`, or a write path in `web/src/` — is unverified until someone drives the
+running page. Offer that, with `npm run web` and `node scripts/drive-map.mjs`. Never quietly
+count a skipped leg as a pass — name the leg that didn't run and what it would have covered.
 
 The gate is not only for records. `M010` and `D005` read the whole tree, and `M002` breaks
 when a file a record links to is renamed or deleted, so a commit touching only `web/src/`
@@ -74,37 +77,40 @@ belongs.
 
 ### Blocks
 
-`B001` a secret in the diff — key, token, password, connection string, real AWS
+`B001` a secret in the diff — key, token, password, connection string, real cloud
 credentials, a `.env` file · `B002` conflict markers or a half-finished merge/rebase ·
-`B003` typecheck failing, or never run; the smoke test failing, or unrun against a diff
-that touches `src/db/`, `src/graph/` or `src/server/` · `B004` the ADR gate fails —
-on any record, not only one this change touches (§2) · `B005` an ADR renumbered, or a
-*decided* one deleted: a reversed decision gets a *new* record and the old one flips to
-♻️ Superseded. A record still Proposed may be withdrawn, if its index row goes with it and
-its number stays spent (`docs/decisions/README.md`) · `B006` ignored or generated output
-staged — `dist/`, `vendor/`, `.dynamodb-data/`, `__pycache__/`, `*.log` · `B007` the change
-reverts or deletes work and you cannot say why — §6 confirms the message says it.
+`B003` typecheck failing, or never run; the build failing, or never run · `B004` the ADR
+gate fails — on any record, not only one this change touches (§2) · `B005` an ADR
+renumbered, or a *decided* one deleted: a reversed decision gets a *new* record and the old
+one flips to ♻️ Superseded. A record still Proposed may be withdrawn, if its index row goes
+with it and its number stays spent (`docs/decisions/README.md`) · `B006` ignored or
+generated output staged — `dist/`, `__pycache__/`, `*.log` · `B007` the change reverts or
+deletes work and you cannot say why — §6 confirms the message says it.
 
 ### Warnings
 
 **Half-finished** — `W001` `TODO`/`FIXME`/`XXX`/`HACK`/`WIP` added by this diff · `W002`
 a stub that returns nothing, `throw new Error('not implemented')`, an empty `catch {}` ·
 `W003` a code path written but never reachable, or a flag added with no reader · `W004`
-one side of a pair changed alone — `tables.ts` without `migrate.ts`, `package.json`
-without `package-lock.json`, a new script with no `npm` entry.
+one side of a pair changed alone — `db.ts` without `DB_VERSION`, `package.json` without
+`package-lock.json`, a new script with no `npm` entry, a new element id in one page's HTML
+and not in the module that reads it.
 
 **Leftovers** — `W005` `console.log`, `debugger`, stray `print()` · `W006` `.only(` or
 `.skip(` in a test, an assertion commented out · `W007` commented-out code kept "just in
 case" — git is the delta, delete it · `W008` a hardcoded endpoint, port, path, or
 `/Users/...` where config belongs.
 
-**Approach** — `W009` drift from what this repo already decided: ESM, AWS SDK v3, no
-Docker, DynamoDB Local from the vendored jar · `W010` a new dependency where the SDK or
+**Approach** — `W009` drift from what this repo already decided: ESM, no server, no build
+step but Vite, the graph in the browser · `W010` a new dependency where the platform or
 stdlib already does it, or one added without a record · `W011` `any`, `@ts-ignore`,
 non-null `!` used to get past a real type problem · `W012` an error swallowed so a failure
 surfaces as wrong data instead of a crash · `W013` logic duplicated from somewhere else in
-`src/` instead of shared · `W014` a destructive DynamoDB change — key schema, index, or
-table rename — with no migration path for existing data.
+`web/src/` instead of shared · `W014` a schema change — a store, a key path, an index —
+with no `DB_VERSION` bump and no `upgrade` path for a graph already in someone's browser ·
+`W032` an `await` inside an IndexedDB transaction on anything that is not a store request:
+the transaction commits early and the rest of the write is silently dropped
+(`web/src/store/db.ts`).
 
 **Scope** — `W015` two unrelated concerns in one commit → propose the split (§5) · `W016`
 formatting or rename churn mixed into a behavioural change → separate commits · `W017` a
@@ -136,16 +142,25 @@ multi-line where a pointer would do, or measuring the code against an alternativ
 from the repo, which no reader can check · `W027` provenance outside its home — "confirmed
 by X on date Y", a threshold derived from one sample sitting in a general algorithm
 comment, or first-person narrative in a doc ("my guess was wrong"). The rationale stays;
-the log goes to a record · `W028` "not A but B" and its disguises: "A isn't enough — you
-need B", `Aではなく`, `Aではない` trailed by the positive. Grep for `ではなく`, `ではない`,
-`rather than`, `isn't`, then read the sentence that follows. Write only B · `W029` a
+the log goes to a record · `W028` "not A but B", its disguises ("A isn't enough — you need
+B", `Aではなく`/`Aではない` trailed by the positive), and the bare `X, not Y` / `X and not Y`.
+Grep for `ではなく`, `ではない`, `rather than`, `isn't`, `, not `, `— not `, ` and not `, then
+read the sentence and ask: **would a reader have assumed A?** If yes it disambiguates — "the
+degree in the stored graph, not the number of edges loaded" names the wrong reading a caller
+would reach for. If no, A is a strawman; write only B. Plain negation is not this finding —
+"whichever end is not the anchor" has no B · `W029` a
 struck-through list item (`~~#2~~ — resolved: …`) or a gap left by an earlier deletion —
 delete resolved items outright, renumber from 1, keep it contiguous · `W030` a paragraph
 or bullet breaking the section's established pattern — inline formula where the section
 uses code blocks, outputs mixed into a list of inputs, an item wedged between two
 paragraphs that belong together · `W031` a claim about a schema, column, API shape, config
 value, or enum meaning asserted with no primary source — verify it, or mark it unverified.
-A guess in the body reads as a fact forever.
+A guess in the body reads as a fact forever · `W033` a sentence written for its sound: a
+metaphor, an abstract noun standing in for the file or function that is the real subject, an
+inverted or aphoristic clause, a run past 25 words. The rule and the one thing it exempts are
+in `docs/README.md`, and it reaches `docs/**` with records included, comments under
+`web/src/`, and §4's message. Read each added sentence once and ask what its subject is — if
+finding that takes a second pass, rewrite it.
 
 ### Notes
 
@@ -195,7 +210,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
   subjects and prose bodies — **no** `feat:`/`fix:` prefixes. If the repo later adopts
   Conventional Commits, follow the log, not this file.
 - Imperative: "Add", "Move", "Drop" — the subject completes "this commit will …".
-- No diffstat in prose. "Changed 4 files, added tables.ts" is already in the diff.
+- No diffstat in prose. "Changed 4 files, added keys.ts" is already in the diff.
 - No time-relative words — "currently", "for now", "soon" go stale in the log forever.
 - Bullets only for a genuine list of independent items. Default to prose.
 - Trailers: `Refs:` a record or issue when one exists; `Co-Authored-By:` when Claude wrote

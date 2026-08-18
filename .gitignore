@@ -1,12 +1,8 @@
 node_modules/
 dist/
 
-# DynamoDB Local: the vendored runtime (~57MB — a 5MB jar plus its native libs)
-# and its on-disk database. Re-fetch with `npm run ddb:install`.
-vendor/
-.dynamodb-data/
-
-# Local environment overrides. `.env.example` IS tracked.
+# Vite reads these. Nothing in the app does — the graph is in the browser and there is no
+# process to configure.
 .env
 .env.local
 
@@ -14,14 +10,15 @@ vendor/
 *.log
 __pycache__/
 
-# Graph exports, in either format. `npm run graph:export` writes one; it is your data, not
+# Graph files, in either format. The transfer page downloads them and they are your data, not
 # the repo's. A text graph worth keeping goes in under a name you chose.
 graph-export*.json
-graph-export*.txt
+graph.txt
+graph-names.txt
 
 # Screenshots from `node scripts/drive-map.mjs`. Evidence for one change, not the repo's.
 .shots/
 
-# Scratch: mocks and notes made while a change is being thought about. A mock worth keeping
-# is a design page, and goes in under docs/design/ beside the ones that are.
+# Scratch: pages and scripts written to settle one question, kept only until it is settled.
+# A measurement worth keeping goes in the design doc as a number, not in here as a page.
 temp/

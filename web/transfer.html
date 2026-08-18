@@ -13,33 +13,37 @@
         <a href="/">← map</a>
       </header>
 
-      <!-- Out. Plain anchors: a download is a URL the browser follows, so these work whether
-           or not the bundle does, and the filename comes back on the response. -->
+      <!-- Downloads. These are buttons, not links. There is no URL to fetch: each one builds
+           a blob in the page and hands it to the browser. -->
       <section class="sheet">
         <h2>Download</h2>
+        <p class="note">
+          The graph is in this browser and nowhere else. This is the only backup there is.
+        </p>
         <div class="acts">
-          <a class="act" href="/api/graph/text" download>
+          <button class="act" id="out-joins" type="button">
             <b>Names &amp; joins</b><span>.txt · editable</span>
-          </a>
-          <a class="act" href="/api/graph/text?shape=names" download>
+          </button>
+          <button class="act" id="out-names" type="button">
             <b>Names only</b><span>.txt · no edges</span>
-          </a>
-          <a class="act" href="/api/graph/export" download>
+          </button>
+          <button class="act" id="out-json" type="button">
             <b>Backup</b><span>.json · everything</span>
-          </a>
+          </button>
         </div>
+        <p id="downloaded"></p>
       </section>
 
       <section class="sheet">
-        <h2>Upload</h2>
+        <h2>Add a text file</h2>
 
-        <!-- The label *is* the target, so the whole box takes a click and the input needs no
-             styling of its own. -->
+        <!-- The label is the drop target. The whole box takes a click, and the input inside
+             it is hidden by CSS. -->
         <label id="drop" for="file">
           <input type="file" id="file" accept=".txt,text/plain" />
           <b id="drop-name">Drop a .txt file here</b>
           <span id="drop-hint">or click to choose</span>
-          <!-- The format, as one line rather than a paragraph about it. -->
+          <!-- One example line, in place of a paragraph describing the format. -->
           <code>Kavara | Miselin | Vessarin</code>
         </label>
 
@@ -58,6 +62,44 @@
 
         <button class="act go" id="apply" type="button" hidden>Add to the graph</button>
         <p id="said"></p>
+      </section>
+
+      <!-- The actions that change the whole graph at once. On the command line these were
+           guarded by an environment variable and a backup file written first. A button has
+           neither, so the confirmation below is the guard. -->
+      <section class="sheet">
+        <h2>The whole graph</h2>
+        <div class="acts">
+          <label class="act" id="in-json-label" for="in-json">
+            <input type="file" id="in-json" accept=".json,application/json" />
+            <b>Import JSON</b><span>replaces the graph</span>
+          </label>
+          <button class="act" id="seed" type="button">
+            <b>Seed a demo graph</b><span>replaces the graph</span>
+          </button>
+          <button class="act" id="check" type="button">
+            <b>Check the graph</b><span>writes nothing</span>
+          </button>
+          <button class="act" id="recount" type="button">
+            <b>Recount the islands</b><span>rebuilds the index</span>
+          </button>
+        </div>
+
+        <!-- Shown before anything replaces the stored graph. It offers the backup download
+             here, because someone who has to leave the page to take one will not take one. -->
+        <div id="ask" hidden>
+          <p id="ask-what"></p>
+          <div class="acts">
+            <button class="act" id="ask-save" type="button">
+              <b>Download a backup</b><span>first</span>
+            </button>
+            <button class="act go" id="ask-yes" type="button"><b>Go ahead</b><span></span></button>
+            <button class="act" id="ask-no" type="button"><b>Cancel</b><span></span></button>
+          </div>
+        </div>
+
+        <ul id="report" hidden></ul>
+        <p id="told"></p>
       </section>
     </main>
 

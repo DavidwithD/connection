@@ -52,3 +52,7 @@ let the file carry the digits.
 Not a summary of the reasoning — that is the record's job and copying it makes this the
 stale half. One line on *which question* each record answered, so a reader knows which one
 to open.
+
+This is the only place on the page a record is named. The body says what holds and why it
+holds, in its own words and in the present tense. A reader who wants what was turned down,
+or what was unknown at the time, comes down here for it.

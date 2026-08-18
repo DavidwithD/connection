@@ -2,28 +2,17 @@ import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
 
 /**
- * `web/index.html` is the map — pan an accumulating world (ADR 0003, ADR 0004).
- * `web/transfer.html` is where a graph arrives as a file and leaves as one (ADR 0023). Both
- * talk to the Hono API in `src/server/`, and the second draws nothing, which is what keeps
- * it from being the second view ADR 0017 deleted.
- *
- * Dev proxies `/api` rather than enabling CORS, so the browser sees a single origin and
- * the API needs no knowledge of the page's host.
+ * `web/index.html` is the map — pan an accumulating world. `web/transfer.html` is where a
+ * graph arrives as a file, leaves as one, and is seeded, checked and repaired. Both read the
+ * graph out of the browser's own IndexedDB, so there is nothing behind them: no proxy, no
+ * origin to configure, and no second process to start.
  */
 const page = (name: string): string =>
   fileURLToPath(new URL(`web/${name}.html`, import.meta.url))
 
 export default defineConfig({
   root: "web",
-  server: {
-    port: 5173,
-    proxy: {
-      "/api": {
-        target: `http://localhost:${process.env["PORT"] ?? 8787}`,
-        changeOrigin: true,
-      },
-    },
-  },
+  server: { port: 5173 },
   build: {
     outDir: "../dist/web",
     emptyOutDir: true,

@@ -1,45 +1,41 @@
 /**
- * Where nodes go in world space. Pure geometry — no Cytoscape, no DOM.
+ * Placement geometry and the spatial index. Pure functions. No Cytoscape and no DOM.
  *
- * Positions are frozen, so seating a new node cannot nudge an existing one out of the
- * way: it has to find room. That is what `Occupancy` and `seat` are for. Candidates are
- * generated on rings expanding outward from the parent and the first one clear of every
- * placed node wins, so neighbours land close when there is space and further out when
- * there is not.
- *
- * `SEAT_SEP` is sized against the *largest* a node ever draws — the accent size, not the
- * resting size. A node swells when it becomes the accent, and seating against the resting
- * size would let it grow into its neighbours as you pan past.
- *
- * These are the separations docs/design/the-centre.md points at rather than copies. See
- * docs/decisions/0003-graph-exploration-demo-stack.md.
+ * Candidate positions are generated on rings that expand outward from the parent node. The
+ * first candidate that clears every placed node wins.
  */
 
 const TAU = Math.PI * 2
 
-/** Node diameters. Which one a node draws at depends on its distance from the accent. */
+/** Node diameters. A node draws at one of these, by its distance from the accent. */
 export const NODE_SIZE = { accent: 50, neighbour: 34, resting: 24 } as const
 
-/** Minimum centre-to-centre distance between any two placed nodes. */
+/**
+ * Minimum centre-to-centre distance between two placed nodes.
+ *
+ * Sized against the largest a node ever draws, which is the accent size. A node grows when
+ * it becomes the accent. Spacing to the resting size would let it grow over its neighbours
+ * as the reader pans past.
+ */
 export const SEAT_SEP = NODE_SIZE.accent + 16
 
 /**
- * The separation used on a second pass, for neighbours the first pass could not fit.
+ * The separation used on the second pass, for neighbours the first pass could not fit.
  *
- * Still wide enough that nothing can overlap: only one node is ever the accent, so the
- * worst case is an accent radius against a neighbour radius, 25 + 17 = 42, and this is 46.
- * `SEAT_SEP` reserves room for two accents meeting, which cannot happen. Paying for that
- * on the second pass costs an edge, and an edge is the thing the map is for.
+ * Still wide enough that nothing overlaps. Only one node is the accent at a time, so the
+ * worst case is an accent radius against a neighbour radius: 25 + 17 = 42, and this is 46.
+ * SEAT_SEP leaves room for two accents meeting, which cannot happen. Requiring that on the
+ * second pass would drop an edge instead.
  */
 export const SQUEEZE_SEP = NODE_SIZE.neighbour + 12
 
-/** Where the first ring sits. The step outward is derived from the separation in use. */
+/** The radius of the first ring. The step outward comes from the separation in use. */
 const FIRST_RING = 104
 
-/** Give up after this many rings and stack at the last one. */
+/** Stop after this many rings. */
 const MAX_RINGS = 14
 
-/** Beyond this, an edge is drawn as two stubs instead of a line. */
+/** An edge longer than this is drawn as two stubs instead of one line. */
 export const LONG_EDGE = 340
 
 export interface Point {
@@ -51,15 +47,15 @@ export interface Placed extends Point {
   id: string
 }
 
-/** The box one name needs. Only the renderer can measure it, so it arrives from there. */
+/** The box one name needs. Only the renderer can measure it, so the caller passes it in. */
 export interface Slot {
   w: number
   h: number
 }
 
 /**
- * A uniform grid over world space, so "is this spot free?" and "what is nearest the
- * middle of the screen?" both stay cheap as the map grows.
+ * A uniform grid over world space. It keeps two questions cheap as the map grows: is this
+ * spot free, and what is the nearest node to this point.
  */
 export class Occupancy {
   private readonly cells = new Map<string, Placed[]>()
@@ -82,12 +78,11 @@ export class Occupancy {
   }
 
   /**
-   * Give a spot back.
+   * Free a spot.
    *
-   * Only for a node being taken off the map entirely — a write undone. A seat that stays
-   * claimed after its node has gone is ground nothing can ever be placed on again, and the
-   * grid is the only record of it. Emptied cells are dropped rather than kept, so undoing
-   * a run of creates leaves the grid the size it started.
+   * Only for a node removed from the map, such as an undone write. A spot left claimed after
+   * its node is gone can never be reused, and this grid is the only record of it. Empty cells
+   * are deleted, so undoing a run of creates leaves the grid at its original size.
    */
   remove(id: string): void {
     for (const [key, bucket] of this.cells) {
@@ -99,7 +94,7 @@ export class Occupancy {
     }
   }
 
-  /** Every placed node in the cells overlapping a square of `reach` around a point. */
+  /** Every placed node in the cells that overlap a square of `reach` around a point. */
   private near(x: number, y: number, reach: number): Placed[] {
     const span = Math.max(1, Math.ceil(reach / this.cell))
     const cx = this.coord(x)
@@ -120,14 +115,14 @@ export class Occupancy {
     )
   }
 
-  /** Every placed node inside a true radius, rather than the square `near` scans. */
+  /** Every placed node inside a circle of `radius`, not the square that `near` scans. */
   within(x: number, y: number, radius: number): Placed[] {
     return this.near(x, y, radius).filter(
       (p) => (p.x - x) ** 2 + (p.y - y) ** 2 <= radius ** 2,
     )
   }
 
-  /** Closest placed node to a point, searching outward in rings of cells. */
+  /** The closest placed node to a point. Searches outward, one ring of cells at a time. */
   nearest(x: number, y: number, maxReach: number): Placed | null {
     let best: Placed | null = null
     let bestDistance = Infinity
@@ -139,7 +134,7 @@ export class Occupancy {
           best = placed
         }
       }
-      // A hit inside this reach cannot be beaten by a cell further out.
+      // A hit within this reach cannot be beaten by a node in a cell further out.
       if (best && bestDistance <= reach ** 2) return best
     }
     return best
@@ -147,8 +142,8 @@ export class Occupancy {
 }
 
 /**
- * A rotation derived from an id, so seating around the same parent always comes out the
- * same way. Coordinates need not be reproducible, but stability costs nothing.
+ * Derive a rotation angle from an id. Placing nodes around the same parent then gives the
+ * same layout every time. Nothing requires this, but it costs nothing.
  */
 export function rotationFor(id: string): number {
   let hash = 2166136261
@@ -160,11 +155,11 @@ export function rotationFor(id: string): number {
 }
 
 /**
- * Seat `count` nodes around `parent`, avoiding everything already placed.
+ * Place `count` nodes around `parent`, clear of everything already placed.
  *
- * Slots on a ring are taken evenly spread rather than consecutively, so four neighbours
- * on a twelve-slot ring surround the parent instead of bunching along one side. Anything
- * that will not fit on a ring falls through to the next one out.
+ * Slots on a ring are taken spread out, not one after another. Four neighbours on a
+ * twelve-slot ring then surround the parent instead of bunching on one side. Anything that
+ * does not fit on a ring falls through to the next ring out.
  */
 export function seat(
   parent: Point,
@@ -177,13 +172,13 @@ export function seat(
 
   const chosen: Point[] = []
   const rotation = rotationFor(seed)
-  // A tighter separation buys slots per ring *and* rings per unit of radius, so both
-  // derive from it. Only the first radius is fixed, because that one is where a
-  // neighbour looks like a neighbour.
+  // A smaller separation gives more slots per ring and more rings per unit of radius, so
+  // both come from it. Only the first radius is fixed: that distance is what makes a node
+  // read as a neighbour.
   const step = separation * 0.92
 
-  // Claims are kept local rather than written into the shared index: seeding it with
-  // placeholder entries would leave them there for `nearest` to return later.
+  // Track the spots chosen in this call locally. Writing them into the shared index would
+  // leave placeholder entries there for `nearest` to return later.
   const clear = (x: number, y: number): boolean =>
     occupancy.isClear(x, y, separation) &&
     !chosen.some((p) => (p.x - x) ** 2 + (p.y - y) ** 2 < separation ** 2)
@@ -193,10 +188,9 @@ export function seat(
     const slots = Math.max(1, Math.floor((TAU * radius) / separation))
     const wanted = Math.max(1, Math.min(slots, count - chosen.length))
 
-    // Evenly-spread slots first so a few neighbours surround the parent rather than
-    // bunching along one side, then every remaining slot, so a ring is fully used
-    // before moving outward. Building the order explicitly avoids the repeats a
-    // stride expression produces once candidates start getting rejected.
+    // Spread-out slots first, so a few neighbours surround the parent. Then the remaining
+    // slots, so a ring is used fully before moving outward. The order is built as a list
+    // because a stride expression repeats indices once candidates start being rejected.
     const order: number[] = []
     const taken = new Set<number>()
     for (let k = 0; k < wanted; k++) {
@@ -224,38 +218,47 @@ export function seat(
 }
 
 /**
- * How many boxes of this width fit round a circle of this radius without touching.
+ * How many boxes of this width fit around a circle of this radius without touching.
  *
- * The number a ring can hold used to be stated as a literal, and the literal was this
- * calculation done once by hand for the first ring and a typical name. Computing it stays
- * true for a long name and keeps meaning something on a ring further out — see
- * docs/decisions/0027-a-ring-holds-what-it-holds.md.
+ * This was a literal before: the same sum done by hand once, for the first ring and an
+ * average name. Computing it stays correct for a long name and for a ring further out.
  */
 export const pillsAround = (radius: number, slotWidth: number): number =>
   Math.max(1, Math.floor((TAU * radius) / slotWidth))
 
 /**
+ * Whether two boxes of this size, centred on these points, would touch.
+ *
+ * One definition for every slot that gets handed out, wherever it came from. A slot is a box
+ * because the thing standing in it draws as a name, and the separations `seat` works in are
+ * scalars sized for discs — so anything spaced by one of those still has to be asked this.
+ */
+export const touches = (a: Point, b: Point, slot: Slot): boolean =>
+  Math.abs(a.x - b.x) < slot.w && Math.abs(a.y - b.y) < slot.h
+
+/**
  * Positions on rings around the parent, taking no account of what is already there.
  *
- * `seat` refuses to place anything without room, which is right for a node: it owns its
- * spot for the rest of the session. A ghost owns nothing and lasts only as long as you
- * are looking at it, so for a ghost "there is no room" is not an answer — and crowding is
- * the very thing that produces the far neighbours a ghost stands in for, so the honest
- * answer has to work in a full region. The backdrop dimming and the ghost's own halo are
- * what make the resulting overlap readable.
+ * `seat` returns nothing when there is no room, which is correct for a node: a node keeps
+ * its spot for the rest of the session. A ghost keeps nothing and exists only while the
+ * reader is looking at it. A crowded area is also exactly where far neighbours appear, so
+ * a ghost has to be placeable in a full region. The dimmed backdrop and the ghost's halo
+ * keep the overlap readable.
  *
- * How many a ring offers is `pillsAround`, so a wide neighbourhood steps outward instead of
- * piling more names onto one circle. `maxRadius` is where that stops: a slot the reader cannot
- * see is a doorway nobody can open, so past it the answer is fewer slots rather than
- * unreachable ones. The first ring is offered regardless, because a viewport too small to hold
- * it is one where every neighbour is off screen too, and no slot at all is the worse answer.
+ * `pillsAround` sets how many slots a ring offers, so a wide neighbourhood steps outward
+ * instead of crowding one circle. `maxRadius` stops that: a slot the reader cannot see
+ * cannot be clicked. The first ring is always offered. A viewport too small for it is one
+ * where every neighbour is off screen anyway, and no slot at all is worse.
  *
- * A slot also has to clear the boxes already handed out, and that is not the same test as
- * `pillsAround`. The rings step by `seat`'s stride — a little over a pill's height — while a
- * name is nearly three times as wide as it is tall, so two slots one ring apart on the same
- * bearing clear each other where the ring runs vertically and collide where it runs
- * horizontally. Rejecting the collisions is what makes every slot handed out a doorway that
- * can be read and clicked, rather than one the paint order happens to bury.
+ * A slot must also clear the slots already handed out, which is a different test from
+ * `pillsAround`. The rings step by `seat`'s stride, a little more than a pill's height,
+ * while a name box is about three times as wide as it is tall. Two slots one ring apart on
+ * the same bearing therefore clear each other where the ring runs vertically and collide
+ * where it runs horizontally. Rejecting those collisions keeps every slot clickable.
+ *
+ * `avoid` is tested for that too, not merely scored against. It carries slots already promised
+ * to the same plan, so one of these landing on one of those buries a doorway just as thoroughly
+ * as two of these colliding would — and being someone else's does not make it smaller.
  *
  * Within a ring, candidates are scored by how far they sit from everything already taken and
  * picked greedily, so a handful of ghosts spread around the parent instead of stacking along
@@ -276,10 +279,7 @@ export function ringSlots(
   const taken: Point[] = [...avoid]
   const chosen: Point[] = []
 
-  const clears = (point: Point): boolean =>
-    !chosen.some(
-      (other) => Math.abs(other.x - point.x) < slot.w && Math.abs(other.y - point.y) < slot.h,
-    )
+  const clears = (point: Point): boolean => !taken.some((other) => touches(point, other, slot))
 
   for (let ring = 0; ring < MAX_RINGS && chosen.length < count; ring++) {
     const radius = FIRST_RING + ring * step
@@ -309,7 +309,7 @@ export function ringSlots(
           best = i
         }
       })
-      // Nothing left on this ring that clears what is already standing: go outward.
+      // Nothing left on this ring clears what is already placed. Go to the next ring.
       if (best < 0) break
       const [pick] = candidates.splice(best, 1)
       if (!pick) break
@@ -320,7 +320,7 @@ export function ringSlots(
   return chosen
 }
 
-/** Closest pair in a set of points. Small n, so the naive scan is the right one. */
+/** The distance between the closest pair of points. n is small, so a full scan is fine. */
 export function minSpacing(points: readonly Point[]): number {
   let min = Infinity
   for (let i = 0; i < points.length; i++) {

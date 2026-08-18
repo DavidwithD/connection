@@ -50,8 +50,9 @@ claim reads the camera.
 
 ## Assumptions and unknowns
 - **Assumed a 2D context's advance width matches Cytoscape's.** Untested across font fallbacks.
-- **The reach is read once a visit, and shrinking the window afterwards strands a doorway.**
-  Seen at 320×280: the first ring is offered whatever the reach, so its slot can fall outside.
+- **The reach is read once a visit, and measured from the centre.** Seen at 320×280: the first
+  ring is offered whatever the reach, so its slot can fall outside. Also
+  [0033](0033-a-click-takes-no-camera.md).
 - Unknown whether a doorway three rings out still reads as the centre's.
 - Unknown how many doorways help before more stop helping.
 

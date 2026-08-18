@@ -1,36 +1,10 @@
 /**
- * The panel at the top of the map: two ends, and the line between them.
+ * The panel at the top of the map: two name inputs, and the writes they make.
  *
- * It is one box until a name lands in it, and then it is an edge — two boxes joined by a
- * constant line, which is why neither carries a label. Both ends write. Naming a node while
- * the other end holds one joins them, whichever end you typed in, because the store keeps no
- * direction to tell them apart (src/graph/edge.ts). See
- * docs/decisions/0013-one-box-that-grows-into-an-edge.md.
- *
- * The end that fired empties, so a run of names needs no reaching. Whichever end you leave
- * alone is the anchor: hold the near end and you fan out from one node, hold the far end and
- * you fan in to one. `⌘↵` moves the anchor, which is how a path is named — one name per node
- * instead of each one twice. `Esc` puts the whole widget away.
- *
- * The widget shrinks when its last name goes.
- *
- * Every pick writes immediately — no queue, no commit step. What makes that bearable is that
- * every write can be taken back: each one leaves a receipt carrying an `undo`, and taking it
- * reverses the whole write, the created node included. The panel is fast because `↵` is the
- * only key it needs, and safe because `↵` is not final. See
- * docs/decisions/0011-taking-a-write-back.md.
- *
- * A receipt names both ends, and either name loads back into the near end. It reaches what
- * `⌘↵` cannot: any write that landed, however far back, rather than only the one just fired.
- * Loading never writes — a pick inside an end is the only thing that does — so reaching back
- * through the receipts can never cost an edge.
- *
- * Every write goes down the one line the page keeps (web/src/writes.ts), undos included —
- * behind whatever is already queued, so an undo can never overtake the write it reverses.
- *
- * A name that does not exist yet is created first, in its own transaction, and only then
- * joined. Two writes, so a create that lands followed by a join that is refused leaves a
- * real node with no edges — reachable by name, attached to nothing.
+ * The panel shows one input until a name is picked, then two. The input that completed the
+ * pair is emptied, so the next name can be typed without moving the caret. The other input
+ * holds the anchor. `⌘↵` moves the anchor instead. `Esc` closes the panel. Every pick writes
+ * at once, and every write can be undone.
  */
 import {
   Refused,
@@ -39,35 +13,35 @@ import {
   joinNodes,
   unjoinNodes,
   type NodeMeta,
-} from "./api.js"
+} from "./store/index.js"
 import { Combobox, norm, type ComboboxHooks, type Picked } from "./combobox.js"
 import type { Receipt, Writes } from "./writes.js"
 
 /**
- * What an end is holding.
+ * A name held by one of the two inputs.
  *
- * One object per naming, and a write holds the object rather than the end it came from. That
- * is what stops a retyped end redirecting an edge already in the line: the queued write keeps
- * the anchor it was fired at, while the end it came from has moved on to a new one.
+ * One object is made per pick, and a queued write holds that object rather than the input it
+ * came from. Retyping an input therefore cannot redirect a write already in the queue: the
+ * write keeps the anchor it was made with, while the input has moved on to a new one.
  *
- * `node` is filled in by whichever write first needs it, so several targets fired at a name
- * that does not exist yet still create it once.
+ * `node` is filled in by the first write that needs it. Several writes aimed at a name that
+ * does not exist yet then create that node once.
  */
 interface Anchor {
   readonly label: string
   node: NodeMeta | null
 }
 
-/** A landed write, and everything needed to reverse it. */
+/** A write that landed, and what is needed to reverse it. */
 interface Done {
   a: NodeMeta
   b: NodeMeta
-  /** The end this write brought into existence, if it brought one. */
+  /** The node this write created, or null if it created none. */
   created: NodeMeta | null
 }
 
 export interface EndElements {
-  /** The wrapper, hidden and shown as the widget grows and shrinks. */
+  /** The wrapper element. Hidden and shown as the panel grows and shrinks. */
   field: HTMLElement
   input: HTMLInputElement
   list: HTMLUListElement
@@ -83,27 +57,28 @@ export interface PanelElements {
 export interface PanelHooks {
   /** A node now exists in the store. Put it on the map. */
   onNode: (node: NodeMeta) => void
-  /** An edge now exists in the store. Draw it, and raise both degrees. */
+  /** An edge now exists in the store. Draw it and raise both degrees. */
   onEdge: (a: NodeMeta, b: NodeMeta) => void
   /**
-   * A write has been reversed in the store. Take it off the map, and lower both degrees.
-   * `removed` is the node that went with it, or null if it stayed — it will have stayed if
-   * something else has since been joined to it.
+   * A write was reversed in the store. Remove it from the map and lower both degrees.
+   * `removed` is the node deleted with it, or null if the node stayed. It stays when
+   * something else has been joined to it since.
    */
   onUndone: (a: NodeMeta, b: NodeMeta, removed: NodeMeta | null) => void
   /**
-   * An end was armed rather than fired: take the camera there.
+   * An input became the anchor. Move the camera to that node.
    *
-   * Arming only, never firing. The anchor is what you are working from and belongs in view;
-   * the end a run of names passes through would drag the camera behind every one of them.
+   * Called on becoming the anchor only, never on completing a pair. The anchor is what the
+   * reader is working from and should be in view. Following every name in a fast run would
+   * drag the camera after each one.
    */
   onArm: (node: NodeMeta) => void
   onStatus: (text: string, tone: "idle" | "busy" | "error") => void
-  /** Hover text for a row, for whatever the map knows that the end does not. */
+  /** Hover text for a row. The map supplies what this panel does not know. */
   note: (node: NodeMeta) => string
 }
 
-/** One end of the edge being named. */
+/** One of the two inputs. */
 class Side {
   anchor: Anchor | null = null
   readonly box: Combobox
@@ -130,9 +105,9 @@ export class JoinPanel {
 
     for (const side of [this.near, this.far]) {
       side.ui.clear.addEventListener("click", () => this.clear(side))
-      // Typing over a name without picking anything would leave the box reading one node
-      // while the writes still went to another. Leaving puts back what is actually held. A
-      // pick cannot be lost this way: the rows fire on mousedown, which never blurs.
+      // Typing over a name without picking anything would leave the input showing one node
+      // while writes still go to another. On blur, put back what the input actually holds.
+      // A pick is not lost this way: the rows fire on mousedown, which happens before blur.
       side.ui.input.addEventListener("blur", () => this.paint())
     }
     this.paint()
@@ -144,19 +119,18 @@ export class JoinPanel {
       note: this.hooks.note,
       onPick: (picked, chain) => this.pick(self(), picked, chain),
       onError: (message) => this.hooks.onStatus(`⚠ ${message}`, "error"),
-      // Emptying the box is how a name is let go of. Without this the box would come back
-      // the moment it lost focus, and `Esc` would look like a key that does nothing.
+      // Emptying the input is how a name is released. Without this the name would reappear
+      // on blur, and `Esc` would look like it did nothing.
       onEmptied: () => this.collapse(),
     }
   }
 
   /**
-   * Put the caret in the near end, ready for a name.
+   * Put the caret in the near input, ready for a name.
    *
-   * What `/` reaches from anywhere on the page (web/src/main.ts). The text is selected
-   * rather than typed onto the end of, because a box already holding an anchor is one you
-   * mean to type over — and leaving without picking puts back whatever is actually held,
-   * exactly as any other typing-over does.
+   * This is what `/` calls from anywhere on the page. See web/src/main.ts. The text is
+   * selected rather than appended to: an input already holding an anchor is one the reader
+   * means to type over. Leaving without picking restores what is actually held.
    */
   focus(): void {
     this.near.ui.input.focus()
@@ -164,35 +138,34 @@ export class JoinPanel {
   }
 
   /**
-   * A name handed in from outside — the map, where the node under the centre is clicked
-   * rather than typed (web/src/main.ts).
+   * Take a name from outside the panel. The map calls this when the centre node is clicked.
+   * See web/src/main.ts.
    *
-   * It lands in whichever end is not the anchor, which is where typing it would have put it:
-   * the two ends hold one anchor between them, so a name reaching the free one is a pair, and
-   * a pair is an edge. The first click arms, the second writes, and everything after the
-   * write is this panel's ordinary business — a receipt that reverses it, and an anchor left
-   * standing for the click after that. `⌘` moves the anchor instead, exactly as it does over
-   * a row of the list. See docs/decisions/0029-a-click-that-joins.md.
+   * The name goes into whichever input is not the anchor, which is where typing it would put
+   * it. The two inputs hold one anchor between them, so a name reaching the free input makes
+   * a pair, and a pair is an edge. The first click sets the anchor, the second writes. After
+   * that this is the panel's normal behaviour: a receipt that can reverse it, and an anchor
+   * left for the next click. `⌘` moves the anchor instead, as it does on a list row.
    *
-   * The caret ends in whichever end is free once that has happened, so the name after this
-   * one can be typed or clicked with nothing to reach for either way.
+   * The caret ends up in whichever input is free afterwards, so the next name can be typed
+   * or clicked without moving it.
    */
   take(node: NodeMeta, chain: boolean): void {
     this.pick(this.free(), { kind: "node", node }, chain)
-    // Asked again, because the pick moved it: the end that took the name is the anchor now.
+    // Ask again, because the pick moved it. The input that took the name is the anchor now.
     this.free().ui.input.focus()
   }
 
   /**
-   * Back to one box, holding nothing.
+   * Empty both inputs and shrink the panel back to one.
    *
-   * Both ends, because the two are one widget and this is the key that leaves it. Clearing
-   * only the end you are in hands the focus back to the map with the other still armed, and
-   * `/` comes back to the near end, from where the next name fires at whatever the far end
-   * kept. Nothing is unwritten by this — the ends hold names, and a write that landed has
-   * its own way back.
+   * Both, because the two inputs are one widget and this is how the reader leaves it.
+   * Clearing only the focused input would return focus to the map with the other still set,
+   * and `/` would come back to the near input, from where the next name would join to
+   * whatever the far input kept. This unwrites nothing: the inputs hold names, and a write
+   * that landed has its own undo.
    *
-   * The focus goes too, in the box that asked for this: `Esc` is also how you get out.
+   * Focus is dropped too, because `Esc` is also how the reader leaves the panel.
    */
   private collapse(): void {
     for (const side of [this.near, this.far]) {
@@ -207,15 +180,15 @@ export class JoinPanel {
   }
 
   /**
-   * The end a name from outside lands in: the one not holding the anchor.
+   * The input a name from outside goes into: the one not holding the anchor.
    *
-   * The near end when neither holds one, which is where a first name goes however it arrives.
+   * The near input when neither holds one. A first name always goes there.
    */
   private free(): Side {
     return this.near.anchor ? this.far : this.near
   }
 
-  /** A name was taken in one end. Arm it, or fire it at whatever the other end holds. */
+  /** A name was picked in one input. Make it the anchor, or join it to the other input. */
   private pick(side: Side, picked: Picked, chain: boolean): void {
     const label = picked.kind === "node" ? picked.node.label : picked.label
     const other = this.other(side)
@@ -230,32 +203,30 @@ export class JoinPanel {
 
     if (!anchor) {
       side.anchor = named
-      // Set here rather than left to `paint`, which will not touch a box being typed in.
+      // Set here rather than in `paint`, which does not touch an input being typed in.
       side.ui.input.value = label
       this.paint()
-      // A name nothing carries has nowhere to fly to. It gets a seat near the camera when a
-      // write brings it into existence, like any other node arriving by name.
+      // A name with no node behind it has nowhere for the camera to go. It gets a position
+      // near the camera when a write creates it, like any other node arriving by name.
       if (named.node) this.hooks.onArm(named.node)
       return
     }
 
-    // Empty the end that fired now, not when the write lands: the next name is already being
-    // typed into it.
+    // Empty this input now, not when the write lands. The next name is already being typed
+    // into it.
     side.box.clear()
     side.anchor = null
 
-    // The *other* end — the one you are not typing in — so the caret stays where it is and
-    // the next name has somewhere to go. Two ends hold one anchor, so the one this replaces
-    // is let go of; that is what the gesture spends. Which end takes it, and what the near
-    // end would have cost, is docs/decisions/0028-where-a-chained-name-lands.md.
+    // ⌘ moves the anchor to the other input, the one not being typed in, so the caret stays
+    // where it is. The two inputs hold one anchor, so the previous one is released.
     //
-    // The same object the queued write holds, not a copy, so a name this write has yet to
-    // create becomes a node in both the moment it exists. The write keeps the pair it was
-    // fired at regardless: it holds `anchor`, which no longer sits in an end.
+    // This stores the same object the queued write holds, not a copy. A name that write has
+    // yet to create then becomes a node in both places at once. The write keeps the pair it
+    // was made with either way, because it holds `anchor`, which is no longer in an input.
     if (chain) {
       other.anchor = named
-      // An armed end is one the camera follows, and this end is now armed. A name nothing
-      // carries yet has nowhere to fly to, as above.
+      // The camera follows the anchor, and this input is the anchor now. As above, a name
+      // with no node behind it has nowhere to go.
       if (named.node) this.hooks.onArm(named.node)
     }
     this.paint()
@@ -265,38 +236,37 @@ export class JoinPanel {
     this.writes.run(receipt, () => this.write(anchor, named, receipt))
   }
 
-  /** Whether a pick names what the other end already holds. */
+  /** True if a pick names what the other input already holds. */
   private same(anchor: Anchor, picked: Picked): boolean {
     if (picked.kind === "node") {
       return anchor.node ? anchor.node.id === picked.node.id : false
     }
-    // Only reachable between two names that do not exist yet: a create row is offered only
-    // when nothing already carries the name, so it cannot collide with a resolved node.
+    // Only reached between two names that do not exist yet. A create row is offered only
+    // when no node has that name, so it cannot match a node that does exist.
     return !anchor.node && norm(anchor.label) === norm(picked.label)
   }
 
   /**
-   * The node behind a name, making it if this is the first write to need it.
+   * Return the node behind a name, creating it if this is the first write to need it.
    *
-   * Cached on the anchor, so a run of targets fired at a name that does not exist yet
-   * creates it once and joins to it thereafter.
+   * The result is stored on the anchor, so several writes aimed at a name that does not
+   * exist yet create it once and join to it after that.
    */
   private async realise(anchor: Anchor): Promise<NodeMeta> {
     if (anchor.node) return anchor.node
     const made = await createNode(anchor.label)
     anchor.node = made
     this.hooks.onNode(made)
-    // It has stopped being a name and become a node, and the box that still holds it should
-    // stop saying otherwise.
+    // It is a node now, not a pending name. Repaint so the input stops marking it as new.
     this.paint()
     return made
   }
 
   private async write(anchor: Anchor, fired: Anchor, receipt: Receipt): Promise<void> {
     try {
-      // The anchor goes in first, once. It is not part of what an undo reverses: it is the
-      // thing being worked from, and taking it away under the box that names it would be a
-      // stranger result than leaving it.
+      // Create the anchor first, and only once. It is not part of what an undo reverses:
+      // it is what the reader is working from, and deleting it would empty the input that
+      // still names it.
       const a = await this.realise(anchor)
       const fresh = !fired.node
       const b = await this.realise(fired)
@@ -308,20 +278,20 @@ export class JoinPanel {
       this.hooks.onStatus(`joined ${a.label} and ${b.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      // A refusal is the graph answering; anything else is the write failing. Both stop this
-      // pair, neither stops the next one.
+      // A refusal is the graph saying no. Anything else is the write failing. Both stop this
+      // pair. Neither stops the next one, because `Writes.run` catches.
       receipt.settle("warn", reason)
       this.hooks.onStatus(`⚠ ${reason}`, "error")
     }
   }
 
   /**
-   * Reverse a landed write.
+   * Reverse a write that landed.
    *
-   * The edge first, then the node it brought with it — the create-then-join order, run
-   * backwards, because the store will not delete a node that still has edges. If something
-   * else has since been joined to that node the delete is refused, and rightly: the node is
-   * no longer only this write's doing. The edge is still gone, which is what was asked for.
+   * The edge first, then the node it created. That is the create-then-join order run
+   * backwards, and it is required: the store refuses to delete a node that still has edges.
+   * If something else has been joined to that node since, the delete is refused and the node
+   * stays. The edge is still removed, which is what was asked for.
    */
   private async revert(receipt: Receipt, done: Done): Promise<void> {
     try {
@@ -338,8 +308,8 @@ export class JoinPanel {
       }
 
       this.hooks.onUndone(done.a, done.b, removed)
-      // The name may be sitting in an end: `⌘↵` puts what it fires into one. The same reason
-      // a name in an undone receipt stops loading (see `reuse`).
+      // The deleted name may still be in an input, because `⌘↵` puts it there. Release it.
+      // `reuse` blocks the same dead name for the same reason.
       if (removed) this.forget(removed)
       const fate = removed ? `${done.b.label} removed` : `${done.b.label} left in place`
       receipt.settle("undone", fate)
@@ -352,18 +322,17 @@ export class JoinPanel {
   }
 
   /**
-   * Let go of a node that has left the store, in whichever end is holding it.
+   * Release a node that is no longer in the store, from whichever input holds it.
    *
-   * The undo above is one way a node goes; the map deleting from the centre is the other
-   * (web/src/main.ts), and both call this. What an end left holding a dead name costs is in
-   * docs/design/writing-to-the-graph.md.
+   * Two things delete a node: the undo above, and deleting the centre node on the map. See
+   * web/src/main.ts. Both call this.
    */
   forget(node: NodeMeta): void {
     for (const side of [this.near, this.far]) {
       if (side.anchor?.node?.id !== node.id) continue
       side.anchor = null
-      // Never over a box being typed in, which is the rule `paint` holds to. The anchor is
-      // what has to go; a half-typed name belongs to whoever is typing it.
+      // Never clear an input being typed in, the same rule `paint` follows. The anchor is
+      // what has to go. Half-typed text belongs to whoever is typing it.
       if (document.activeElement !== side.ui.input) side.box.clear()
     }
     this.paint()
@@ -372,16 +341,16 @@ export class JoinPanel {
   private paint(): void {
     for (const side of [this.near, this.far]) {
       const anchor = side.anchor
-      // Never over a box being typed in: a write landing mid-word would otherwise replace
-      // what is half-typed with what the end was already holding.
+      // Never write over an input being typed in. A write landing mid-word would replace
+      // half-typed text with whatever the input held before.
       if (document.activeElement !== side.ui.input) side.ui.input.value = anchor?.label ?? ""
-      // A name that has to be created still reads as chosen, but says it is not there yet.
+      // A name still to be created shows as chosen, and marked as not in the graph yet.
       side.ui.input.dataset["state"] = anchor ? (anchor.node ? "set" : "new") : ""
       side.ui.clear.hidden = !side.ui.input.value
     }
-    // Grown while either end holds a name, not just the near one. The end that fired empties,
-    // so keying this to the near end alone would collapse the widget on every fan-in — and
-    // take the far end's anchor with it.
+    // Expanded while either input holds a name, not only the near one. The input that
+    // completed the pair is emptied, so testing the near input alone would collapse the
+    // panel on every write and take the far input's anchor with it.
     const grown = Boolean(this.near.anchor ?? this.far.anchor)
     this.ui.far.field.hidden = !grown
     this.ui.link.hidden = !grown
@@ -401,18 +370,18 @@ export class JoinPanel {
     const sep = document.createElement("i")
     sep.className = "sep"
     sep.textContent = "·"
-    // Both names, because a receipt outlives the pair that made it: the widget is showing
-    // something else by the time this is read.
+    // Both names, because a receipt outlives the pair that made it. The inputs are showing
+    // something else by the time it is read.
     chip.el.append(this.reuse(chip, pair[0]), sep, this.reuse(chip, pair[1]))
     return chip
   }
 
   /**
-   * A name in a receipt, as the way back to that node.
+   * A name in a receipt, as a way back to that node.
    *
-   * Live only while the write stands. An undone one can name a node the undo deleted
-   * (0011 removes a created node along with its edge), and a refused one can name a node
-   * that was never made — a dead name loaded into an end is a trap.
+   * Clickable only while the write stands. An undone write can name a node the undo deleted:
+   * ADR 0011 removes a created node along with its edge. A refused write can name a node
+   * that was never created. Loading either into an input would point it at nothing.
    */
   private reuse(chip: Receipt, anchor: Anchor): HTMLButtonElement {
     const button = document.createElement("button")
@@ -422,32 +391,25 @@ export class JoinPanel {
     button.title = `start from ${anchor.label}`
     button.addEventListener("click", () => {
       if (!chip.landed || !anchor.node) return
-      // Always the near end, whichever name was clicked and whatever the far end holds. A
-      // rule you can predict beats one that guesses which end you meant. A fresh anchor, so
-      // a queued write still holds the one it was fired at.
+      // Always the near input, whichever name was clicked and whatever the far input holds.
+      // A fixed rule is easier to predict than one that guesses. A new Anchor object, so a
+      // queued write keeps the one it was made with.
       this.near.anchor = { label: anchor.label, node: anchor.node }
       this.near.ui.input.value = anchor.label
       this.paint()
       this.hooks.onArm(anchor.node)
-      // The far end, because the next thing to do is name what this joins to.
+      // Focus the far input, because the next step is naming what this joins to.
       this.ui.far.input.focus()
     })
     return button
   }
 
   private offerUndo(receipt: Receipt, done: Done): void {
-    const undo = document.createElement("button")
-    undo.type = "button"
-    undo.className = "undo"
-    undo.textContent = "undo"
-    undo.title = done.created
+    const title = done.created
       ? `part them again and delete ${done.b.label}`
       : "part them again"
-    undo.addEventListener("click", () => {
-      // Gone at the click, so a second one cannot queue the same reversal twice.
-      undo.remove()
+    receipt.offerUndo(title, () => {
       this.writes.run(receipt, () => this.revert(receipt, done))
     })
-    receipt.el.append(undo)
   }
 }

@@ -9,13 +9,12 @@
 # The staged copies of the gates are the ones that run, which is deliberate: a
 # commit that changes the rules gets checked by its own new rules.
 #
-# Two gates, one per kind of document — docs/README.md says why they differ.
-# The rules are in docs/decisions/GATE.md and docs/checks.md.
+# Two gates, one per kind of document, because the two age in different ways.
 #
-# Versioned here and linked into .git/hooks by `npm run hooks:install`, which
-# docs/decisions/GATE.md describes. On Windows that link is a copy — MSYS `ln` falls
-# back to one without developer mode — so editing this file does not reach an
-# installed hook. Re-run the install after touching it.
+# Versioned here and linked into .git/hooks by `npm run hooks:install`. On Windows
+# that link is a copy — MSYS `ln` falls back to one without developer mode — so
+# editing this file does not reach an installed hook. Re-run the install after
+# touching it.
 #
 # Errors block. Warnings print but pass. ADR_GATE_STRICT=1 and DOCS_GATE_STRICT=1
 # make each gate's warnings block too. Bypass everything with --no-verify.
@@ -29,7 +28,7 @@ DECISIONS="docs/decisions"
 # Anything whose shape is a commitment rather than a detail. Changing one of these
 # is usually a decision, and decisions are the thing no script can notice going
 # unrecorded.
-WEIGHTY="package.json src/db/tables.ts src/graph/table.ts src/graph/keys.ts"
+WEIGHTY="package.json web/src/store/db.ts web/src/store/keys.ts"
 
 if ! command -v python3 >/dev/null 2>&1; then
 	echo "pre-commit: python3 not found, cannot run the gates." >&2
@@ -91,8 +90,8 @@ fi
 
 if [ "$failed" -ne 0 ]; then
 	echo >&2
-	echo "pre-commit: a gate rejected this commit. See $DECISIONS/GATE.md and" >&2
-	echo "            docs/checks.md. Fix the errors above, or use --no-verify." >&2
+	echo "pre-commit: a gate rejected this commit. Each finding above names its rule" >&2
+	echo "            code. Fix the errors, or commit with --no-verify." >&2
 fi
 
 exit "$failed"

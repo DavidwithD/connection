@@ -1,21 +1,8 @@
 /**
- * The world: what has been placed, where, and what it connects to.
+ * The in-memory map state: node positions, adjacency and degrees.
  *
- * This is the store. It owns positions, and the one rule it enforces is that a position,
- * once assigned, is never reassigned — there is no method to move a node. Rendering reads
- * from here; nothing writes back.
- *
- * Each node keeps its *true* degree from the server alongside the edges actually loaded.
- * The difference is what makes a node worth expanding, and it is the only reason the map
- * can tell "fully drawn" from "there is more here".
- *
- * A neighbour that arrives with nowhere to sit is kept rather than dropped. Room is a
- * property of the map at one moment, not of the graph, so the answer can change — and
- * re-asking the store for something it already told us would be the wrong way to find out.
- *
- * The seated-once guarantee is an invariant of the whole frontend, not just of this file:
- * see docs/design/architecture.md. The reasoning is
- * docs/decisions/0003-graph-exploration-demo-stack.md.
+ * There is no method that moves a node. That is what guarantees a position is assigned
+ * once. The renderer reads from here and never writes back.
  */
 import {
   LONG_EDGE,
@@ -26,17 +13,28 @@ import {
   ringSlots,
   rotationFor,
   seat,
+  touches,
   type Placed,
   type Point,
   type Slot,
 } from "./placement.js"
+// The key for an undirected pair. Imported from the store rather than written twice. An id is
+// a name, so the separator must be a character no name can contain. `keys.ts` owns that rule,
+// because it also owns `normaliseLabel`.
+import { edgeKey } from "./store/keys.js"
 
 export interface WorldNode extends Placed {
   label: string
-  /** Degree in the stored graph, not the count of edges loaded. */
+  /** The degree in the stored graph, not the number of edges loaded here. */
   degree: number
 }
 
+/**
+ * What this file needs of a node: an id, a name and a degree.
+ *
+ * This is the same shape the store returns, declared separately on purpose. This file makes
+ * no assumption about where a node came from.
+ */
 export interface NodeMeta {
   id: string
   label: string
@@ -46,34 +44,27 @@ export interface NodeMeta {
 export interface Absorbed {
   nodes: WorldNode[]
   edges: [string, string][]
-  /** Known neighbours that found no seat. Kept, not discarded — see `seatPending`. */
+  /** Neighbours that found no free spot. Kept, not discarded. See `seatPending`. */
   unseated: NodeMeta[]
 }
 
-/** A fresh empty result each time: callers own what they are handed. */
+/** A new empty result each time. The caller owns what it is given. */
 const nothing = (): Absorbed => ({ nodes: [], edges: [], unseated: [] })
 
 /**
- * Water around an island: how far a berth keeps from anything already placed.
+ * How far a new island is kept from anything already placed.
  *
- * Sized against `LONG_EDGE` rather than against a node, because that is the distance at
- * which the renderer gives up drawing a line and stubs it instead. Anything closer and an
- * edge could be drawn between two islands that share no edge at all — not a wrong line, but
- * a picture in which the reader cannot tell there is a gap.
+ * Sized against LONG_EDGE, not against a node. That is the distance at which the renderer
+ * stops drawing a line and draws two stubs instead. Any closer and a line could be drawn
+ * between two islands that share no edge. The line would be correct, but the reader could
+ * not see that there is a gap.
  */
 const CLEARANCE = LONG_EDGE
 
-/** How far out each candidate berth steps, and how far around. Rough on purpose. */
+/** How far each candidate position steps out and around. The values are approximate. */
 const BERTH_STEP = CLEARANCE * 0.55
-const BERTH_TURN = 2.399963 // the golden angle: successive berths never share a bearing
+const BERTH_TURN = 2.399963 // the golden angle, so no two candidates share a bearing
 const BERTH_STEPS = 96
-
-/**
- * Canonical key for an undirected pair. The separator is a character no id contains,
- * and it stays written as an escape: a literal NUL byte in the source makes git call
- * the whole file binary and stop diffing it.
- */
-const pairKey = (a: string, b: string): string => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`)
 
 export class World {
   private readonly nodes = new Map<string, WorldNode>()
@@ -81,7 +72,7 @@ export class World {
   private readonly pairs = new Set<string>()
   private readonly occupancy = new Occupancy()
   private readonly expanded = new Set<string>()
-  /** Neighbours that arrived from the store but found no room. Never thrown away. */
+  /** Neighbours read from the store that found no room. Never discarded. */
   private readonly pending = new Map<string, NodeMeta[]>()
 
   get size(): number {
@@ -104,14 +95,14 @@ export class World {
     return [...(this.adjacency.get(id) ?? [])]
   }
 
-  /** Edges loaded for this node, versus the degree the store reports. */
+  /** How many of this node's edges are not loaded yet. */
   missing(id: string): number {
     const node = this.nodes.get(id)
     if (!node) return 0
     return Math.max(0, node.degree - (this.adjacency.get(id)?.size ?? 0))
   }
 
-  /** Worth fetching: has unloaded edges and has not already been asked for. */
+  /** True if this node has unloaded edges and has not been read already. */
   isIncomplete(id: string): boolean {
     return !this.expanded.has(id) && this.missing(id) > 0
   }
@@ -121,11 +112,11 @@ export class World {
   }
 
   /**
-   * Give a claim back, for a read that never answered.
+   * Clear the mark after a read that failed.
    *
-   * The claim is taken before the request leaves, so a cancelled or failed read would
-   * otherwise leave a node marked as read and permanently short of the neighbours it
-   * reports having — the one state the map is not allowed to be in.
+   * The mark is set before the read starts. Without this a failed read would leave a node
+   * marked as read while it is still missing neighbours, and nothing would ever read it
+   * again.
    */
   unmarkExpanded(id: string): void {
     this.expanded.delete(id)
@@ -137,67 +128,71 @@ export class World {
   }
 
   /**
-   * Spots near a node for things that need somewhere to stand without taking a seat.
+   * Temporary positions near a node, for ghosts. These are not seats.
    *
-   * Gaps first, at the tighter separation — a ghost draws at neighbour size, not accent
-   * size. Whatever finds no gap still gets a spot: crowding is precisely what puts a
-   * neighbour out of drawing range in the first place, so a ghost that gave up in a full
-   * region would be missing from every case it exists for. Nothing is written to the
-   * occupancy grid either way, which is what keeps these from being seats — and what
-   * stops `nearestTo` ever handing one back as the centre.
+   * Real gaps first, at the tighter separation, because a ghost draws at neighbour size and
+   * not at accent size. Anything with no gap still gets a position: a crowded area is what
+   * puts a neighbour out of drawing range in the first place, so a ghost that gave up there
+   * would be missing from every case it exists for.
    *
-   * `slot` is how much room one of them needs, which only the renderer can know: these draw as
-   * names. It decides how many a ring holds, and so how many rings get used.
+   * Nothing is written to the occupancy grid. That is what keeps these from being seats, and
+   * what stops `nearestTo` returning one as the centre node.
+   *
+   * `slot` is how much room one ghost needs. Only the renderer knows, because a ghost draws
+   * as a name. It sets how many fit on a ring, and so how many rings are used.
    */
   slotsAround(id: string, count: number, slot: Slot, maxRadius: number): Point[] {
     const node = this.nodes.get(id)
     if (!node || count <= 0) return []
     const seed = `ghost:${id}`
-    // `seat` walks outward until it has the count and knows nothing about where the screen
-    // ends, so a gap beyond the reach is a doorway nobody can open. Dropped rather than kept,
-    // and `ringSlots` refills from rings that are inside it.
-    const gaps = seat(node, count, this.occupancy, seed, SQUEEZE_SEP).filter(
-      (point) => distance(node, point) <= maxRadius,
-    )
+    // Two reasons a gap `seat` found is no good here. It walks outward until it has the count
+    // and knows nothing about where the screen ends, so one beyond the reach is a doorway
+    // nobody can open. And it spaces by a scalar sized for discs, while these draw as names —
+    // so two gaps far enough apart to be separate seats can still bury one another as pills.
+    // Both drop out, and `ringSlots` refills from rings that are inside the reach.
+    const gaps: Point[] = []
+    for (const point of seat(node, count, this.occupancy, seed, SQUEEZE_SEP)) {
+      if (distance(node, point) > maxRadius) continue
+      if (gaps.some((other) => touches(point, other, slot))) continue
+      gaps.push(point)
+    }
     if (gaps.length >= count) return gaps
     return [...gaps, ...ringSlots(node, count - gaps.length, seed, gaps, slot, maxRadius)]
   }
 
   /**
-   * Somewhere clear to put a node that arrived by name instead of by walking.
+   * A clear position for a node that arrived by search rather than by walking.
    *
-   * Everything else on the map got its spot from the node it neighbours. A searched node
-   * neighbours nothing here yet, so the only thing its position can answer to is the
-   * camera — and the one rule that still holds is that it cannot land on top of anything
-   * already placed. `seat` is what enforces that, so this asks it for a single spot around
-   * the point rather than around a parent.
+   * Every other node gets its position from a neighbour. A searched node has no neighbour on
+   * the map yet, so its position can only be based on the camera. The one rule left is that
+   * it must not land on top of something already placed. `seat` enforces that, so this asks
+   * `seat` for a single spot around a point instead of around a parent node.
    */
   landing(near: Point, seed: string): Point {
     return seat(near, 1, this.occupancy, seed, SEAT_SEP)[0] ?? near
   }
 
   /**
-   * Open water: somewhere a whole component can be set down without touching another.
+   * A position with room around it, for setting down a whole component.
    *
-   * `landing` is the answer for a node arriving alone — it takes the first clear spot near
-   * the camera, which is right for something searched for and read one hop at a time. An
-   * island is not that. It is the first node of a neighbourhood that will grow as it is
-   * walked, and grown from a seat wedged between two nodes of somewhere else it would
-   * interleave with them: two unconnected regions occupying one patch of ground, and no way
-   * to tell by looking which node belongs to which. Positions are never reassigned, so that
-   * is not a picture that tidies itself up later.
+   * `landing` is the answer for a single node arriving alone. It takes the first clear spot
+   * near the camera, which suits a node that was searched for and is read one hop at a time.
+   * An island is different. It is the first node of a neighbourhood that grows as the reader
+   * walks it. Started from a gap between two nodes of another island, it would grow through
+   * them, and two unconnected regions would share one patch of ground with no way to tell
+   * which node belongs to which. Positions are never reassigned, so it would stay that way.
    *
-   * So this asks for room rather than for a gap. Candidates go outward along a spiral from
-   * the origin and the first with `CLEARANCE` of nothing around it wins, which puts each
-   * island in its own water and leaves the space its ring will need. Failing that — a map
-   * so full that no berth exists — it lands beyond everything placed, because an island
-   * drawn far away is still readable and an island drawn on top of another is not.
+   * So this asks for room, not for a gap. Candidates run outward along a spiral from the
+   * origin, and the first one with CLEARANCE clear on all sides wins. That gives each island
+   * its own space, including the space its first ring will need. If no candidate is clear,
+   * the island is placed beyond everything already on the map. An island drawn far away is
+   * still readable; one drawn on top of another is not.
    */
   berth(seed: string): Point {
     const rotation = rotationFor(seed)
     for (let step = 0; step < BERTH_STEPS; step++) {
-      // Angle and radius grow together, so candidates spread around the origin instead of
-      // marching out along one bearing.
+      // Angle and radius grow together, so the candidates spread around the origin instead
+      // of running outward along one bearing.
       const angle = rotation + step * BERTH_TURN
       const radius = CLEARANCE + step * BERTH_STEP
       const point = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }
@@ -211,7 +206,7 @@ export class World {
     return { x: Math.cos(rotation) * (far + CLEARANCE), y: Math.sin(rotation) * (far + CLEARANCE) }
   }
 
-  /** Placed nodes inside a radius. Answers "what is the centre crowded by?". */
+  /** Placed nodes inside a radius. Used to find what is crowding the centre. */
   nodesWithin(point: Point, radius: number): WorldNode[] {
     const out: WorldNode[] = []
     for (const hit of this.occupancy.within(point.x, point.y, radius)) {
@@ -221,7 +216,7 @@ export class World {
     return out
   }
 
-  /** The first node, at the origin. */
+  /** Add a node at a given point. Returns the existing node if the id is already placed. */
   place(meta: NodeMeta, at: Point): WorldNode {
     const existing = this.nodes.get(meta.id)
     if (existing) return existing
@@ -234,7 +229,7 @@ export class World {
 
   private link(a: string, b: string): boolean {
     if (a === b) return false
-    const key = pairKey(a, b)
+    const key = edgeKey(a, b)
     if (this.pairs.has(key)) return false
     this.pairs.add(key)
     this.adjacency.get(a)?.add(b)
@@ -243,10 +238,10 @@ export class World {
   }
 
   /**
-   * Seat whatever fits, link everything that is on the map, and hand back the rest.
+   * Place what fits, link everything that is on the map, and return the rest.
    *
-   * Shared by the first pass and the squeeze, which differ only in the separation they
-   * ask for and in where the candidates came from.
+   * Used by both the first pass and the second. They differ only in the separation they ask
+   * for and in where the candidates came from.
    */
   private seatAndLink(
     parent: WorldNode,
@@ -254,8 +249,8 @@ export class World {
     separation: number,
   ): Absorbed {
     const fresh = candidates.filter((meta) => !this.nodes.has(meta.id))
-    // Highest degree first, so the best-connected neighbours get the closest seats when
-    // room runs short.
+    // Highest degree first, so the best-connected neighbours get the closest spots when
+    // room runs out.
     fresh.sort((a, b) => b.degree - a.degree || (a.id < b.id ? -1 : 1))
 
     const seats = seat(parent, fresh.length, this.occupancy, parent.id, separation)
@@ -268,7 +263,7 @@ export class World {
 
     const edges: [string, string][] = []
     for (const meta of candidates) {
-      if (!this.nodes.has(meta.id)) continue // still nowhere to sit
+      if (!this.nodes.has(meta.id)) continue // no room for it yet
       if (this.link(parent.id, meta.id)) edges.push([parent.id, meta.id])
     }
 
@@ -281,9 +276,9 @@ export class World {
   }
 
   /**
-   * Add a node's neighbours. Ones already on the map keep the position they have — they
-   * are only linked — which is what makes a node appear exactly once. The edge to a
-   * distant existing node comes back as a long pair for the renderer to stub.
+   * Add a node's neighbours to the map. A neighbour already on the map keeps its position
+   * and is only linked. That is what makes a node appear exactly once. An edge to a distant
+   * node is returned as a normal pair; the renderer decides to draw it as stubs.
    */
   absorb(parentId: string, neighbours: NodeMeta[]): Absorbed {
     const parent = this.nodes.get(parentId)
@@ -296,8 +291,8 @@ export class World {
   }
 
   /**
-   * Try again for the neighbours the first pass could not fit, in whatever room is left
-   * and at a tighter separation. Costs no request: the metadata never went anywhere.
+   * Retry the neighbours the first pass could not fit, at a tighter separation. This needs
+   * no read: the metadata was kept in `pending`.
    */
   seatPending(parentId: string, separation: number = SQUEEZE_SEP): Absorbed {
     const parent = this.nodes.get(parentId)
@@ -310,44 +305,42 @@ export class World {
   }
 
 
-  /** Link two nodes already on the map, for edges discovered between existing nodes. */
+  /** Link two nodes that are both already on the map. */
   linkExisting(a: string, b: string): boolean {
     return this.nodes.has(a) && this.nodes.has(b) && this.link(a, b)
   }
 
   /**
-   * Record that the stored graph gained an edge here.
+   * Record that the stored graph gained an edge at this node.
    *
-   * The only mutation of a node this class allows, and it exists because of `missing`: that
-   * is `degree - adjacency.size`, and it is the whole of how the map tells "fully drawn"
-   * from "there is more here". An edge written to the store raises both sides of that
-   * subtraction. Linking it locally without this raises only the second, so the difference
-   * falls by one and a node with graph still behind it starts claiming to be finished — the
-   * same drift docs/decisions/0009-the-first-write-outside-the-seed.md is about, arriving
-   * from the client instead of the store.
+   * This is the only change to a node this class allows. It exists because of `missing`,
+   * which is `degree - adjacency.size`. That difference is how the map tells a fully drawn
+   * node from one with more graph behind it. Writing an edge to the store raises both terms.
+   * Linking locally without calling this raises only the second, so the difference drops by
+   * one and a node with unread neighbours starts reporting itself as complete.
    *
-   * So it is never called alone. Link and bump, together, or not at all.
+   * Never call this on its own. Link and bump together, or do neither.
    */
   bumpDegree(id: string): void {
     const node = this.nodes.get(id)
     if (node) node.degree += 1
   }
 
-  /** The same, for a join taken back. Never below zero, whatever the caller thinks. */
+  /** The reverse, for an undone join. Never goes below zero. */
   lowerDegree(id: string): void {
     const node = this.nodes.get(id)
     if (node) node.degree = Math.max(0, node.degree - 1)
   }
 
   /**
-   * Take an edge back off the map.
+   * Remove an edge from the map.
    *
-   * Paired with `lowerDegree` exactly as `link` is with `bumpDegree`, and for the mirror
-   * reason: dropping the edge alone would leave the degree counting it, and the node would
-   * report graph behind it that nobody can read.
+   * Pair this with `lowerDegree`, as `link` is paired with `bumpDegree`, for the mirror
+   * reason. Removing the edge alone would leave the degree still counting it, and the node
+   * would report neighbours that cannot be read.
    */
   unlink(a: string, b: string): boolean {
-    const key = pairKey(a, b)
+    const key = edgeKey(a, b)
     if (!this.pairs.has(key)) return false
     this.pairs.delete(key)
     this.adjacency.get(a)?.delete(b)
@@ -356,17 +349,15 @@ export class World {
   }
 
   /**
-   * Take a node off the map, seat and all.
+   * Remove a node from the map and free its position.
    *
-   * The one hole in "a position, once assigned, is never reassigned". The rule exists so
-   * that nothing already drawn moves under the reader, and this does not move anything: the
-   * node leaves, and the ground it held goes back into the grid for whoever comes next.
-   * What would break the rule is *reusing* the id later at a different spot, so the node
-   * has to be genuinely gone from the store too. Both callers have removed it there first:
-   * an undone create, and a node taken off the map with its edges
-   * (docs/decisions/0024-taking-a-node-out-with-its-edges.md).
+   * This is the one exception to "a position is never reassigned". That rule exists so
+   * nothing already drawn moves under the reader, and this moves nothing: the node goes, and
+   * its position returns to the grid for the next node. What would break the rule is reusing
+   * the same id at a different position later, so the node must also be gone from the store.
+   * Both callers delete it there first: an undone create, and a node removed with its edges.
    *
-   * Refuses a node with edges. Removing one would leave adjacency in its neighbours
+   * Refuses a node that still has edges. Removing one would leave its neighbours' adjacency
    * pointing at nothing, and `pairs` counting an edge with one end missing.
    */
   forget(id: string): boolean {
@@ -378,7 +369,7 @@ export class World {
     this.occupancy.remove(id)
     this.expanded.delete(id)
     this.pending.delete(id)
-    // Anything still waiting for a seat beside this node is waiting on nothing.
+    // Drop this node from any other node's pending list. It cannot be placed now.
     for (const [parent, waiting] of this.pending) {
       const left = waiting.filter((meta) => meta.id !== id)
       if (left.length !== waiting.length) this.remember(parent, left)

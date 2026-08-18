@@ -1,19 +1,19 @@
 # 0009 — The first write outside the seed
 
-**Status:** 🔵 Proposed
+**Status:** ♻️ Superseded by [0030](0030-the-graph-moves-into-the-browser.md)
 **Date:** 2026-08-02
 **Deciders:** David HL
 
 ## Context
-Until this, the only writer built the whole graph at once
-([seed.ts](../../src/graph/seed.ts)). Joining two nodes that already exist is the first
-change that touches a graph somebody is reading.
+Until this, the only writer built the whole graph at once, on
+[0007](0007-a-table-for-the-graph.md)'s table. Joining two nodes that already exist is the
+first change that touches a graph somebody is reading.
 
 It lands on an invariant. A reader weighs the edges it got back against the `degree` on the
-node's meta item, and that is how it decides whether it has seen everything
-([repo.ts](../../src/graph/repo.ts)). The whole map is drawn from the comparison: a node
-with more behind it is marked, and a finished one is not. An edge that arrives without its
-count, or a count raised twice, makes the store misdescribe itself.
+node's meta item, and that is how it decides whether it has seen everything (`repo.ts`). The
+whole map is drawn from the comparison: a node with more behind it is marked, and a finished
+one is not. An edge that arrives without its count, or a count raised twice, makes the store
+misdescribe itself.
 
 ## Decision
 One edge is one transaction. Five operations, all of them or none.

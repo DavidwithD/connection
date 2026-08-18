@@ -1,21 +1,54 @@
 # The centre and its neighbourhood
 
-What the map draws around the node in the middle, and what has to stay true while it does.
-The constraints behind it are [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md),
-for what is drawn, and [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it
-is drawn as.
+What the map draws around the centre, and what has to stay true while it does. The constraints
+behind it are [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md), for what is
+drawn, [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it is drawn as, and
+[ADR 0032](../decisions/0032-the-centre-is-named.md), for which node holds it.
+
+The centre is named, never inferred. A click, a doorway, a search hit, a crossing to an island
+— each of those hands the mark over, and nothing else does. Panning and zooming are looking, so
+the middle of the screen is where the centre was put rather than what defines it. A reader who
+wants the older rule can tick **walk by pan**. The camera then names the centre again, at the
+price [ADR 0032](../decisions/0032-the-centre-is-named.md) sets out.
+
+A click takes no camera. It names a node **where it stands**
+([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)), so the centre sits as often at an
+edge as at the middle. The search box, an island row and a doorway do still move the camera to
+their node. The centre and its neighbours are the only named nodes, and a named node is drawn as
+its name; everything else is a disc. A neighbour off screen is stood in for by a ghost in the
+ring, and clicking one flies to the node it stands for. Nothing on the map moves except a ghost
+in flight.
+
+## What the renderer may do
+
+Only *add*. [map-view.ts](../../web/src/map-view.ts) never moves an element, never restyles
+one per frame, and never removes one, so a pan is camera work and costs nothing beyond the
+redraw. Panning triggers no read and no layout, because there is no layout.
+
+Cytoscape's own gestures are already the convention a map wants — drag pans, wheel zooms
+toward the cursor — so none of that is reimplemented. `autoungrabify` turns a drag that
+starts on a node into a pan rather than a move, which both matches a map and protects the
+frozen positions.
+
+Ghosts are the one exception, and it is deliberate. They are also the one thing here the
+camera decides.
 
 ## The names
 
-A named node draws *as* its name: a pill sized to the label, with no disc beside it. Only
-the centre and its ring are named, so only they are pills — everything else is still a disc,
-and the reason for the split is [ADR 0012](../decisions/0012-the-name-is-the-node.md).
+A named node draws *as* its name: a pill sized to the label, with no disc beside it. A disc
+with a label beside it is two marks carrying one fact, and a reader has to bind them before
+reading either. The pill is Cytoscape's own node box rather than drawn text, so it keeps the
+hit target, the place an edge stops, and a border the finer marks can use.
+
+Only the centre and its ring are named, so only they are pills. Everything else stays a
+disc: a field node is seen rather than read, and nothing about it has to be legible for the
+map to work.
 
 Seven kinds of thing, and one of them is not a node.
 
 | Name | What it is | In the code |
 |---|---|---|
-| centre | The node nearest the middle of the screen | `tier 0` |
+| centre | The node somebody named, until somebody names another | `tier 0` |
 | ring | A neighbour of the centre, named — the name being the mark | `tier 1` |
 | arrival | A ring node that turns up *while* its parent is the centre | born at `tier 1` |
 | backdrop | Near the centre, connected to something else, dimmed | `tier 3` |
@@ -60,13 +93,23 @@ centre change, which is why `add` reads the current centre before it builds an e
 Every neighbour of the centre is either legible at its own seat or stood in for by a ghost.
 Never both, never neither. That is the whole rule, and it is the camera that decides which:
 a ghost stands while its neighbour's drawn box is off screen. So zooming out dissolves the
-doorways into the nodes they stood for, and zooming in raises them for the neighbourhood you
-zoomed past.
+doorways into the nodes they stood for, zooming in raises them for the neighbourhood you zoomed
+past, and panning away raises them for the one you left behind — a doorway being the only mark
+on the map the camera still has any say over.
 
-Reading the camera at all is [ADR 0025](../decisions/0025-when-a-ghost-stands.md); the ghost
-itself is 0004's. The rule reads the canvas, which is not quite what the reader sees: the HUD,
-the islands and the legend float over it, so a neighbour parked under one counts as on screen
-and gets no ghost while being as hidden as one that left.
+Which means the doorways can leave the screen themselves. They stand in the centre's own rings,
+so a pan that carries the centre off the edge takes them along, and what is left is a
+neighbourhood standing in for neighbours where neither can be seen. Nothing is lost by it:
+**Recentre** brings the whole picture back, and clicking anything still on screen names a
+centre where you are instead.
+
+The camera decides it because nothing else can. How far a neighbour sits from the centre is
+fixed when it is seated and never changes; whether the reader can see it changes with every
+zoom and every pan. Only the camera knows the second.
+
+The rule reads the canvas, which is not quite what the reader sees: the HUD, the islands and
+the legend float over it, so a neighbour parked under one counts as on screen and gets no
+ghost while being as hidden as one that left.
 
 The box and not the seat, because a ring node draws as its name: a seat just past the edge
 still has half its label readable, and a ghost raised for it would be the same name twice.
@@ -96,22 +139,33 @@ window too small to hold the root's ring.
 
 How many can stand is what the rings have room for, not a number written down:
 `pillsAround` ([placement.ts](../../web/src/placement.ts)) divides a ring's circumference by the
-widest name in the plan, and a neighbourhood wider than one ring uses the next one out. Only
-rings the viewport can show are used, because a doorway off screen opens for nobody, and two
-slots that would touch are refused — a name half under a sibling is still readable, a doorway
-half under one has lost its click. [ADR 0027](../decisions/0027-a-ring-holds-what-it-holds.md)
-is why this is measured rather than declared.
+widest name in the plan, and a neighbourhood wider than one ring uses the next one out. How far
+out is half the viewport's smaller span — measured once, when the visit began, and measured
+*from the centre* rather than from the frame. The two agree while the centre sits at the middle,
+which is the arrangement the bound was cut for: a doorway off screen opens for nobody. They part
+company when a click names a node where it stands
+([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)). A centre near an edge then plans
+doorways that fall outside the frame. **Recentre** brings them back within reach on the next
+visit, not this one. `slotsFor` rebuilds the plan when the centre changes, not when the camera
+moves. Two slots that would touch are refused — a name half under a sibling is still readable,
+a doorway half under one has lost its click.
+
+A constant could not stay true. Every input to that division moves — the type, the plan, the
+viewport — so a number fixed against one ring stops matching the next, and nothing reports the
+gap: doorways simply stop appearing.
+[ADR 0027](../decisions/0027-a-ring-holds-what-it-holds.md) is why this is measured rather than
+declared.
 
 The rings still run out on a hub at close zoom, so the order they are offered in decides who
 gets one. Ranked unlined first — a neighbour reached by two tethers has almost nothing pointing
-at it, while one with a drawn line at least has a direction — then nearest first, which is also
-the order the read-ahead holds replies in, so a door usually opens without a fetch.
+at it, while one with a drawn line at least has a direction — then nearest first, which puts
+the doors on the neighbours close enough to be worth walking to.
 
 ## The flight
 
 Clicking a ghost runs `flyTo` ([map-view.ts](../../web/src/map-view.ts)):
 
-1. The request for the destination goes out at once, before anything moves.
+1. The read for the destination starts at once, before anything moves.
 2. The centre is pinned. Nothing may take it while a ghost is in the air.
 3. Camera and ghost travel together, for a duration set by how far the move looks on screen.
 4. On landing, the destination becomes the centre and the ghost dissolves into it.
@@ -120,14 +174,13 @@ Steps 2 and 4 are the ones that break if touched. A ghost torn down when its cen
 being the centre leaves nothing under the cursor by the second frame; a destination promoted
 before the landing shows you arriving at a place you have not reached.
 
-A round trip is symmetric in everything geometric and asymmetric in everything it knows.
-The motion mirrors: whichever ghost was clicked is the one that travels, the way back covers
-the distance the way out did, and the centre being left demotes and stands a ghost of itself
-in the new ring. What differs is what you land on. Flying out, the destination is an
-unlabelled dot whose neighbours may not be seated, and whether its ring is there on arrival
-is network-bound; flying back, every seat exists and nothing is fetched. Step 1 is what that
-asymmetry pays for — the outbound flight is otherwise idle time, and the return needs none
-of it.
+A flight out and a flight back are symmetric in everything geometric and asymmetric in
+everything they know. The motion mirrors: whichever ghost was clicked is the one that travels,
+the way back covers the distance the way out did, and the centre being left demotes and stands
+a ghost of itself in the new ring. What differs is what you land on. Flying out, the
+destination is an unlabelled dot whose neighbours may not be seated, so its ring has to be
+read; flying back, every seat exists and nothing is read at all. Step 1 is what that asymmetry
+pays for — the outbound flight is otherwise idle time, and the return needs none of it.
 
 ## Invariants
 
@@ -147,6 +200,20 @@ never on screen at the same time as the node it stands for.
 Beside the code that reads them, once: separations, ring geometry and the long-edge threshold in
 [placement.ts](../../web/src/placement.ts), flight speed and its clamps, the margin a seat must
 clear the screen by, the pill's inset and type, and the paint bands for the ring and the doorways
-in [map-view.ts](../../web/src/map-view.ts), and the settle delay and accent hysteresis in
-[main.ts](../../web/src/main.ts). Each carries the reason for its value in a comment. Copying one
-here would make this the stale copy.
+in [map-view.ts](../../web/src/map-view.ts), and the settle delays, the keyboard pan step and the
+accent hysteresis in [main.ts](../../web/src/main.ts). Each carries the reason for its value in a
+comment. Copying one here would make this the stale copy. The one stored key is in
+[settings.ts](../../web/src/settings.ts), beside the guard that reads it.
+
+## Records behind it
+
+| Record | What it settled |
+|---|---|
+| [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | That the centre shows every neighbour it has, and what a ghost is |
+| [0012](../decisions/0012-the-name-is-the-node.md) | The pill, and which nodes get one rather than a disc |
+| [0025](../decisions/0025-when-a-ghost-stands.md) | The camera rather than the seat as what raises a ghost |
+| [0027](../decisions/0027-a-ring-holds-what-it-holds.md) | How many doorways a ring offers, and that the number is measured |
+| [0006](../decisions/0006-only-the-centre-reads.md) | That drawing is the centre's neighbourhood, and reading runs a hop past it |
+| [0032](../decisions/0032-the-centre-is-named.md) | What moves the mark, and what it costs to let the camera move it |
+| [0033](../decisions/0033-a-click-takes-no-camera.md) | That a click names a node where it stands, and what that costs the doorways |
+| [0003](../decisions/0003-graph-exploration-demo-stack.md) | One frozen position per node, and a camera panned over it |

@@ -1,64 +1,62 @@
 /**
- * Wiring: seed the world, let the camera roam, keep the HUD honest.
+ * The map page: wiring, the centre and the HUD.
  *
- *   drag            pan the map
- *   wheel           zoom toward the cursor
- *   click a node    glide it to the middle, drawing its ring on the click
- *   click it again  hand its name to the panel, and the next one joins the pair
- *   right-click     take the middle off the map, edges and all
- *   arrows          nudge the camera
- *   /               put the caret in the box at the top
- *   click an island cross to it, or go back to one already crossed to
- *
- * The accent is whatever node is nearest the middle of the screen, recomputed at most
- * once per frame. It uses hysteresis — a rival has to be clearly closer before it takes
- * over — because a bare nearest-wins test flickers between two nodes when the midpoint
- * passes between them.
- *
- * Whichever node holds the accent once the camera stops is the only one drawn from, and
- * every node arrives because somebody walked to its neighbour. The reading runs a hop
- * further than that: the ring around the accent is read on arrival and held undrawn, so
- * the next step is already paid for — see docs/decisions/0006-only-the-centre-reads.md.
- *
- * How long "stopped" takes depends on what moved the camera. Naming a node — a click, a
- * ghost — skips the wait entirely, because the destination is not in doubt. Drift waits,
- * and waits longest for the inputs that carry inertia.
- *
- * See docs/decisions/0003-graph-exploration-demo-stack.md.
+ * The centre is the node somebody named: a click, a search hit, a doorway, a crossing. Under
+ * **walk by pan** the camera names one too, whatever it stops nearest. A click never takes the
+ * camera. A clicked node becomes the centre where it stands, ring and all, so the centre can
+ * end up off screen, and Recentre is the way back. The search box, the islands list and a
+ * doorway do still travel to their node. How long the camera must be still before it counts as
+ * stopped depends on what moved it. A drag waits longest.
  */
-import { Missing, deleteNodeWithEdges, fetchIndex, fetchNeighbourhood } from "./api.js"
-import type { GraphIndex, Neighbourhood, NodeMeta } from "./api.js"
+import {
+  Missing,
+  deleteNodeWithEdges,
+  fetchNeighbourhood,
+  fetchOpening,
+  joinNodes,
+  persist,
+  unjoinNodes,
+  whenEvicted,
+} from "./store/index.js"
+import type { Neighbourhood, NodeMeta, Opening } from "./store/index.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { distance, type Point } from "./placement.js"
-import { World } from "./world.js"
-import { Writes } from "./writes.js"
+import { walkByPan, setWalkByPan } from "./settings.js"
+import { World, type WorldNode } from "./world.js"
+import { Writes, type Receipt } from "./writes.js"
 
 /**
- * Camera stillness before the centre is drawn from.
+ * Camera stillness before the doorways are revised.
  *
- * The wait is not about the read — that is usually already held — but about *drift*. A
- * drag or a wheel sweeps the middle of the screen across whatever lies between here and
- * there, and a ring drawn for each would seat those nodes permanently: `World` never
- * reassigns a position, so a place panned past is a place that stays on the map. The
- * settle is what keeps the picture to the route.
+ * A pan no longer changes the centre, so nothing here is about what a gesture drifts across
+ * any more. What is left answers to the viewport: a doorway stands while its neighbour is off
+ * screen, and a doorway is an element, so raising and lowering them through the frames of a
+ * fling would strobe. The wait is for the picture the camera finished on, not for any of the
+ * ones it passed through.
  */
 const SETTLE_MS = 190
 
 /**
- * The same wait, for an input that stops dead.
+ * The same wait, for an input that stops at once.
  *
  * Most of the 190 is inertia — a drag's fling, a wheel's momentum. An arrow has none: the
- * camera moves its 120px and is still. What is left to wait for is only whether another
- * key is coming, and a held arrow repeats faster than this on a stock keyboard, so a run
- * across six nodes still coalesces into the one draw at the end of it.
+ * camera moves its 120px and is still. What is left to wait for is only whether another key
+ * is coming, and a held arrow repeats faster than this on a stock keyboard, so a run of them
+ * still costs the one revision at the end of it.
  */
 const NUDGE_SETTLE_MS = 110
 
-/** A rival must be this much closer to the middle before it takes the accent. */
+/**
+ * How much closer to the middle a rival must be before it takes the centre from the incumbent.
+ *
+ * Only **walk by pan** reads this. It is a ratio rather than a length, because it compares two
+ * distances to the same point. It prevents the flicker a bare nearest-wins test gives when the
+ * middle passes between two nodes.
+ */
 const ACCENT_HYSTERESIS = 0.78
 
 /** Keyboard pan step, in screen pixels. */
@@ -76,27 +74,29 @@ const statDegree = el<HTMLSpanElement>("stat-degree")
 const statNodes = el<HTMLSpanElement>("stat-nodes")
 const statEdges = el<HTMLSpanElement>("stat-edges")
 const statPending = el<HTMLSpanElement>("stat-pending")
-const statReady = el<HTMLSpanElement>("stat-ready")
 const statTotal = el<HTMLSpanElement>("stat-total")
 const status = el<HTMLParagraphElement>("status")
 const hudToggle = el<HTMLButtonElement>("hud-toggle")
+const walkToggle = el<HTMLInputElement>("walk-by-pan")
+/** Shown only when the store holds no graph at all. Raised and lowered by `showTotals`. */
+const empty = el<HTMLDivElement>("empty")
 
 const world = new World()
 const view = new MapView(stage, world)
 
 /**
- * The one line every write to the graph stands in.
+ * The queue every write to the graph goes through.
  *
- * Built here because two things write now — the panel below, and the map itself. Either one
- * holding the queue would be the one the other could not reach.
+ * Built here because two things write: the join panel below, and the map itself. Putting the
+ * queue inside either one would leave it out of reach of the other.
  */
 const writes = new Writes(el<HTMLDivElement>("receipts"), setStatus)
 
 /**
- * Every island in the graph, as an index of places.
+ * The island panel: every component of the graph, as a place to go.
  *
- * Built here rather than in `boot` because a table with no root at all still has islands in
- * it, and the list is the only way into any of them — see the `rootId` branch below.
+ * Built here rather than in `boot`, because a graph the map cannot open on still has islands
+ * in it, and this list is the only way to reach them. See the `home` branch in `boot`.
  */
 const islands = new IslandsPanel(
   el<HTMLElement>("islands"),
@@ -104,16 +104,16 @@ const islands = new IslandsPanel(
   el<HTMLSpanElement>("islands-count"),
   {
     onCross: (island, seated) => {
-      // Somewhere already on the map: go to the node that is on it, never the island's own
-      // name. They are usually not the same node, and berthing one already drawn would set a
-      // second copy of it down in open water.
+      // If a node of this island is already on the map, go to that node, not to the island's
+      // naming node. They are usually different, and placing a node that is already drawn
+      // would put a second copy of it somewhere else.
       const known = seated === null ? null : world.get(seated)
       if (known) {
         goTo(known)
         return
       }
-      // Water, not the nearest gap. An island grows as it is walked, and seating its first
-      // node beside the camera would grow it through whatever is already there.
+      // Use `berth`, not the nearest gap. An island grows as it is walked, and starting it
+      // beside the camera would grow it through whatever is already there.
       goTo(island, world.berth(island.id))
     },
     placed: (id) => world.has(id),
@@ -123,19 +123,18 @@ const islands = new IslandsPanel(
 function setStatus(text: string, tone: "idle" | "busy" | "error"): void {
   status.textContent = text
   status.dataset["tone"] = tone
-  // The HUD folds away to a chevron, and the status line folds away with it. The tone rides
-  // on the chevron so a failed read is still *something* on screen — a colour is not the
-  // message, but it is the difference between quiet and silent.
+  // Folding the HUD hides the status line with it, so put the tone on the chevron too. A
+  // failed read is then still visible as colour while the HUD is folded.
   hudToggle.dataset["tone"] = tone
 }
 
 const explorer = new Explorer(world, view, {
   onChange: () => {
     render()
-    // A reply draws neighbours the settle that asked for it could not have seen: the read is
-    // not awaited there, so the ghost pass ran before any of this arrived. Scheduling another
-    // settle is what covers them, and it keeps ghosts on the settled camera rather than
-    // raising elements from inside `add`, which a pan also reaches.
+    // The reply adds neighbours the settle that asked for it could not see: the read is not
+    // awaited there, so the ghost pass ran before the reply arrived. Schedule another settle
+    // to cover them. This keeps ghosts tied to a settled camera, rather than creating
+    // elements inside `add`, which a pan also calls.
     settle()
   },
   onError: (message) => setStatus(`⚠ ${message}`, "error"),
@@ -148,11 +147,8 @@ function render(): void {
   statNodes.textContent = String(world.size)
   statEdges.textContent = String(world.edgeCount)
   statPending.textContent = String(explorer.pending)
-  // Reported apart from `loading`: nothing on screen is waiting on these, and rolling them
-  // into the same count would make an idle map look busy for reads nobody asked for.
-  statReady.textContent = String(explorer.ready)
-  // Which islands are on the map changes without the store changing at all — walking across
-  // a bridge seats one — so the dim is repainted here rather than only after a write.
+  // Which islands are on the map changes without the store changing: walking across an edge
+  // places one. So repaint the rows here, not only after a write.
   islands.paint()
 
   if (status.dataset["tone"] === "error") return
@@ -160,57 +156,119 @@ function render(): void {
   else setStatus("drag to pan · wheel to zoom · click to centre", "idle")
 }
 
-/** Whatever is nearest the middle becomes the accent, with a bias toward the incumbent. */
-const trackAccent = perFrame(() => {
-  // A flight pans the camera across everything between here and there. Letting the
-  // accent follow would hand it to each node in turn and tear down the ghost being
-  // flown, which is the one thing the journey is about.
+/**
+ * Name a node the centre, and take whatever its arrival makes possible.
+ *
+ * Every way in comes through here: a click, a search, an island, the claim below for a map
+ * that has just lost its centre, and the tracker below that when the reader has handed the
+ * centre back to the camera. `flyTo` is the one exception, promoting its own destination on
+ * landing so that the ghost has something to dissolve into.
+ *
+ * The early return is load-bearing, not tidiness. `setAccent` reports whether the mark
+ * actually moved, and the tracker calls this on every frame of a pan — so a frame that finds
+ * the same node nearest costs one comparison and touches neither the DOM nor the store.
+ */
+function becomeCentre(id: string): void {
+  if (!view.setAccent(id)) return
+  // Room is a property of the map at one moment. Arriving is the moment to ask again
+  // whether the neighbours this node never had space for can be fitted now.
+  const late = world.seatPending(id)
+  if (late.nodes.length || late.edges.length) view.add(late.nodes, late.edges)
+  render()
+  // `setAccent` has just taken down the doorways the last centre raised, and nothing else here
+  // puts them back. A click moves no camera, so there is no `viewport` to schedule this on, and
+  // a node whose ring was already read asks `Explorer` for nothing either — the centre would
+  // stand with no way out of it until the reader happened to pan. The early return above is
+  // what keeps this off a naming that changed nothing.
+  settle()
+}
+
+/**
+ * A centre for a map that has just lost one, or that has just been told to find its own.
+ *
+ * Called on a loss — a centre deleted, a join undone that took its node with it — and when
+ * **walk by pan** is switched on, which is the reader asking the camera to name one now. A
+ * camera that has merely moved leaves the centre exactly where it is.
+ *
+ * Nearest the middle, bounded by `reach` so a map with nothing on screen is left without a
+ * centre rather than given one nobody can see. No hysteresis, in either case: on a loss there
+ * is no incumbent left to be biased toward, and on a switch the bias would sometimes leave the
+ * mark where it was and read as a control that did nothing.
+ *
+ * Never during a flight. `setAccent` clears the ghosts, so a claim landing mid-journey would
+ * take down the one in the air — and the flight names its own destination anyway.
+ */
+function claimCentre(): void {
+  if (view.inFlight) return
+  const candidate = world.nearestTo(view.centre(), view.reach())
+  if (candidate) becomeCentre(candidate.id)
+}
+
+/**
+ * The centre, handed back to the camera: whatever is nearest the middle takes it.
+ *
+ * Off by default, and the whole of 0032 is why. On, a seat is still permanent, so every node
+ * the middle crosses has its ring read and placed for good — the drift is the cost the reader
+ * is choosing, not a bug to be fixed here.
+ *
+ * Hysteresis because this runs against an incumbent: a bare nearest-wins test flickers between
+ * two nodes as the midpoint passes between them, which `claimCentre` never has to deal with.
+ */
+const trackCentre = perFrame(() => {
+  // A flight pans the camera over every node between the start and the target. Letting the
+  // centre follow would give it to each in turn, and would take down the ghost being flown to.
   if (view.inFlight) return
 
-  const centre = view.centre()
-  const candidate = world.nearestTo(centre, view.reach())
+  const middle = view.centre()
+  const candidate = world.nearestTo(middle, view.reach())
   if (!candidate) return
 
   const current = view.accent ? world.get(view.accent) : null
   if (current && current.id !== candidate.id) {
-    const rival = distance(candidate, centre)
-    const incumbent = distance(current, centre)
+    const rival = distance(candidate, middle)
+    const incumbent = distance(current, middle)
     if (rival > incumbent * ACCENT_HYSTERESIS) return
   }
-  // Only touch the DOM when the accent actually moved: this runs every frame of a pan.
-  if (view.setAccent(candidate.id)) {
-    // Room is a property of the map at one moment. Arriving is the moment to ask again
-    // whether the neighbours this node never had space for can be fitted now.
-    const late = world.seatPending(candidate.id)
-    if (late.nodes.length || late.edges.length) view.add(late.nodes, late.edges)
-    render()
-  }
+  becomeCentre(candidate.id)
 })
+
+/**
+ * The tracker and the switch it answers to.
+ *
+ * Tested here rather than inside `trackCentre`, because `perFrame` schedules a frame before the
+ * body can decline it. Guarding within would have a map with the setting off pay a callback on
+ * every frame of every pan for a feature it is not using. A frame already queued when the
+ * reader unticks still lands, which matches having flipped the box one frame later.
+ */
+const walk = (): void => {
+  if (walkByPan()) trackCentre()
+}
 
 /**
  * Everything that waits for the camera to stop.
  *
- * Cytoscape emits `viewport` on every frame of an animated pan, and it emits it whether or
- * not the pan moved — so a Recentre with the centre already centred still arrives here.
- * That is harmless precisely because the only read this schedules is the centre's, and the
- * centre asks once: a second settle over the same node finds it already claimed.
+ * Cytoscape emits `viewport` on every frame of an animated pan, and emits it even when the
+ * pan moved nothing. A Recentre with the centre already centred still reaches here. That is
+ * harmless because the only read this schedules is the centre's, and a node is read once: a
+ * second settle over the same node finds it already marked.
  */
 const settle = debounce(() => {
   explorer.loadCentre()
-  // Ghosts wait for a settled camera, going up and coming down. Tiers are data writes and
-  // cheap to redo mid-pan; elements arriving and leaving on every frame of one would strobe.
+  // Ghosts are created and removed only on a settled camera. Their colour tiers are data
+  // writes and cheap to redo mid-pan, but elements appearing and disappearing on every frame
+  // of a pan would flicker.
   view.reviseGhosts()
   render()
 }, SETTLE_MS)
 
-/** Set by an input that stops dead, and read by the one `viewport` it provokes. */
+/** Set by an arrow key, and read by the `viewport` event it causes. */
 let nudged = false
 
 view.cy.on("viewport", () => {
-  // The menu was raised over a node at a point on the screen. Move the map underneath it and
-  // it is pointing at whatever has drifted under the pointer instead.
+  // The menu opened over a node at a screen position. Moving the map under it would leave it
+  // pointing at whatever drifted under the pointer instead.
   closeMenu()
-  trackAccent()
+  walk()
   settle(nudged ? NUDGE_SETTLE_MS : SETTLE_MS)
   nudged = false
 })
@@ -218,9 +276,9 @@ view.cy.on("viewport", () => {
 view.cy.on("tap", "node", (event) => {
   const id = String(event.target.id())
 
-  // A ghost is a doorway. Clicking one flies to the node it stands in for — and the
-  // fetch goes out now rather than on the settle at the far end, because the
-  // destination is already known and the journey is otherwise idle.
+  // A ghost stands in for an off-screen node. Clicking one flies to that node. The read
+  // starts now rather than on the settle at the far end, because the destination is already
+  // known and the flight is otherwise idle time.
   const target = ghostTarget(id)
   if (target) {
     explorer.prefetch(target)
@@ -230,62 +288,85 @@ view.cy.on("tap", "node", (event) => {
 
   if (!world.has(id)) return
 
-  // The centre is the one node a click cannot take you to, because you are already standing
-  // on it. So it is free to mean the other thing a node can be here — a name for the panel —
-  // and what an end does with one is `take`'s (web/src/join.ts). The glide to the middle comes
-  // back down that path, on the pick that arms, rather than from here.
+  // A click on the centre belongs to the panel. No click moves the camera now, so this is not
+  // the centre having nowhere to glide: the page already shows this node's name, and naming it
+  // again would say nothing. `take` in web/src/join.ts handles it. The camera does move on that
+  // path, on the pick that sets the anchor.
   if (id === view.accent) {
     const node = world.get(id)
-    // ⌘ alone, as over a row of the list (web/src/combobox.ts).
+    // ⌘ only, as on a list row. See web/src/combobox.ts.
     if (node) panel.take(node, (event.originalEvent as MouseEvent | undefined)?.metaKey === true)
     return
   }
 
-  // Naming a node is not drifting past it. There is no ambiguity left about where this
-  // is going, so its ring is drawn on the click rather than on the settle at the far end
-  // of the flight — the same bargain the ghost above makes, and for the same reason. With
-  // the reply usually already held it costs nothing, and the camera lands on a finished
-  // picture instead of completing one a beat after it stops.
+  // Named where it stands. This handler was the last place the page moved the camera on its
+  // own: a click drew the node to the middle whether or not anyone wanted to be moved. The
+  // node's ring now draws around it wherever it sits, off the edge of the screen included.
+  // **Recentre** is how the middle is asked for.
   explorer.prefetch(id)
-  view.focus(id)
+  becomeCentre(id)
 })
 
 /**
- * Taking the centre off the map, edges and all.
+ * The menu that takes something out of the graph.
  *
- * Right-click, and only on the node the map is already holding. That one is the centre for a
- * reason — it is what the reader walked to, and it is the only node whose degree is on the
- * page — so it is the only one the row can honestly price. A ghost is never it.
+ * Right-click, and only at the centre: the centre node itself, or one of the lines that
+ * reaches it. The centre is what the reader walked to, and it is the only node whose degree
+ * is shown on the page, so it is the only one whose cost the menu can state. A ghost is never
+ * the centre.
  *
- * The count is in the row because this is the one write nothing can take back
- * (docs/decisions/0024-taking-a-node-out-with-its-edges.md). Everywhere else the panel lets
- * `↵` write and offers the way back afterwards; here there is no way back, so the asking
- * happens first and says how much graph is going.
+ * The two writes are not alike, and the menu says so. Taking a node out cannot be undone,
+ * because its edges cannot come back with it, so the button names how much is going and the
+ * question is asked before the write. Parting two nodes leaves both where they are, so it
+ * writes on the click and carries an undo after, like every write from the box above.
  */
-const menu = el<HTMLDivElement>("node-menu")
-const menuDelete = el<HTMLButtonElement>("node-delete")
+const menu = el<HTMLDivElement>("map-menu")
+const menuButton = el<HTMLButtonElement>("map-remove")
 
-/** What the row would remove, and null whenever the menu is down. */
-let doomed: string | null = null
+/** What the menu would take out, or null when the menu is closed. */
+type Doomed = { kind: "node"; id: string } | { kind: "edge"; a: string; b: string }
+
+let doomed: Doomed | null = null
 
 function closeMenu(): void {
-  // Cheap when there is nothing to shut, because a pan calls this on every frame of itself.
+  // Return early when there is nothing to close. A pan calls this on every frame.
   if (menu.hidden) return
   doomed = null
   menu.hidden = true
 }
 
-/** "and its 3 edges", or nothing at all for a node standing on its own. */
+/** Put the menu under the pointer, with the row it is offering. */
+function openMenu(target: Doomed, label: string, at: MouseEvent | undefined): void {
+  doomed = target
+  menuButton.textContent = label
+  menu.style.left = `${String(at?.clientX ?? 0)}px`
+  menu.style.top = `${String(at?.clientY ?? 0)}px`
+  menu.hidden = false
+}
+
+/** The button label, with the edge count when the node has edges. */
 function priced(node: NodeMeta): string {
   if (!node.degree) return `delete ${node.label}`
   const edges = node.degree === 1 ? "1 edge" : `${String(node.degree)} edges`
   return `delete ${node.label} and its ${edges}`
 }
 
-// The browser's own menu would open on top of this one.
+/**
+ * The node at one end of a drawn line, or null if that end is not one.
+ *
+ * A ghost is not a node on the map, but it names one, and its dashed lead stands for that
+ * node's edge to the centre. A stub names nothing, so a stub's lead ends here and the line
+ * it draws cannot be parted.
+ */
+function ended(id: string): WorldNode | null {
+  return world.get(ghostTarget(id) ?? id) ?? null
+}
+
+// Without this the browser's own context menu opens on top of this one.
 stage.addEventListener("contextmenu", (event) => event.preventDefault())
 
-// Anywhere but the menu itself. The row is inside it, so this never eats its own click.
+// A click anywhere but the menu closes it. The button is inside the menu, so its own click
+// is not caught here.
 window.addEventListener("pointerdown", (event) => {
   if (!menu.hidden && !menu.contains(event.target as Node)) closeMenu()
 })
@@ -296,104 +377,192 @@ view.cy.on("cxttap", "node", (event) => {
   const node = world.get(id)
   if (!node) return
 
-  doomed = id
-  menuDelete.textContent = priced(node)
-  const at = event.originalEvent as MouseEvent | undefined
-  menu.style.left = `${String(at?.clientX ?? 0)}px`
-  menu.style.top = `${String(at?.clientY ?? 0)}px`
-  menu.hidden = false
+  openMenu({ kind: "node", id }, priced(node), event.originalEvent as MouseEvent | undefined)
 })
 
-menuDelete.addEventListener("click", () => {
-  const id = doomed
+view.cy.on("cxttap", "edge", (event) => {
+  const a = ended(String(event.target.source().id()))
+  const b = ended(String(event.target.target().id()))
+  if (!a || !b) return
+  // One end has to be the centre, the same rule the node above follows. A ghost's lead
+  // already meets it: a ghost belongs to the centre that created it.
+  if (a.id !== view.accent && b.id !== view.accent) return
+
+  // The centre first, so the row reads out from where the reader is standing.
+  const [near, far] = a.id === view.accent ? [a, b] : [b, a]
+  openMenu(
+    { kind: "edge", a: near.id, b: far.id },
+    `part ${near.label} and ${far.label}`,
+    event.originalEvent as MouseEvent | undefined,
+  )
+})
+
+menuButton.addEventListener("click", () => {
+  const target = doomed
   closeMenu()
-  if (id === null) return
+  if (!target) return
+  if (target.kind === "node") removeNode(target.id)
+  else partEdge(target.a, target.b)
+})
+
+/** Take a node out of the graph, with every edge that reaches it. */
+function removeNode(id: string): void {
   const node = world.get(id)
   if (!node) return
 
-  // Down the same line as every other write, behind whatever the panel has already queued.
+  // Through the same queue as every other write, behind whatever the panel has queued.
   const receipt = writes.open()
   receipt.el.textContent = node.label
   writes.run(receipt, async () => {
     try {
       const { parted } = await deleteNodeWithEdges(id)
 
-      // The union, because neither list covers the other. A truncated read leaves the picture
-      // holding fewer edges than the node had, so `parted` names some that were never drawn;
-      // an empty `parted` is somebody else having removed the node between the read and the
-      // write, which parts the drawn ones without this call hearing which. Either way the
-      // reply says the node is gone, and a node that is gone holds no edges.
+      // Take the union of both lists, because neither covers the other. A capped read leaves
+      // the map holding fewer edges than the node had, so `parted` names edges that were
+      // never drawn. An empty `parted` means something else deleted the node between the
+      // read and the write, which removed the drawn edges without this call being told. The
+      // reply says the node is gone either way, and a node that is gone has no edges.
       const dropped: [string, string][] = []
       for (const other of new Set([...parted, ...world.neighbours(id)])) {
         if (world.unlink(id, other)) dropped.push([id, other])
         world.lowerDegree(other)
       }
-      // Unlink before forgetting: a node may only leave once nothing is joined to it, which
-      // is the rule the store's own delete enforces.
+      // Unlink before forgetting. `World.forget` refuses a node that still has edges, the
+      // same rule the store's delete enforces.
       const gone = world.forget(id) ? [id] : []
       view.drop(gone, dropped)
-      // `drop` clears an accent that has gone and leaves the caller to re-pick. Nothing else
-      // asks until the camera next moves, and until then the HUD would name a gap.
-      trackAccent()
-      // An end of the panel may be naming it. Nothing about this write goes through the
-      // panel, so it is told: a dead name in an end is the trap its own undo clears.
+      // `drop` clears an accent that has gone and leaves the caller to re-pick. This is the
+      // only thing that will: the camera no longer hands the mark around, so without the
+      // claim the map would sit with no centre and the HUD would name a gap.
+      claimCentre()
+      // An input in the panel may be holding this name. This write does not go through the
+      // panel, so tell it. A name that no longer exists must not stay in an input.
       panel.forget(node)
 
       receipt.settle("ok", `removed ${node.label}`)
       void refreshTotals()
-      // After the repaint, never before: `render` writes the idle hint over whatever the
-      // status line is holding, so a message set ahead of it is one nobody reads.
+      // Set the status after `render`, never before. `render` writes the idle hint over
+      // whatever the status line holds.
       render()
       setStatus(`removed ${node.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      // A run that stopped partway has parted edges the map is still drawing, and the reply
-      // carries no list of them. Nor can a fresh read recover it: reads stop at a ceiling, so
-      // an edge missing from one is not proof it has gone. The state is said, not repaired.
+      // A delete that stopped partway has removed edges the map is still drawing, and the
+      // error carries no list of them. A fresh read cannot recover it either, because reads
+      // are capped: an edge missing from one read is not proof it is gone. So report the
+      // state rather than trying to repair it.
       receipt.settle("warn", reason)
       setStatus(`⚠ ${reason} — edges may already have gone; ask again to finish`, "error")
     }
   })
-})
+}
+
+/** Part two nodes: the store write, then the map, then a receipt carrying the way back. */
+function partEdge(aId: string, bId: string): void {
+  const a = world.get(aId)
+  const b = world.get(bId)
+  if (!a || !b) return
+
+  const receipt = writes.open()
+  receipt.el.textContent = `${a.label} — ${b.label}`
+  writes.run(receipt, async () => {
+    try {
+      await unjoinNodes(aId, bId)
+      partOnMap(aId, bId)
+
+      receipt.settle("ok", `parted ${a.label} and ${b.label}`)
+      receipt.offerUndo("join them again", () => {
+        writes.run(receipt, () => rejoin(receipt, a, b))
+      })
+      void refreshTotals()
+      // Set the status after `render`, never before. `render` writes the idle hint over
+      // whatever the status line holds.
+      render()
+      setStatus(`parted ${a.label} and ${b.label}`, "idle")
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      receipt.settle("warn", reason)
+      setStatus(`⚠ ${reason}`, "error")
+    }
+  })
+}
+
+/** Take a parted edge off the map. The store has already dropped it. */
+function partOnMap(a: string, b: string): void {
+  // Unlink and lower the degrees together. `missing` is degree minus the edges loaded, so
+  // unlinking without both decrements makes a finished node claim graph that is gone. See
+  // World.unlink.
+  world.unlink(a, b)
+  world.lowerDegree(a)
+  world.lowerDegree(b)
+  view.drop([], [[a, b]])
+  // `drop` does not run this, and it is the only thing that takes down a ghost whose target
+  // has stopped being a neighbour. Without it the ghost and its dashed lead stand until the
+  // next camera settle, naming an edge this write has just removed.
+  view.reviseGhosts()
+}
+
+/** Join the pair again, from the receipt's undo. */
+async function rejoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void> {
+  try {
+    await joinNodes(a.id, b.id)
+    // Raise the degrees and link together, the mirror of parting above. See World.bumpDegree.
+    world.bumpDegree(a.id)
+    world.bumpDegree(b.id)
+    if (world.linkExisting(a.id, b.id)) view.add([], [[a.id, b.id]])
+    // The mirror of the ghost pass in `partOnMap`. The far end is a neighbour again, and an
+    // off-screen one gets its ghost back now instead of on the next settle.
+    view.reviseGhosts()
+
+    receipt.settle("undone", `joined ${a.label} and ${b.label} again`)
+    void refreshTotals()
+    render()
+    setStatus(`undid parting ${a.label} and ${b.label}`, "idle")
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    receipt.settle("warn", reason)
+    setStatus(`⚠ ${reason}`, "error")
+  }
+}
 
 /**
- * Arriving somewhere by name.
+ * Go to a node that arrived by name rather than by walking.
  *
- * Every other node on the map got here because somebody walked to its neighbour, and its
- * seat came from the node it neighbours. A named node has neither: it is joined to nothing
- * on screen, and the only thing its position can answer to is where the camera happens to
- * be. That is the cost of the box, and it is paid once — from the moment it lands it is an
- * ordinary node, and what draws around it is its own neighbourhood, read on the settle at
- * the end of the flight like anywhere else. The centre still draws; this only changes how a
- * node becomes the centre.
+ * Every other node on the map is here because someone walked to a neighbour, and it took its
+ * position from that neighbour. A named node has no neighbour on screen, so its position can
+ * only come from where the camera is. That is a one-off. Once placed it is an ordinary node,
+ * and its neighbours are read on the settle at the end of the flight like anywhere else.
  *
- * `at` is what an island arrives on instead. A searched node is one node and answers to the
- * camera; an island is the first of a neighbourhood that will grow as it is walked, and it
- * needs water around it rather than the nearest gap — see `World.berth`.
+ * `at` overrides that, and an island uses it. A searched node is one node and can follow the
+ * camera. An island is the first node of a neighbourhood that grows as it is walked, so it
+ * needs room around it rather than the nearest gap. See `World.berth`.
  */
 function goTo(node: NodeMeta, at?: Point): void {
   if (!world.has(node.id)) {
     view.add([world.place(node, at ?? world.landing(view.centre(), node.id))], [])
-    view.setAccent(node.id)
   }
-  // From here on this is the click path: name a destination, read it now rather than on
-  // the settle at the far end, and glide.
+  // From here on this is the named-destination path, and the glide separates it from a click.
+  // Somebody who names a node is asking to be taken there; somebody who clicks one can already
+  // see it. Read it now rather than on the settle at the far end. Named whether or not it had to
+  // be placed — a hit already on the map is still being arrived at, and the glide alone would
+  // leave the centre behind on the node the reader came from. `becomeCentre` is what repaints,
+  // so nothing here needs to: a destination that is already the centre has nothing to repaint.
   explorer.prefetch(node.id)
+  becomeCentre(node.id)
   view.focus(node.id)
-  render()
 }
 
-/** Says which of these is already on the map, so picking one is a known quantity. */
+/** Hover text for a search result. Says whether the node is already on the map. */
 const note = (node: NodeMeta): string =>
   world.has(node.id) ? "already placed" : `${String(node.degree)} edges`
 
 /**
- * What the panel changes on the map.
+ * The join panel, and what its writes change on the map.
  *
- * A created node lands like a named one: joined to nothing on screen yet, so the only thing
- * its position can answer to is the camera. The edge that follows a moment later links it
- * where it sits rather than re-seating it, which is the seated-once rule holding for a node
- * that arrived by being made rather than by being walked to.
+ * A created node is placed like a searched one: it has no neighbour on screen, so its
+ * position comes from the camera. The edge written a moment later links it where it stands
+ * instead of moving it. That is the place-once rule holding for a node that arrived by being
+ * created rather than by being walked to.
  */
 const panel = new JoinPanel(
   {
@@ -414,39 +583,39 @@ const panel = new JoinPanel(
   {
     note,
     onStatus: setStatus,
-    // Arming an end is the page's other way of arriving somewhere.
+    // Setting the anchor is the page's other way of arriving at a node.
     onArm: goTo,
     onNode: (node) => {
-      // Counted here rather than only after the edge: a create that lands before a refused
-      // join is still a node in the store, and the HUD should say so.
+      // Update the totals here, not only after the edge. A create that lands before a
+      // refused join is still a node in the store, and the HUD should say so.
       void refreshTotals()
       if (world.has(node.id)) return
       view.add([world.place(node, world.landing(view.centre(), node.id))], [])
       render()
     },
     onEdge: (a, b) => {
-      // Both, together. `missing` is degree minus the edges loaded, so linking without
-      // raising the degree would make a node with more graph behind it look finished —
-      // see World.bumpDegree.
+      // Raise the degree and link, together. `missing` is degree minus the edges loaded, so
+      // linking without raising the degree would make a node with unread neighbours look
+      // complete. See World.bumpDegree.
       world.bumpDegree(a.id)
       world.bumpDegree(b.id)
       const drawn = world.linkExisting(a.id, b.id)
       if (drawn) view.add([], [[a.id, b.id]])
-      // The totals in the HUD came from one read at boot and are now a write out of date.
+      // The HUD totals came from one read at boot and are now one write out of date.
       void refreshTotals()
       render()
     },
     onUndone: (a, b, removed) => {
-      // Unlink before forgetting: a node is only allowed to leave once nothing is joined
-      // to it, which is the same rule the store's delete enforces.
+      // Unlink before forgetting. `World.forget` refuses a node that still has edges, the
+      // same rule the store's delete enforces.
       world.unlink(a.id, b.id)
       world.lowerDegree(a.id)
       world.lowerDegree(b.id)
       const gone = removed && world.forget(removed.id) ? [removed.id] : []
       view.drop(gone, [[a.id, b.id]])
-      // A removed node may have been the one nearest the middle. Nothing else asks until
-      // the camera next moves, and until then the HUD would name something that is gone.
-      if (gone.length) trackAccent()
+      // A removed node may have been the centre, and nothing else will ask. Without this the
+      // HUD would go on naming something that is gone.
+      if (gone.length) claimCentre()
       void refreshTotals()
       render()
     },
@@ -455,17 +624,18 @@ const panel = new JoinPanel(
 )
 
 window.addEventListener("keydown", (event) => {
-  // Above the guard below: the menu is raised over the map, and Escape shuts it wherever the
-  // focus happens to be sitting.
+  // Before the guard below. The menu opens over the map, and Escape must close it wherever
+  // the focus is.
   if (event.key === "Escape") closeMenu()
 
-  // The arrows below pan the camera. Inside an end of the panel they belong to the text.
-  if (event.target instanceof HTMLInputElement) return
+  // The arrow keys below pan the camera. Inside an input they belong to the text — but a
+  // checkbox holds no text, and the one in the HUD keeps the focus after it is ticked, so
+  // catching every input here would cost the keyboard the map for the rest of the session.
+  if (event.target instanceof HTMLInputElement && event.target.type !== "checkbox") return
 
-  // The way to the box from wherever the map has left the focus: the whole middle of this
-  // page takes keys, and the panel is the one part of it a hand already on the keyboard
-  // cannot reach. Below the guard above, so a slash typed into an end stays a slash, and not
-  // with a modifier held, which belongs to the browser.
+  // `/` moves focus to the name input. It is the only part of the page a hand on the
+  // keyboard cannot otherwise reach. After the guard above, so a slash typed into an input
+  // stays a slash. Not with a modifier held, which belongs to the browser.
   if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
     event.preventDefault()
     panel.focus()
@@ -496,19 +666,42 @@ el<HTMLButtonElement>("home").addEventListener("click", () => {
 })
 
 /**
- * The HUD folds away.
+ * Fold and unfold the HUD.
  *
- * Everything in it is a number to glance at; the islands below it are what the map is
- * navigated with, and they should not have to share a panel with seven rows of arithmetic.
- * Folded, the rail lifts the list to the top corner on its own — which is the whole reason
- * the left column is one flow rather than three fixed boxes.
+ * The HUD holds numbers to glance at. The island list below it is what the map is navigated
+ * with, and it should not share the screen with seven rows of numbers. Folded, the left rail
+ * moves the list up to the top corner on its own.
  *
- * `aria-expanded` is the state, read by CSS as well as by a screen reader, so there is one
- * place it lives rather than a class saying the same thing a second time.
+ * `aria-expanded` holds the state. CSS reads it as well as a screen reader, so the state
+ * lives in one place instead of also being a class.
  */
 hudToggle.addEventListener("click", () => {
   const open = hudToggle.getAttribute("aria-expanded") === "true"
   hudToggle.setAttribute("aria-expanded", String(!open))
+})
+
+/**
+ * The switch that hands the centre to the camera, and back.
+ *
+ * The box's own checkedness is the state, as `aria-expanded` is above — CSS reads it for the
+ * two captions that stop being true, and storage only mirrors it. The markup ships unticked,
+ * so this is also what applies a setting left on in an earlier session.
+ */
+walkToggle.checked = walkByPan()
+
+walkToggle.addEventListener("change", () => {
+  setWalkByPan(walkToggle.checked)
+
+  // Nothing to undo going the other way, and that is the honest answer rather than an
+  // oversight: a seat is permanent, so what the panning placed stays placed, and the centre
+  // keeps whatever the last frame gave it. Off means the camera stops naming one, not that an
+  // earlier centre comes back — nothing recorded one.
+  if (!walkToggle.checked) return
+
+  // Applied now rather than on the next pan. The box says the middle names the centre, and a
+  // HUD still naming the node that was clicked would be the control appearing to do nothing.
+  // `claimCentre` rather than the tracker: one application has no flicker to bias against.
+  claimCentre()
 })
 
 function renderedCentre(): { x: number; y: number } {
@@ -517,13 +710,17 @@ function renderedCentre(): { x: number; y: number } {
 
 onThemeChange((palette) => view.restyle(palette))
 
+// A window that changed shape is not a loss: the centre is wherever it was, whether or not the
+// new viewport still shows it. The doorways answer to the shape, and the settle revises those.
+// The middle of the screen moves in world coordinates too, so the walk runs here as well for a
+// reader who has handed the centre to the camera.
 window.addEventListener("resize", () => {
   view.resize()
-  trackAccent()
+  walk()
   settle()
 })
 
-// The legend's swatches are built from the same tokens the map draws with.
+// Build the legend's dots from the same palette the map draws with.
 ;(() => {
   const ramp = el<HTMLDivElement>("ramp")
   const paint = (palette = currentPalette()): void => {
@@ -545,35 +742,47 @@ window.addEventListener("resize", () => {
   onThemeChange(paint)
 })()
 
-function showTotals(index: GraphIndex): void {
-  statTotal.textContent = `${String(index.nodeCount)} nodes · ${String(index.edgeCount)} edges`
+/**
+ * The HUD's store totals, and the panel shown when there is no graph at all.
+ *
+ * Both come off the same read, so this owns both. The panel is not a boot state: naming the
+ * first node on an empty graph is one of the two ways out that the panel itself offers, and
+ * deleting the last one puts the reader back where they started.
+ *
+ * Keyed on the store's count, never on `world.size`. Deleting the only node on screen empties
+ * the map while the store still holds every island nobody has walked to.
+ */
+function showTotals(opening: Opening): void {
+  statTotal.textContent = `${String(opening.nodeCount)} nodes · ${String(opening.edgeCount)} edges`
+  empty.hidden = opening.nodeCount > 0
 }
 
 /**
- * Re-read how big the graph is, and what its components are.
+ * Re-read the graph size and the list of components.
  *
- * Only these: everything else on the map is what somebody walked to, and re-reading that
- * would seat nodes nobody went to. A write is the one thing that can make either wrong
- * without the camera moving — a join can merge two islands into one — so it is the only
- * thing that asks again. Most writes leave the components exactly as they were, and
- * `setFirstPage` is what notices that and keeps the rows it already has.
+ * These two only. Everything else on the map is what someone walked to, and re-reading that
+ * would place nodes nobody visited. A write is the only thing that can make either wrong
+ * without the camera moving, because a join can merge two islands into one. Most writes
+ * leave the components unchanged, and `setFirstPage` detects that and keeps its rows.
  */
 async function refreshTotals(): Promise<void> {
   try {
-    const index = await fetchIndex()
-    showTotals(index)
-    islands.setFirstPage({ islands: index.islands, cursor: index.islandCursor }, index.islandCount)
+    const opening = await fetchOpening()
+    showTotals(opening)
+    islands.setFirstPage(
+      { islands: opening.islands, cursor: opening.islandCursor },
+      opening.islandCount,
+    )
   } catch {
-    // A stale count is not worth an error state over. The next write asks again.
+    // A stale count does not deserve an error state. The next write reads again.
   }
 }
 
 /**
- * The node the map opens on, or null if it is not there any more.
+ * Read the node the map opens on, or null if it is no longer there.
  *
- * Only `Missing` is swallowed. A read that fails for any other reason is a read that failed,
- * and reporting it as an empty graph would turn a broken API into a table that merely looks
- * unprepared — the one wrong answer this could give.
+ * Only `Missing` is caught. A read that fails for any other reason has failed, and reporting
+ * that as an empty graph would show a broken store as a graph that merely has no nodes.
  */
 async function startingPoint(id: string): Promise<Neighbourhood | null> {
   try {
@@ -586,37 +795,39 @@ async function startingPoint(id: string): Promise<Neighbourhood | null> {
 
 async function boot(): Promise<void> {
   setStatus("loading graph…", "busy")
-  const index = await fetchIndex()
-  showTotals(index)
-  islands.setFirstPage({ islands: index.islands, cursor: index.islandCursor }, index.islandCount)
-  // Only here. After this the mark follows what the reader clicks: an island is knowable from
-  // a node only by asking the store, and a crossing is the one move the page can answer for
-  // on its own. `rootId` goes with it because it is the node of that island the map will be
-  // holding, and the island's own name is a node nothing has seated.
-  islands.here(index.homeIslandId, index.rootId)
+  // Asked once, and nothing reads the answer. It is the only protection against the browser
+  // evicting the graph under storage pressure, and it is a request, not a guarantee. Some
+  // browsers decide for themselves and say nothing.
+  void persist()
 
-  // A graph with nowhere to start. Three ways in now, and only one of them is a fault.
+  const opening = await fetchOpening()
+  showTotals(opening)
+  islands.setFirstPage(
+    { islands: opening.islands, cursor: opening.islandCursor },
+    opening.islandCount,
+  )
+  // Where the map opens: the largest component, and the node that names it. One row gives
+  // both, so the island and the first node on the map share an id.
+  const home = opening.islands[0] ?? null
+
+  // Set once, here. After this the mark follows what the reader clicks. Finding a node's
+  // island takes a read, and a click on an island row is the only move the page can answer
+  // for on its own.
+  islands.here(home?.id ?? null)
+
+  // A graph with nowhere to start now means one thing only. The opening node is the first row
+  // of the island page, not an id stored somewhere, so it cannot be stale and cannot name a
+  // node that is gone. What is left is a graph with no nodes, which a fresh browser profile
+  // legitimately has.
   //
-  // A table prepared and not yet written to is exactly what it should be, and reading its
-  // absent root would report `no such node:` for a node nobody has made yet. A `rootId`
-  // naming a node that has gone is the same picture from the other end: nothing maintains it
-  // through a removal (src/graph/init.ts), and taking a node off the map is the quickest way
-  // there is to make it stale — so this is a state the page reaches by being used, not one
-  // anybody has to have damaged the table to see. Either way the reckoning is `graph:init`
-  // and the islands below are the way back in.
-  //
-  // The panel is built before this runs, so naming the first node is available either way.
-  const root = index.rootId ? await startingPoint(index.rootId) : null
+  // The join panel is built before this runs, so naming the first node works either way.
+  const root = home ? await startingPoint(home.id) : null
 
   if (!root) {
-    // Nothing is placed, so every island is off the map — and on a table with no root at all
-    // this list is the only way into any of them.
-    setStatus(
-      index.nodeCount > 0
-        ? `⚠ ${String(index.nodeCount)} nodes and no starting point — run npm run graph:init`
-        : "no nodes yet — name one above to start",
-      index.nodeCount > 0 ? "error" : "idle",
-    )
+    // Nothing to draw. The way in is the transfer page, which can seed a graph. Naming a
+    // node in the box above works from here too. `showTotals` above has already raised the
+    // panel that says so.
+    setStatus("no graph here yet — seed one, or name a node above to start", "idle")
     return
   }
 
@@ -628,16 +839,22 @@ async function boot(): Promise<void> {
   view.focus(root.node.id, false)
   view.setAccent(root.node.id)
 
-  // The root and its ring, and that is the whole first frame. Nothing beyond it is drawn
-  // until somebody walks there; the first settle reads the ring without drawing any of
-  // what comes back. The pass runs here rather than waiting for that settle, so a window too
-  // small to hold the root's ring shows a door to what it cut off on the first frame. On a
-  // window that fits, this raises nothing.
+  // The first frame is the root node and its neighbours, and nothing else. Run the ghost pass
+  // here rather than waiting for the first settle, so a window too small to show the root's
+  // neighbours has a way to reach them from the first frame. On a window that fits, this adds
+  // nothing.
   view.reviseGhosts()
-  // `render` repaints the list, and it runs after the root is placed, so the island holding
-  // it is drawn as somewhere you have been on the first frame rather than a beat later.
+  // `render` repaints the island list. It runs after the root is placed, so the island the
+  // root belongs to is marked as visited on the first frame.
   render()
 }
+
+// Another tab is upgrading the database, or the browser closed it. Either way this connection
+// is gone. Reporting it is all that can be done. A page that said nothing would keep drawing
+// a graph it can no longer read.
+whenEvicted((reason) => {
+  setStatus(`⚠ ${reason}`, "error")
+})
 
 boot().catch((err: unknown) => {
   setStatus(`⚠ ${err instanceof Error ? err.message : String(err)}`, "error")

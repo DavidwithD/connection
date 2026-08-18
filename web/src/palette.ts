@@ -1,31 +1,29 @@
-/**
- * Colour tokens for the graph, and the theme switch.
- *
- * Hop distance is an *ordinal* encoding — discrete, ordered marks — so it gets one
- * hue stepped light→dark, and the centre gets a reserved accent from a different
- * hue. Both ramps were run through the palette validator rather than eyeballed:
- *
- *   light  blue 250/350/450/550   ordinal: 4/4 pass (adjacent ΔL >= 0.06)
- *   dark   blue 300/400/500/600   ordinal: 4/4 pass (dark end 2.15:1 vs surface)
- *   accent vs nearest hop step    CVD ΔE 24.4 light / 24.9 dark (>= 8 target)
- *   ink on the accent fill        6.2:1 light / 5.1:1 dark (>= 4.5 target)
- *
- * The steps are applied discretely, never interpolated. Interpolating between them
- * would put colours on screen that nothing validated, and five classes do not need
- * a continuous scale.
- */
+/** Validated colour tokens, light and dark. */
 
 export interface Palette {
   surface: string
-  /** Centre node. A reserved accent, not a step on the hop ramp. */
+  /** The centre node. A reserved accent. It is not a step on the hop ramp. */
   accent: string
   accentRing: string
   /**
-   * The centre's name, which sits *on* the accent rather than on the surface, so it needs
-   * its own contrast pair. Dark in both themes: the accent is a mid-tone orange either way.
+   * The centre's name. It is drawn on the accent fill, not on the surface, so it needs its
+   * own contrast pair. Dark in both themes, because the accent is a mid-tone orange in both.
    */
   inkOnAccent: string
-  /** Index 0 is hop 1; the last entry covers every hop beyond the ramp. */
+  /**
+   * Index 0 is hop 1. The last entry covers every hop beyond the ramp.
+   *
+   * Hop distance is an ordinal value, so the ramp is one hue stepped light to dark rather
+   * than several hues. Both ramps were checked with the palette validator:
+   *
+   *   light  blue 250/350/450/550   ordinal: 4/4 pass (adjacent ΔL >= 0.06)
+   *   dark   blue 300/400/500/600   ordinal: 4/4 pass (dark end 2.15:1 vs surface)
+   *   accent vs nearest hop step    CVD ΔE 24.4 light / 24.9 dark (>= 8 target)
+   *   ink on the accent fill        6.2:1 light / 5.1:1 dark (>= 4.5 target)
+   *
+   * Use the steps as they are. Do not interpolate between them: a value between two steps
+   * has not been validated, and four classes do not need a continuous scale.
+   */
   hop: readonly string[]
   edge: string
   edgeActive: string
@@ -63,7 +61,7 @@ const DARK: Palette = {
   frontierRing: "#c3c2b7",
 }
 
-/** How many hop classes the ramp distinguishes before everything looks the same. */
+/** How many hop classes the ramp can tell apart. Beyond this they all look the same. */
 export const HOP_CLASSES = LIGHT.hop.length
 
 const query = window.matchMedia("(prefers-color-scheme: dark)")
@@ -77,12 +75,12 @@ export const currentPalette = (): Palette =>
   (stamped() ?? (query.matches ? "dark" : "light")) === "dark" ? DARK : LIGHT
 
 /**
- * Fires on the OS setting and on a `data-theme` stamp, so a toggle wins both ways.
+ * Call `fn` when the theme changes. It watches the OS setting and the `data-theme`
+ * attribute, so an in-page toggle works as well.
  *
- * Returns the way to stop. Nothing here calls it — both subscribers live as long as
- * the page does — but a subscriber that comes and goes has no other exit, and the
- * leak is a quiet one: the restyle keeps running, correctly, against something that
- * is no longer on screen.
+ * Returns an unsubscribe function. Nothing in this project calls it, because both
+ * subscribers live as long as the page. A subscriber with a shorter life needs it: the
+ * leak is silent, since the restyle keeps running against an element that is gone.
  */
 export function onThemeChange(fn: (palette: Palette) => void): () => void {
   const fire = (): void => fn(currentPalette())

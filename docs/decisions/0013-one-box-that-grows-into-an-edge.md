@@ -15,7 +15,7 @@ wrong: whether you mean to travel to Kavara or write from it is answerable once 
 front of you.
 
 The panel that writes never shows what it writes from, and its `from` and `to` claim a
-direction [the store](../../src/graph/edge.ts) does not have: it keeps each edge twice.
+direction the store does not have: it keeps each edge twice.
 
 ## Decision
 One box. Naming a node in it opens a second, and the two are an edge's ends.
