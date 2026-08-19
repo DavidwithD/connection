@@ -40,8 +40,9 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0034](0034-what-reading-cannot-check.md) | What reading cannot check | 🔵 Proposed |
 | [0035](0035-a-rule-for-new-sentences.md) | A rule for new sentences | 🔵 Proposed |
 | [0036](0036-a-click-that-writes-nothing.md) | A click that writes nothing | 🔵 Proposed |
-| [0037](0037-the-centres-name-on-the-clipboard.md) | The centre's name on the clipboard | 🔵 Proposed |
+| [0037](0037-the-centres-name-on-the-clipboard.md) | The centre's name on the clipboard | ♻️ Superseded |
 | [0038](0038-a-drag-that-joins-two-nodes.md) | A drag that joins two nodes | 🔵 Proposed |
+| [0039](0039-any-nodes-name-on-the-clipboard.md) | Any node's name on the clipboard | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

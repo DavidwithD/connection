@@ -53,9 +53,9 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | drag | Pan |
 | wheel | Zoom toward the cursor |
 | hover a node | Show its name, until you point at something else |
-| click a node | Make it the centre, where it stands. Nothing moves |
-| click the centre | Put its name in the box at the top, and on the clipboard |
-| click a ghost | Fly to the node it stands in for |
+| click a node | Make it the centre, where it stands, and copy its name. Nothing moves |
+| click the centre | Put its name in the box at the top |
+| click a ghost | Copy the name it stands for, and fly to that node |
 | right-click the centre | Take it off the map, with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
 | shift-drag between two nodes | Join them. A ghost counts as the node it names |
@@ -76,6 +76,11 @@ outside the frame. **Recentre** brings the centre to the middle, and clicking an
 see is the way on. A search hit, an island row and a doorway all take you to their node instead.
 What the map draws around the centre, and why none of it moves, is
 [the-centre.md](design/the-centre.md).
+
+**Every click on a node copies its name to the clipboard.** A ghost copies the name it stands
+for, before it flies. Nothing is said when it works, because the name you clicked is the name
+you get. The first refusal reads *could not copy …* on the status line, and every refusal after
+it is silent ([ADR 0039](decisions/0039-any-nodes-name-on-the-clipboard.md)).
 
 **walk by pan** is the box under the numbers, and it hands the centre back to the camera. Tick
 it and the node nearest the middle takes the centre as you drag. A sweep across a region then
@@ -145,10 +150,6 @@ far end: type a name into it and press `↵`.
 
 The caret goes into the far end, so the arrows stop panning until `Esc` returns the focus to
 the map ([ADR 0036](decisions/0036-a-click-that-writes-nothing.md)).
-
-The same click copies that name to the clipboard. It says nothing when it works, and the
-status line reads *could not copy …* when the browser refuses
-([ADR 0037](decisions/0037-the-centres-name-on-the-clipboard.md)).
 
 `Esc` collapses the whole widget, not just the end you are in — both names go, the far end with
 them, and the focus is handed back to the map. It is the way out, and `/` is the way back in.

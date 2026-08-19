@@ -131,18 +131,27 @@ function setStatus(text: string, tone: "idle" | "busy" | "error"): void {
   hudToggle.dataset["tone"] = tone
 }
 
+/** Set once a copy has been turned down. The refusal is reported on that first one only. */
+let clipboardRefused = false
+
 /**
- * Put a name on the clipboard. The click that names the centre in the box copies it too.
+ * Put a name on the clipboard. Every click on a node copies the name it carries.
  *
- * Silent when it works, because the box is already showing what was copied. A denied
+ * Silent when it works, because the name the reader clicked is the name they get. A denied
  * permission stops it. So does an insecure origin: `navigator.clipboard` is undefined there,
- * and the property lookup throws before any write. The status line reports both.
+ * and the property lookup throws before any write.
+ *
+ * A refusal is reported once and not again. A browser that turns one copy down turns them all
+ * down, and every node click reaches here. Repeating it would put an error on the status line
+ * at every step of a walk, where `render` leaves one standing.
  */
 async function copyLabel(label: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(label)
   } catch {
-    setStatus(`⚠ could not copy ${label}`, "error")
+    if (clipboardRefused) return
+    clipboardRefused = true
+    setStatus(`⚠ could not copy ${label}. Later copies fail silently.`, "error")
   }
 }
 
@@ -318,23 +327,27 @@ view.cy.on("tap", "node", (event) => {
   // known and the flight is otherwise idle time.
   const target = ghostTarget(id)
   if (target) {
+    // The name before the journey. A ghost carries it on screen long before the node it
+    // stands for arrives, and the reader may have wanted the one without the other.
+    const named = world.get(target)
+    if (named) void copyLabel(named.label)
     explorer.prefetch(target)
     if (view.flyTo(id, () => render())) render()
     return
   }
 
-  if (!world.has(id)) return
+  const node = world.get(id)
+  if (!node) return
 
-  // A click on the centre belongs to the panel. The page already shows this node's name, so
-  // naming it again would say nothing. `take` in web/src/join.ts puts it in the box, and the
-  // copy below puts it on the clipboard. Neither writes to the graph, and neither moves the
-  // camera.
+  // Every click on a node takes its name. Nothing is written to the graph and the camera does
+  // not move for it.
+  void copyLabel(node.label)
+
+  // The centre's click reaches the panel as well, and no other click does. `take` in
+  // web/src/join.ts puts the caret in the far input. A walk that called it at every step would
+  // keep taking the arrow keys off the map.
   if (id === view.accent) {
-    const node = world.get(id)
-    if (node) {
-      panel.take(node)
-      void copyLabel(node.label)
-    }
+    panel.take(node)
     return
   }
 
