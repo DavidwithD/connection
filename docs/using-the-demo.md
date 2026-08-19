@@ -53,11 +53,12 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | drag | Pan |
 | wheel | Zoom toward the cursor |
 | hover a node | Show its name, until you point at something else |
-| click a node | Make it the centre, where it stands. Nothing moves |
-| click the centre | Put its name in the box at the top, and on the clipboard |
-| click a ghost | Fly to the node it stands in for |
+| click a node | Make it the centre, where it stands, and copy its name. Nothing moves |
+| click the centre | Put its name in the box at the top |
+| click a ghost | Copy the name it stands for, and fly to that node |
 | right-click the centre | Take it off the map, with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
+| shift-drag between two nodes | Join them. A ghost counts as the node it names |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
 | **Recentre** | Go back to the centre, wherever the panning left it |
@@ -75,6 +76,11 @@ outside the frame. **Recentre** brings the centre to the middle, and clicking an
 see is the way on. A search hit, an island row and a doorway all take you to their node instead.
 What the map draws around the centre, and why none of it moves, is
 [the-centre.md](design/the-centre.md).
+
+**Every click on a node copies its name to the clipboard.** A ghost copies the name it stands
+for, before it flies. Nothing is said when it works, because the name you clicked is the name
+you get. The first refusal reads *could not copy …* on the status line, and every refusal after
+it is silent ([ADR 0039](decisions/0039-any-nodes-name-on-the-clipboard.md)).
 
 **walk by pan** is the box under the numbers, and it hands the centre back to the camera. Tick
 it and the node nearest the middle takes the centre as you drag. A sweep across a region then
@@ -145,10 +151,6 @@ far end: type a name into it and press `↵`.
 The caret goes into the far end, so the arrows stop panning until `Esc` returns the focus to
 the map ([ADR 0036](decisions/0036-a-click-that-writes-nothing.md)).
 
-The same click copies that name to the clipboard. It says nothing when it works, and the
-status line reads *could not copy …* when the browser refuses
-([ADR 0037](decisions/0037-the-centres-name-on-the-clipboard.md)).
-
 `Esc` collapses the whole widget, not just the end you are in — both names go, the far end with
 them, and the focus is handed back to the map. It is the way out, and `/` is the way back in.
 
@@ -159,6 +161,17 @@ seconds. A node something else has since been joined to is kept, and the edge st
 A receipt names both ends, and clicking either name puts it back in the near end. That is the
 way back to a write that has scrolled away, where `⌘↵` carries only the one just fired.
 Clicking loads and never writes.
+
+**Shift-drag between two nodes to join them.** Press on one with shift held, drag to the other,
+and let go. An arrow follows the cursor while the button is down, and the node a release would
+take draws a ring. Letting go anywhere else writes nothing. The write lands on the release and
+its receipt carries the undo, the way the box above does
+([ADR 0038](decisions/0038-a-drag-that-joins-two-nodes.md)). A ghost counts as the node it
+names, at either end.
+
+Both nodes have to be on screen when the drag starts, and one too far to see is joined from
+the box above. A map that has just opened draws one ring, so every node on it is joined to the
+centre already. Walk a step first, and the ring left behind is what the drag has to aim at.
 
 Taking a node off the map is the one write with no way back, since its edges cannot return with
 it. So it asks first rather than offering an undo after, and the row it asks with names what is
