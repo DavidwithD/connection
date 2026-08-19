@@ -115,6 +115,11 @@ The line lives outside the panel because the map writes too: taking a node out i
 centre and never touches an end of the panel. A queue a second writer cannot reach is a queue
 that does not do its job.
 
+The map fires a join as well, from shift and a drag between two nodes
+([0038](../decisions/0038-a-drag-that-joins-two-nodes.md)). Its undo parts the pair, which is
+the mirror of a part's undo joining it again. Both reach the map through one function, so a pair
+a drag drew and a pair an undo restored are drawn the same way.
+
 Creating a name and joining it are two transactions, not one
 ([join.ts](../../web/src/join.ts)). A create that lands followed by a join that is refused
 leaves a real node with no edges — reachable by name, attached to nothing.
@@ -185,4 +190,5 @@ copy.
 | [0019](../decisions/0019-every-island-has-an-address.md) | That the island index is derived, and so may lag behind a part |
 | [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) | Edge by edge rather than one transaction, and what a stopped run leaves |
 | [0028](../decisions/0028-where-a-chained-name-lands.md) | Which end a chained name lands in, and what moving the anchor spends |
-| [0036](../decisions/0036-a-click-that-writes-nothing.md) | That the map fires no join, and the keyboard is what does |
+| [0036](../decisions/0036-a-click-that-writes-nothing.md) | That the map's click fires no join, and a key is what does |
+| [0038](../decisions/0038-a-drag-that-joins-two-nodes.md) | That a drag on the map fires one, and where its arrow is drawn |

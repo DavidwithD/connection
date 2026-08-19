@@ -59,6 +59,7 @@ around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 | `npm run drive:map` | Drive the map in a real browser and photograph it into `.shots/` |
 | `npm run drive:join` | Drive the join panel's keyboard and report what each Enter does |
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
+| `npm run drive:drag-join` | Drive the shift-drag that joins two nodes, and check what it wrote |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
 ## Where the graph lives
@@ -93,6 +94,7 @@ web/src/
   combobox.ts   a text box that hands back nodes, not text
   writes.ts     the line every write stands in, and the receipts it leaves
   join.ts       the panel at the top: two ends, and the writes
+  drag-join.ts  the drag that joins two nodes, and the arrow it draws
   islands.ts    the panel down the left: every component, as somewhere to go
   main.ts       wiring, the centre, the HUD
   transfer.ts   the file page, and everything that changes a whole graph
@@ -115,6 +117,7 @@ scripts/
   docs-gate-selftest.py  proves each bound check still compares something
   prose-lint.py        the writing rule, on newly written text, as it is written
   prose-lint-selftest.py  proves each writing check still fires, and still holds off
+  drive-drag-join.mjs  drives the shift-drag that joins two nodes, and checks it
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it

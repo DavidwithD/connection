@@ -9,6 +9,24 @@
   <body class="map">
     <div id="stage"></div>
 
+    <!-- The arrow a shift-drag draws, from the node it started on to the cursor. Over the
+         canvas rather than in the graph: a node that followed the cursor would be a second
+         thing on this map that moves. app.css draws it only while the drag is in flight.
+
+         One filled path, not a stroked line. The arrow is wide where it leaves the node and
+         narrow where it meets the head, and no stroke can taper. The gradient fades along the
+         same axis, so the end under the reader's hand is the quiet one. Both are aimed by
+         drag-join.ts, which is where the shape and the two ends are set. -->
+    <svg id="aim" aria-hidden="true">
+      <defs>
+        <linearGradient id="aim-ink" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-opacity="0.12" />
+          <stop offset="1" stop-opacity="0.95" />
+        </linearGradient>
+      </defs>
+      <path id="aim-arrow" fill="url(#aim-ink)" />
+    </svg>
+
     <!-- Shown when the store holds no graph. That is the state of a fresh browser profile.
          It is not an error, so there is nothing to repair. Both ways out are offered: seed
          or import a file on the other page, or name the first node in the box above. -->
@@ -159,6 +177,7 @@
       <span><kbd>click the centre</kbd> name it in the box, and copy the name</span>
       <span><kbd>right-click the centre</kbd> take it off the map</span>
       <span><kbd>right-click a line into the centre</kbd> part the two it joins</span>
+      <span><kbd>shift-drag between two nodes</kbd> join them</span>
       <span><kbd>↑↓←→</kbd> nudge the view</span>
       <!-- These two keys move focus between the map and the name box. Nothing else on the
            page says the box can be reached, or left, without a click. -->

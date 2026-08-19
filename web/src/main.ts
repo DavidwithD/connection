@@ -19,6 +19,7 @@ import {
   whenEvicted,
 } from "./store/index.js"
 import type { Neighbourhood, NodeMeta, Opening } from "./store/index.js"
+import { DragJoin } from "./drag-join.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
@@ -62,10 +63,12 @@ const ACCENT_HYSTERESIS = 0.78
 /** Keyboard pan step, in screen pixels. */
 const NUDGE = 120
 
-const el = <T extends HTMLElement>(id: string): T => {
-  const found = document.getElementById(id)
+// `querySelector` rather than `getElementById`, because it is generic over `Element` and this
+// looks up an SVG line as well as HTML. The id it is given is a literal in this file.
+const el = <T extends Element>(id: string): T => {
+  const found = document.querySelector<T>(`#${id}`)
   if (!found) throw new Error(`missing element: #${id}`)
-  return found as T
+  return found
 }
 
 const stage = el<HTMLDivElement>("stage")
@@ -155,6 +158,13 @@ const explorer = new Explorer(world, view, {
   onError: (message) => setStatus(`⚠ ${message}`, "error"),
 })
 
+/**
+ * Repaint the HUD numbers and the island rows.
+ *
+ * The last thing it does is write the idle hint over the status line, unless that line
+ * already holds an error. So a caller with something to say calls this first and
+ * `setStatus` after.
+ */
 function render(): void {
   const accent = view.accent ? world.get(view.accent) : null
   statCentre.textContent = accent?.label ?? "—"
@@ -434,6 +444,21 @@ menuButton.addEventListener("click", () => {
   else partEdge(target.a, target.b)
 })
 
+/**
+ * Shift and drag between two nodes to join them.
+ *
+ * The gesture and its arrow are drag-join.ts. What reaches the graph is `joinPair` below.
+ * `ended` is the same resolver the menu above parts an edge with. So a ghost stands for its node
+ * at either end of a drag, as it does under a right-click.
+ */
+new DragJoin(view.cy, el<SVGPathElement>("aim-arrow"), el<SVGLinearGradientElement>("aim-ink"), {
+  ended,
+  join: joinPair,
+  aim: (id) => view.aim(id),
+  // The menu opens at a point on screen, and a drag is about to change what is under it.
+  onStart: closeMenu,
+})
+
 /** Take a node out of the graph, with every edge that reaches it. */
 function removeNode(id: string): void {
   const node = world.get(id)
@@ -470,8 +495,6 @@ function removeNode(id: string): void {
 
       receipt.settle("ok", `removed ${node.label}`)
       void refreshTotals()
-      // Set the status after `render`, never before. `render` writes the idle hint over
-      // whatever the status line holds.
       render()
       setStatus(`removed ${node.label}`, "idle")
     } catch (err) {
@@ -504,8 +527,6 @@ function partEdge(aId: string, bId: string): void {
         writes.run(receipt, () => rejoin(receipt, a, b))
       })
       void refreshTotals()
-      // Set the status after `render`, never before. `render` writes the idle hint over
-      // whatever the status line holds.
       render()
       setStatus(`parted ${a.label} and ${b.label}`, "idle")
     } catch (err) {
@@ -531,22 +552,74 @@ function partOnMap(a: string, b: string): void {
   view.reviseGhosts()
 }
 
+/** Draw a join the store has taken. The mirror of `partOnMap`, and shared with the drag. */
+function joinOnMap(a: string, b: string): void {
+  // Raise the degrees and link together, the mirror of parting above. See World.bumpDegree.
+  world.bumpDegree(a)
+  world.bumpDegree(b)
+  if (world.linkExisting(a, b)) view.add([], [[a, b]])
+  // The mirror of the ghost pass in `partOnMap`. The far end is a neighbour again, and an
+  // off-screen one gets its ghost back now instead of on the next settle.
+  view.reviseGhosts()
+}
+
 /** Join the pair again, from the receipt's undo. */
 async function rejoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void> {
   try {
     await joinNodes(a.id, b.id)
-    // Raise the degrees and link together, the mirror of parting above. See World.bumpDegree.
-    world.bumpDegree(a.id)
-    world.bumpDegree(b.id)
-    if (world.linkExisting(a.id, b.id)) view.add([], [[a.id, b.id]])
-    // The mirror of the ghost pass in `partOnMap`. The far end is a neighbour again, and an
-    // off-screen one gets its ghost back now instead of on the next settle.
-    view.reviseGhosts()
+    joinOnMap(a.id, b.id)
 
     receipt.settle("undone", `joined ${a.label} and ${b.label} again`)
     void refreshTotals()
     render()
     setStatus(`undid parting ${a.label} and ${b.label}`, "idle")
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    receipt.settle("warn", reason)
+    setStatus(`⚠ ${reason}`, "error")
+  }
+}
+
+/**
+ * Join two nodes named by a drag on the map: the store write, then the map, then the way back.
+ *
+ * Nothing is checked here first. A pair the graph already holds is the store's to refuse, and
+ * the receipt is where its sentence lands. A node aimed at itself never reaches here. The
+ * gesture reads a release on its own source as naming one node, not a pair.
+ */
+function joinPair(a: WorldNode, b: WorldNode): void {
+  const receipt = writes.open()
+  receipt.el.textContent = `${a.label} — ${b.label}`
+  writes.run(receipt, async () => {
+    try {
+      await joinNodes(a.id, b.id)
+      joinOnMap(a.id, b.id)
+
+      receipt.settle("ok", `joined ${a.label} and ${b.label}`)
+      receipt.offerUndo("part them again", () => {
+        writes.run(receipt, () => unjoin(receipt, a, b))
+      })
+      void refreshTotals()
+      render()
+      setStatus(`joined ${a.label} and ${b.label}`, "idle")
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      receipt.settle("warn", reason)
+      setStatus(`⚠ ${reason}`, "error")
+    }
+  })
+}
+
+/** Part the pair again, from the receipt's undo. The mirror of `rejoin`. */
+async function unjoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void> {
+  try {
+    await unjoinNodes(a.id, b.id)
+    partOnMap(a.id, b.id)
+
+    receipt.settle("undone", `parted ${a.label} and ${b.label} again`)
+    void refreshTotals()
+    render()
+    setStatus(`undid joining ${a.label} and ${b.label}`, "idle")
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
     receipt.settle("warn", reason)

@@ -58,6 +58,7 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | click a ghost | Fly to the node it stands in for |
 | right-click the centre | Take it off the map, with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
+| shift-drag between two nodes | Join them. A ghost counts as the node it names |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
 | **Recentre** | Go back to the centre, wherever the panning left it |
@@ -159,6 +160,17 @@ seconds. A node something else has since been joined to is kept, and the edge st
 A receipt names both ends, and clicking either name puts it back in the near end. That is the
 way back to a write that has scrolled away, where `⌘↵` carries only the one just fired.
 Clicking loads and never writes.
+
+**Shift-drag between two nodes to join them.** Press on one with shift held, drag to the other,
+and let go. An arrow follows the cursor while the button is down, and the node a release would
+take draws a ring. Letting go anywhere else writes nothing. The write lands on the release and
+its receipt carries the undo, the way the box above does
+([ADR 0038](decisions/0038-a-drag-that-joins-two-nodes.md)). A ghost counts as the node it
+names, at either end.
+
+Both nodes have to be on screen when the drag starts, and one too far to see is joined from
+the box above. A map that has just opened draws one ring, so every node on it is joined to the
+centre already. Walk a step first, and the ring left behind is what the drag has to aim at.
 
 Taking a node off the map is the one write with no way back, since its edges cannot return with
 it. So it asks first rather than offering an undo after, and the row it asks with names what is
