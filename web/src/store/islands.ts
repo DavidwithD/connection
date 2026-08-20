@@ -395,6 +395,22 @@ async function adopt(
   })
 }
 
+/**
+ * Move every node pointing at one name onto another. No walk, and no recount.
+ *
+ * For a rename, which is the one write that changes a key without changing the graph. The
+ * edges afterwards are the edges before, so no component splits and none merges, and there is
+ * nothing for `recount` to work out. What is left is the `parent` pointers naming a key the
+ * store no longer holds, and `adopt` moves those from an index read.
+ *
+ * The renamed record carries its own `parent` and `islandSize` across inside the write
+ * transaction. This is only for the nodes behind it.
+ */
+export async function reparent(from: string, to: string): Promise<void> {
+  // Nothing has been walked, so no node is already re-pointed and none is held back.
+  await adopt([from], to, () => false)
+}
+
 /** One starting point and everything it has reached so far, while the race runs. */
 interface Group {
   seen: Set<string>

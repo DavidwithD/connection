@@ -11,7 +11,7 @@
  */
 import { counted, open, unavailable, type StoredNode } from "./db.js"
 import { edgeEnds, naming } from "./keys.js"
-import { find, recount, settle, type Island } from "./islands.js"
+import { find, recount, reparent, settle, type Island } from "./islands.js"
 import { MAX_EDGES_PER_NODE } from "./read.js"
 import { ALREADY_JOINED, Missing, NAME_TAKEN, Refused } from "./refused.js"
 import type { NodeMeta } from "./shapes.js"
@@ -40,6 +40,126 @@ async function reindex(run: () => Promise<void>): Promise<void> {
         `${err instanceof Error ? err.message : String(err)}`,
     )
   }
+}
+
+/**
+ * Rename a node. The name is the key, so this is a delete and a re-add.
+ *
+ * One transaction over both stores. Every incident edge is re-keyed inside it. An edge holds
+ * its two ends as its own key, so half of one moving is a state the graph cannot describe.
+ * The three-step version — create, re-join, delete — is three transactions. A failure between
+ * them leaves both names in the graph, each holding some of the edges.
+ *
+ * No degree changes anywhere. Every neighbour loses one edge and gains one, so the counts are
+ * the counts it started with. No node is left claiming graph it has not got.
+ *
+ * The components are untouched for the same reason: the edges afterwards are the edges
+ * before. `reparent` moves the `parent` pointers naming the old key, and there is no walk.
+ */
+export async function renameNode(id: string, next: string): Promise<NodeMeta> {
+  const named = naming(next)
+  // The same rule `createNode` follows. A name that normalises to nothing has no key.
+  if (!named) throw new Refused("a node needs a name")
+
+  // Only the spelling changed. The key is what everything else names, so nothing else moves.
+  if (named.labelKey === id) return respell(id, named.label)
+
+  let refusal: string | null = null
+  let gone = false
+  let degree = 0
+  // True once the new name is in the store. Two writes below can raise a `ConstraintError`
+  // and they mean different things, so this is what tells them apart. See the catch.
+  let claimed = false
+
+  try {
+    const db = await open()
+    const tx = db.transaction(["nodes", "edges"], "readwrite")
+    const nodes = tx.objectStore("nodes")
+    const edges = tx.objectStore("edges")
+
+    const node = await nodes.get(id)
+    const taken = await nodes.get(named.labelKey)
+
+    if (!node) gone = true
+    else if (taken) refusal = NAME_TAKEN
+    else {
+      // Uncapped, unlike every other edge read. MAX_EDGES_PER_NODE bounds what one read hands
+      // the map to draw. A rename has to move every edge: one left behind is an edge naming a
+      // node that is not there.
+      const mine = await edges.index("byEnd").getAll(IDBKeyRange.only(id))
+
+      await nodes.add({
+        ...node,
+        labelKey: named.labelKey,
+        label: named.label,
+        // A root points at itself, so its own pointer moves with it. Any other node keeps the
+        // root it already names, which this write does not change.
+        parent: node.parent === id ? named.labelKey : node.parent,
+      })
+      claimed = true
+
+      for (const edge of mine) {
+        const other = edge.a === id ? edge.b : edge.a
+        const [x, y] = edgeEnds(named.labelKey, other)
+        await edges.delete([edge.a, edge.b])
+        await edges.add({ a: x, b: y, ends: [x, y] })
+      }
+
+      await nodes.delete(id)
+      degree = node.degree
+    }
+
+    await tx.done
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "ConstraintError") {
+      // Before the name was claimed, this is `nodes.add` finding it already there: another
+      // tab took it between the check above and the add. The unique key is the backstop under
+      // that check, as it is in `createNode`.
+      if (!claimed) throw new Refused(NAME_TAKEN)
+      // After it, this is `edges.add` finding the new pair already stored, which means an
+      // edge names a node the store has not got. Only a `deleteNodeWithEdges` that stopped
+      // partway leaves that. Say so rather than absorbing the edge, which would repair the
+      // graph where nobody asked.
+      throw new Refused(
+        "an edge here names a node the graph has lost — run Check the graph on the transfer page",
+      )
+    }
+    throw unavailable(err) ?? err
+  }
+
+  if (gone) throw new Missing(`no such node: ${id}`)
+  if (refusal) throw new Refused(refusal)
+
+  await reindex(() => reparent(id, named.labelKey))
+
+  return { id: named.labelKey, label: named.label, degree }
+}
+
+/**
+ * The case-only rename: the same key, a different spelling.
+ *
+ * `label` and `labelKey` differ only in case, so a name normalising to the key it already has
+ * changes one field of one record. No edge moves, no degree changes, and no `parent` names
+ * anything new. This is the common reason to rename, and it holds one store.
+ */
+async function respell(id: string, label: string): Promise<NodeMeta> {
+  let renamed: StoredNode | null = null
+
+  try {
+    const db = await open()
+    const tx = db.transaction("nodes", "readwrite")
+    const node = await tx.store.get(id)
+    if (node) {
+      renamed = { ...node, label }
+      await tx.store.put(renamed)
+    }
+    await tx.done
+  } catch (err) {
+    throw unavailable(err) ?? err
+  }
+
+  if (!renamed) throw new Missing(`no such node: ${id}`)
+  return meta(renamed)
 }
 
 /**

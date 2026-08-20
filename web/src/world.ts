@@ -349,6 +349,74 @@ export class World {
   }
 
   /**
+   * Give a node a new id, at the position it already holds.
+   *
+   * The store keys a node by its name, so a rename there is a delete and a re-add. Here it is
+   * neither: `forget` refuses a node with edges, and `place` would have to unlink every edge
+   * first and link them all again. So the maps are rewritten in place instead.
+   *
+   * This does not break the rule at the top of this file. Nothing moves — `x` and `y` are
+   * carried across untouched, and the occupancy entry is re-added at the same point. What
+   * changes is the name the map files it under.
+   *
+   * Every structure holding the old id has to be reached. The node itself, both directions of
+   * the adjacency, the pair keys, the occupancy grid, the expanded mark, and any pending list
+   * naming it. One missed leaves a node that is drawn but cannot be walked from.
+   */
+  rename(from: string, to: string, label: string): boolean {
+    const node = this.nodes.get(from)
+    if (!node) return false
+    // A case-only rename keeps the key, and the key is the id. Nothing filed by id moves, so
+    // the spelling is the whole of it.
+    if (from === to) {
+      node.label = label
+      return true
+    }
+    if (this.nodes.has(to)) return false
+
+    const moved: WorldNode = { ...node, id: to, label }
+    this.nodes.delete(from)
+    this.nodes.set(to, moved)
+
+    // The grid stores the record it was given, so the old one goes and the new one is added
+    // at the same point. `remove` is what frees the spot for a name that no longer exists.
+    this.occupancy.remove(from)
+    this.occupancy.add(moved)
+
+    const neighbours = this.adjacency.get(from) ?? new Set<string>()
+    this.adjacency.delete(from)
+    this.adjacency.set(to, neighbours)
+    for (const other of neighbours) {
+      const theirs = this.adjacency.get(other)
+      if (!theirs) continue
+      theirs.delete(from)
+      theirs.add(to)
+      // A pair key is built from the two names, so every pair this node is in is re-keyed.
+      this.pairs.delete(edgeKey(from, other))
+      this.pairs.add(edgeKey(to, other))
+    }
+
+    // The mark says this node's neighbours have been read, and that is still true of the same
+    // node under a new name. Dropping it would make the map read the ring again.
+    if (this.expanded.delete(from)) this.expanded.add(to)
+
+    const waiting = this.pending.get(from)
+    if (waiting) {
+      this.pending.delete(from)
+      this.pending.set(to, waiting)
+    }
+    // The renamed node may itself be waiting for a seat under another parent. There it is
+    // held as metadata rather than as a placed node.
+    for (const list of this.pending.values()) {
+      const at = list.findIndex((meta) => meta.id === from)
+      const held = list[at]
+      if (held) list[at] = { id: to, label, degree: held.degree }
+    }
+
+    return true
+  }
+
+  /**
    * Remove a node from the map and free its position.
    *
    * This is the one exception to "a position is never reassigned". That rule exists so

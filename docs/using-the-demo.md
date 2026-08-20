@@ -56,7 +56,7 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | click a node | Make it the centre, where it stands. Nothing moves |
 | click the centre | Put its name in the box at the top, and on the clipboard |
 | click a ghost | Fly to the node it stands in for |
-| right-click the centre | Take it off the map, with everything joined to it |
+| right-click the centre | Rename it, or take it off the map with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
 | click under **islands** | Cross to a component, or go back to one you crossed to before |
 | `↑↓←→` | Nudge the view |
@@ -163,6 +163,20 @@ Clicking loads and never writes.
 Taking a node off the map is the one write with no way back, since its edges cannot return with
 it. So it asks first rather than offering an undo after, and the row it asks with names what is
 going — `delete Ashanlin and its 3 edges`. It is offered on the centre alone.
+
+**The same menu renames it.** The other row reads `edit Ashanlin`, and clicking it puts a text
+box where that row was. Type a name and press `↵`. The node keeps its position, its edges and
+its degree, and every neighbour keeps its own.
+
+Under the box is one row, and it is the button as well as the answer. `↻ update` means the name
+is free, and `↵` takes it the way `↵` takes a row in the box at the top. `is taken` means a node
+already carries that name, and then nothing fires — the refusal is shown before the write rather
+than after it. A name differing from the node's own only in case is allowed, so `ashanlin` can
+become `Ashanlin`.
+
+A rename is reversible, so it writes on the key and puts `undo` on its receipt. That undo is
+refused if something has claimed the old name since. Panning closes the box and writes nothing,
+as it closes the menu ([ADR 0038](decisions/0038-a-node-under-a-new-name.md)).
 
 **The same right-click parts a pair.** Aim it at a line reaching the centre instead of at the
 centre, and the row reads `part Ashanlin and Vere`. Both nodes stay, so this one writes on the

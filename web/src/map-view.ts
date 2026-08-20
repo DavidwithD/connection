@@ -530,6 +530,18 @@ export class MapView {
     })
   }
 
+  /**
+   * Change the name a node draws, and nothing else.
+   *
+   * For a rename that kept its key, where the id is the same node and only the spelling
+   * moved. A pill takes both dimensions from its label, so Cytoscape resizes it on this
+   * write. Position, tier and edges are untouched.
+   */
+  relabel(id: string, label: string): void {
+    const node = this.cy.$id(id)
+    if (node.nonempty()) node.data("label", label)
+  }
+
   /** Add elements. Existing ones are never changed. `drop` removes, and only for an undo. */
   add(nodes: readonly WorldNode[], edges: readonly [string, string][]): void {
     const elements: ElementDefinition[] = []

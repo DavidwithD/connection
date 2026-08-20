@@ -139,10 +139,20 @@
     </section>
 
     <!-- Right-click menu. It opens at the centre only: on that node, or on a line reaching
-         it. One button, whose row is written when the menu opens. Taking the node out is the
-         one write the page cannot undo, so that row carries the edge count instead of a
-         second confirm dialog. Parting a pair is undone from its receipt. -->
+         it. The remove button's row is written when the menu opens. Taking the node out is
+         the one write the page cannot undo, so that row carries the edge count instead of a
+         second confirm dialog. Parting a pair is undone from its receipt.
+
+         Edit is offered on a node and not on a line, and it swaps its own row for the box
+         below it. That box is an input and one row saying whether the typed name is free.
+         See web/src/rename-box.ts. -->
     <div class="panel" id="map-menu" hidden>
+      <div id="map-edit" hidden>
+        <input id="map-name" type="text" autocomplete="off" spellcheck="false"
+               aria-label="A new name for this node">
+        <button id="map-update" type="button" hidden></button>
+      </div>
+      <button id="map-rename" type="button"></button>
       <button id="map-remove" type="button"></button>
     </div>
 

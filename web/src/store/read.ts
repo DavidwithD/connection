@@ -123,6 +123,19 @@ export async function readNeighbourhood(id: string): Promise<Neighbourhood> {
   return { node: metaOf(node), neighbours }
 }
 
+/**
+ * One node, or null if the graph carries no such name.
+ *
+ * The only read here whose good answer is nothing. `readNeighbourhood` throws `Missing` for a
+ * node that is not there, which is right when the reader walked to it and it has gone. This
+ * answers whether a name is free, so absence is the answer rather than a failure.
+ */
+export async function readNode(id: string): Promise<NodeMeta | null> {
+  const db = await open()
+  const node = await db.get("nodes", id)
+  return node ? metaOf(node) : null
+}
+
 /** Where a page of islands stopped: the index key of its last row. */
 export type IslandKey = [number, string]
 

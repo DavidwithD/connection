@@ -22,9 +22,9 @@ Reads are the other half and live in [the-centre.md](the-centre.md).
 | receipt | One write on screen, carrying its undo while it stands | [`Receipt`](../../web/src/writes.ts) |
 | the line | The single chain every write waits in | [`Writes`](../../web/src/writes.ts) |
 
-## The four transactions
+## The five transactions
 
-All four are [write.ts](../../web/src/store/write.ts).
+All five are [write.ts](../../web/src/store/write.ts).
 
 **Creating a node** holds one store, and that narrowness is the point: there is no counter to
 bump and no edge to touch. The name is checked inside the transaction, which is what makes the
@@ -56,6 +56,15 @@ of them, which is the whole of what the second copy was buying.
 
 A node joined to itself is refused before anything is read. The graph has no self-edges, and
 guarding it in one place covers every caller.
+
+**Renaming a node** is a delete and a re-add, because the name is the key. Both stores are held
+so the node record and every edge on it move together; a rename split across transactions would
+leave two names each holding some of the edges. No degree changes anywhere, since each
+neighbour loses one edge and gains one. The edge read is the one that is not capped: an edge
+left behind would name a node the store has not got.
+
+The components are untouched, which is what makes it cheap. The edges afterwards are the edges
+before, so `reparent` moves the `parent` pointers naming the old key and nothing is walked.
 
 **Parting two nodes** deletes the edge and lowers both degrees, neither below zero. A degree
 short of its edges is the one state a reader cannot detect — the node simply stops asking for
@@ -186,3 +195,4 @@ copy.
 | [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) | Edge by edge rather than one transaction, and what a stopped run leaves |
 | [0028](../decisions/0028-where-a-chained-name-lands.md) | Which end a chained name lands in, and what moving the anchor spends |
 | [0036](../decisions/0036-a-click-that-writes-nothing.md) | That the map fires no join, and the keyboard is what does |
+| [0038](../decisions/0038-a-node-under-a-new-name.md) | That a rename is one transaction, needs no walk, and gets its own box |

@@ -11,8 +11,8 @@ export { Missing, Refused } from "./refused.js"
 export { Unavailable, persist, whenEvicted } from "./db.js"
 
 export { fetchIslands, readNeighbourhood as fetchNeighbourhood, readOpening as fetchOpening,
-  searchLabels } from "./read.js"
-export { createNode, deleteNode, deleteNodeWithEdges } from "./write.js"
+  readNode, searchLabels } from "./read.js"
+export { createNode, deleteNode, deleteNodeWithEdges, renameNode } from "./write.js"
 
 import { addEdge, removeEdge } from "./write.js"
 import { apply, survey } from "./load.js"

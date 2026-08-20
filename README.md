@@ -59,6 +59,7 @@ around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 | `npm run drive:map` | Drive the map in a real browser and photograph it into `.shots/` |
 | `npm run drive:join` | Drive the join panel's keyboard and report what each Enter does |
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
+| `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
 ## Where the graph lives
@@ -91,6 +92,7 @@ web/src/
   palette.ts    validated colour tokens, light and dark
   settings.ts   what the reader has asked the page to do, kept in the browser
   combobox.ts   a text box that hands back nodes, not text
+  rename-box.ts a name, and one row saying whether the graph has it already
   writes.ts     the line every write stands in, and the receipts it leaves
   join.ts       the panel at the top: two ends, and the writes
   islands.ts    the panel down the left: every component, as somewhere to go
@@ -118,6 +120,7 @@ scripts/
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it
+  drive-rename.mjs     drives the rename, and checks what the store kept
   hooks/pre-commit     runs both gates on the staged tree
 .github/workflows/
   ci.yml               the same gates, where they cannot be skipped

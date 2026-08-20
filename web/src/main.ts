@@ -15,10 +15,12 @@ import {
   fetchOpening,
   joinNodes,
   persist,
+  renameNode as storeRename,
   unjoinNodes,
   whenEvicted,
 } from "./store/index.js"
 import type { Neighbourhood, NodeMeta, Opening } from "./store/index.js"
+import { RenameBox } from "./rename-box.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
@@ -344,34 +346,71 @@ view.cy.on("tap", "node", (event) => {
  * is shown on the page, so it is the only one whose cost the menu can state. A ghost is never
  * the centre.
  *
- * The two writes are not alike, and the menu says so. Taking a node out cannot be undone,
- * because its edges cannot come back with it, so the button names how much is going and the
- * question is asked before the write. Parting two nodes leaves both where they are, so it
- * writes on the click and carries an undo after, like every write from the box above.
+ * The writes are not alike, and the menu says so. A node taken out cannot be put back,
+ * because its edges cannot come with it. So the button names how much is going, and the
+ * question is asked before the write. Parting two nodes leaves both where they are. That one
+ * writes on the click and carries an undo after, like every write from the box above. A
+ * rename is reversible in the same way, so it does the same.
+ *
+ * Edit opens in the menu rather than beside the node. The pointer is already here, and the
+ * box would otherwise have to be held over a Cytoscape node through every pan and zoom.
  */
 const menu = el<HTMLDivElement>("map-menu")
 const menuButton = el<HTMLButtonElement>("map-remove")
+const editRow = el<HTMLButtonElement>("map-rename")
+const editBox = el<HTMLDivElement>("map-edit")
 
 /** What the menu would take out, or null when the menu is closed. */
 type Doomed = { kind: "node"; id: string } | { kind: "edge"; a: string; b: string }
 
 let doomed: Doomed | null = null
 
+/** The node the edit row would rename, or null when the menu is closed or on a line. */
+let editing: NodeMeta | null = null
+
 function closeMenu(): void {
   // Return early when there is nothing to close. A pan calls this on every frame.
   if (menu.hidden) return
   doomed = null
+  editing = null
   menu.hidden = true
+  // Put the box away and the row back, so the next node opens on the row rather than on the
+  // name of the last one.
+  editBox.hidden = true
+  editRow.hidden = false
+  rename.close()
 }
 
-/** Put the menu under the pointer, with the row it is offering. */
-function openMenu(target: Doomed, label: string, at: MouseEvent | undefined): void {
+/**
+ * Put the menu under the pointer, with the rows it is offering.
+ *
+ * `named` is the node an edit would rename, and null for a line. Only a node can be renamed,
+ * so the edit row is hidden for the other target rather than opening on nothing.
+ */
+function openMenu(
+  target: Doomed,
+  label: string,
+  at: MouseEvent | undefined,
+  named: NodeMeta | null,
+): void {
   doomed = target
+  editing = named
   menuButton.textContent = label
+  editRow.textContent = named ? `edit ${named.label}` : ""
+  editRow.hidden = !named
+  editBox.hidden = true
   menu.style.left = `${String(at?.clientX ?? 0)}px`
   menu.style.top = `${String(at?.clientY ?? 0)}px`
   menu.hidden = false
 }
+
+/** Swap the edit row for the box it opens. The menu stays where the pointer put it. */
+editRow.addEventListener("click", () => {
+  if (!editing) return
+  editRow.hidden = true
+  editBox.hidden = false
+  rename.open(editing)
+})
 
 /** The button label, with the edge count when the node has edges. */
 function priced(node: NodeMeta): string {
@@ -406,7 +445,7 @@ view.cy.on("cxttap", "node", (event) => {
   const node = world.get(id)
   if (!node) return
 
-  openMenu({ kind: "node", id }, priced(node), event.originalEvent as MouseEvent | undefined)
+  openMenu({ kind: "node", id }, priced(node), event.originalEvent as MouseEvent | undefined, node)
 })
 
 view.cy.on("cxttap", "edge", (event) => {
@@ -423,6 +462,8 @@ view.cy.on("cxttap", "edge", (event) => {
     { kind: "edge", a: near.id, b: far.id },
     `part ${near.label} and ${far.label}`,
     event.originalEvent as MouseEvent | undefined,
+    // A line is not a node, so there is nothing here to rename.
+    null,
   )
 })
 
@@ -433,6 +474,100 @@ menuButton.addEventListener("click", () => {
   if (target.kind === "node") removeNode(target.id)
   else partEdge(target.a, target.b)
 })
+
+const rename = new RenameBox(el<HTMLInputElement>("map-name"), el<HTMLButtonElement>("map-update"), {
+  onRename: (next) => {
+    const node = editing
+    closeMenu()
+    if (node) renameNode(node, next)
+  },
+  onError: (message) => setStatus(`⚠ ${message}`, "error"),
+})
+
+/**
+ * Give a node a new name, keeping its edges and its place on the map.
+ *
+ * The store does the hard half in one transaction. What is left here is the drawn map, where
+ * a Cytoscape id cannot be changed. The node is dropped with its edges, then added again
+ * under the new name, at the position `World.rename` kept for it. A rename that kept its key
+ * moves nothing, and only the pill is redrawn.
+ *
+ * This offers an undo where removing a node cannot, because a rename is exactly reversible.
+ * The way back is a rename back, and it is refused if something claimed the old name in
+ * between.
+ */
+function renameNode(node: NodeMeta, next: string): void {
+  const receipt = writes.open()
+  receipt.el.textContent = node.label
+  writes.run(receipt, async () => {
+    try {
+      const renamed = await applyRename(node, next)
+      receipt.settle("ok", `renamed ${node.label} to ${renamed.label}`)
+      receipt.offerUndo("put the old name back", () => {
+        writes.run(receipt, () => renameBack(receipt, renamed, node.label))
+      })
+      void refreshTotals()
+      // Set the status after `render`, never before. `render` writes the idle hint over
+      // whatever the status line holds.
+      render()
+      setStatus(`renamed ${node.label} to ${renamed.label}`, "idle")
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      receipt.settle("warn", reason)
+      setStatus(`⚠ ${reason}`, "error")
+    }
+  })
+}
+
+/** Undo one. It is the same write in the other direction, so it settles as undone. */
+async function renameBack(receipt: Receipt, node: NodeMeta, was: string): Promise<void> {
+  try {
+    const back = await applyRename(node, was)
+    receipt.settle("undone", `${back.label} has its old name back`)
+    void refreshTotals()
+    render()
+    setStatus(`undid renaming ${node.label}`, "idle")
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    receipt.settle("warn", reason)
+    setStatus(`⚠ ${reason}`, "error")
+  }
+}
+
+/**
+ * The store, the map and the view, in that order. Both directions of a rename run through it.
+ *
+ * The drawn edges are read before the write, because `World.rename` files them under the new
+ * name and there would be nothing left here to ask.
+ */
+async function applyRename(node: NodeMeta, next: string): Promise<NodeMeta> {
+  const drawn = world.neighbours(node.id)
+  const pairs = (id: string): [string, string][] =>
+    drawn.map((other) => [id, other] as [string, string])
+
+  const renamed = await storeRename(node.id, next)
+
+  if (world.rename(node.id, renamed.id, renamed.label)) {
+    if (renamed.id === node.id) view.relabel(node.id, renamed.label)
+    else {
+      const moved = world.get(renamed.id)
+      view.drop([node.id], pairs(node.id))
+      if (moved) view.add([moved], pairs(renamed.id))
+    }
+  }
+
+  // `setAccent` and not `becomeCentre`, which every other path here uses. That one is for
+  // arriving at a node: it seats whatever was waiting for room and schedules a read. A rename
+  // arrives nowhere, and `World.rename` carried the expanded mark and the pending list across.
+  // Its `settle` would also repaint the status line a moment after this write set it.
+  view.setAccent(renamed.id)
+  // A ghost stands for a node by name, so the ones this node owns are stale. `rejoin` revises
+  // them here for the same reason, rather than leaving them to the next settle.
+  view.reviseGhosts()
+  // An input in the panel may be holding the old name, which now names nothing.
+  panel.forget(node)
+  return renamed
+}
 
 /** Take a node out of the graph, with every edge that reaches it. */
 function removeNode(id: string): void {

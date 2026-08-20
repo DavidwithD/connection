@@ -534,6 +534,27 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 }
 #map-menu button:hover { color: var(--accent); border-color: var(--hairline); }
 
+/* The rename box, inside the same menu. The input is sized to the widest row the menu holds,
+   so opening the box does not change the menu's width under the pointer. */
+#map-edit { display: flex; flex-direction: column; gap: 4px; padding: 2px 2px 4px; }
+#map-name {
+  font: inherit;
+  font-size: 11px;
+  width: 100%;
+  color: var(--ink);
+  background: var(--plane);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+#map-name:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* The verdict. `↻ update` fires the rename and `is taken` fires nothing, so the disabled
+   state is what tells them apart to a pointer and to the keyboard alike. */
+#map-update[data-state="armed"] { color: var(--accent); }
+#map-update[data-state="taken"] { color: var(--ink-muted); cursor: default; }
+#map-update[disabled]:hover { color: var(--ink-muted); border-color: transparent; }
+
 #controls { top: 16px; right: 16px; display: flex; gap: 6px; padding: 8px; }
 button {
   font: inherit;
