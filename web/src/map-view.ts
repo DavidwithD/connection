@@ -408,6 +408,22 @@ function buildStyle(p: Palette): StylesheetJson {
         "z-index": HOVER_Z,
       },
     },
+    // The node a drag would join to. A ring, and no name: whatever is under the pointer is
+    // already drawing one — the hover rule above, or the node's own tier. So this says which
+    // node the release would take, and nothing more.
+    //
+    // The outline rather than the border, because the border is spoken for at three tiers: the
+    // centre's ring, the frontier dash, and `loading`. It replaces the halo on a pill for as
+    // long as the button is held, which is a louder mark in the same place.
+    {
+      selector: "node[?aim]",
+      style: {
+        "outline-width": 3,
+        "outline-color": p.accent,
+        "outline-opacity": 1,
+        "outline-offset": 1,
+      },
+    },
     // Hidden rather than removed. A stub the centre replaced with a ghost comes back when
     // the centre moves on, and rebuilding it would mean recounting `stubbed`.
     { selector: ".hidden", style: { display: "none" } },
@@ -422,6 +438,8 @@ export class MapView {
   private flying = false
   /** The node whose name the pointer is holding open, or null. */
   private hovered: string | null = null
+  /** The node a drag would join to, or null. */
+  private aimed: string | null = null
   /** The ghosts the current centre created, and the node each one stands in for. */
   private ghosts: Ghost[] = []
   /** Ghost positions for the current centre. Built on the first pass, then only extended. */
@@ -438,7 +456,8 @@ export class MapView {
       userPanningEnabled: true,
       userZoomingEnabled: true,
       boxSelectionEnabled: false,
-      // Positions never change, so a drag on a node pans instead of moving it.
+      // Positions never change, so nothing the reader drags may move a node. This stops the
+      // node moving and nothing more: the pan on that press is `panFromNodes` below.
       autoungrabify: true,
       autolock: true,
       minZoom: 0.14,
@@ -448,6 +467,52 @@ export class MapView {
       // The map is mostly text, so a 1:1 canvas looks soft on a HiDPI screen. Capped at 2:
       // above that the fill cost rises and the names look no better.
       pixelRatio: Math.min(2, window.devicePixelRatio || 1),
+    })
+    this.panFromNodes()
+  }
+
+  /**
+   * Pan when a drag starts on a node.
+   *
+   * Cytoscape pans on a drag of the background, and on a drag of an edge. A press on a node is
+   * a node gesture, and `autoungrabify` means it moves nothing. That drag therefore did nothing
+   * at all. A reader cannot tell which pixels are a node before pressing. The map read as stuck
+   * wherever it was dense, and the map's own keys say a drag pans.
+   *
+   * The delta is the cursor's, so the map follows the pointer exactly as it does from the
+   * background.
+   */
+  private panFromNodes(): void {
+    let last: Point | null = null
+
+    this.cy.on("tapstart", (event) => {
+      // Cleared on every press, and set only for one on a node. The background and an edge pan
+      // by themselves, so panning here as well would move the map twice as far. Clearing here
+      // rather than only on the release matters. A release outside the window never arrives,
+      // and it would leave this armed for the next press.
+      last = null
+      const original = event.originalEvent as MouseEvent | undefined
+      if (!original || event.target === this.cy || !event.target.isNode()) return
+      last = { x: original.clientX, y: original.clientY }
+    })
+
+    this.cy.on("tapdrag", (event) => {
+      if (!last) return
+      const original = event.originalEvent as MouseEvent | undefined
+      // A move with no button held is a hover, and `buttons` is what tells the two apart. A
+      // touch event carries no `buttons`, which is why this compares against zero rather than
+      // testing for the button.
+      if (!original || original.buttons === 0) return
+      // Not during a flight: the camera is already going somewhere, and a pan would land it
+      // where neither asked for. Not while panning is switched off either — that is how a
+      // gesture keeps the drag to itself. See drag-join.ts.
+      if (this.flying || !this.cy.userPanningEnabled()) return
+      this.cy.panBy({ x: original.clientX - last.x, y: original.clientY - last.y })
+      last = { x: original.clientX, y: original.clientY }
+    })
+
+    this.cy.on("tapend", () => {
+      last = null
     })
   }
 
@@ -1033,6 +1098,20 @@ export class MapView {
   }
 
   /**
+   * Mark the node a drag would join to, or clear the mark.
+   *
+   * The same one-at-a-time shape as `hover`, and a separate flag on purpose. This one is not
+   * scoped to a tier. Either end of a drag may be any node drawn, the centre and its ring
+   * included. So the mark has to draw wherever the pointer lands.
+   */
+  aim(id: string | null): void {
+    if (id === this.aimed) return
+    if (this.aimed) this.cy.$id(this.aimed).data("aim", false)
+    this.aimed = id
+    if (id) this.cy.$id(id).data("aim", true)
+  }
+
+  /**
    * How long a flight should take, from how far it looks on screen.
    *
    * A fixed duration cannot suit distances that vary tenfold. It is a jump cut at one end
@@ -1073,8 +1152,8 @@ export class MapView {
    *
    * This is the one place anything on the map moves. `autolock` normally makes every
    * position immutable, which is what keeps positions fixed, so it is turned off for the
-   * flight and back on afterwards. `autoungrabify` is left on throughout: a drag still pans,
-   * and nothing the reader does can move a node.
+   * flight and back on afterwards. `autoungrabify` is left on throughout, so nothing the
+   * reader does can move a node.
    */
   flyTo(ghost: string, onArrive: (target: string) => void): boolean {
     const target = ghostTarget(ghost)

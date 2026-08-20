@@ -1,6 +1,6 @@
 # 0037 — The centre's name on the clipboard
 
-**Status:** 🔵 Proposed
+**Status:** ♻️ Superseded by [0039](0039-any-nodes-name-on-the-clipboard.md)
 **Date:** 2026-08-18
 **Deciders:** David HL
 

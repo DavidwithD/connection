@@ -41,7 +41,7 @@ pointing at it.
 
 `renameNode` in [write.ts](../../web/src/store/write.ts) pays that price, in one transaction.
 What it costs is in [writing-to-the-graph.md](writing-to-the-graph.md), and why it was worth
-paying is [0038](../decisions/0038-a-node-under-a-new-name.md).
+paying is [0040](../decisions/0040-a-node-under-a-new-name.md).
 
 Adding a surrogate id would still be a version bump whose upgrade rewrites every record once,
 offline. That door is still open, and rename is no longer the reason to walk through it.

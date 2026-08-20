@@ -1,4 +1,4 @@
-# 0038 — A node under a new name
+# 0040 — A node under a new name
 
 **Status:** 🔵 Proposed
 **Date:** 2026-08-20

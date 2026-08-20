@@ -20,12 +20,13 @@ import {
   whenEvicted,
 } from "./store/index.js"
 import type { Neighbourhood, NodeMeta, Opening } from "./store/index.js"
-import { RenameBox } from "./rename-box.js"
+import { DragJoin } from "./drag-join.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
 import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
+import { RenameBox } from "./rename-box.js"
 import { distance, type Point } from "./placement.js"
 import { walkByPan, setWalkByPan } from "./settings.js"
 import { World, type WorldNode } from "./world.js"
@@ -64,10 +65,12 @@ const ACCENT_HYSTERESIS = 0.78
 /** Keyboard pan step, in screen pixels. */
 const NUDGE = 120
 
-const el = <T extends HTMLElement>(id: string): T => {
-  const found = document.getElementById(id)
+// `querySelector` rather than `getElementById`, because it is generic over `Element` and this
+// looks up an SVG line as well as HTML. The id it is given is a literal in this file.
+const el = <T extends Element>(id: string): T => {
+  const found = document.querySelector<T>(`#${id}`)
   if (!found) throw new Error(`missing element: #${id}`)
-  return found as T
+  return found
 }
 
 const stage = el<HTMLDivElement>("stage")
@@ -130,18 +133,27 @@ function setStatus(text: string, tone: "idle" | "busy" | "error"): void {
   hudToggle.dataset["tone"] = tone
 }
 
+/** Set once a copy has been turned down. The refusal is reported on that first one only. */
+let clipboardRefused = false
+
 /**
- * Put a name on the clipboard. The click that names the centre in the box copies it too.
+ * Put a name on the clipboard. Every click on a node copies the name it carries.
  *
- * Silent when it works, because the box is already showing what was copied. A denied
+ * Silent when it works, because the name the reader clicked is the name they get. A denied
  * permission stops it. So does an insecure origin: `navigator.clipboard` is undefined there,
- * and the property lookup throws before any write. The status line reports both.
+ * and the property lookup throws before any write.
+ *
+ * A refusal is reported once and not again. A browser that turns one copy down turns them all
+ * down, and every node click reaches here. Repeating it would put an error on the status line
+ * at every step of a walk, where `render` leaves one standing.
  */
 async function copyLabel(label: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(label)
   } catch {
-    setStatus(`⚠ could not copy ${label}`, "error")
+    if (clipboardRefused) return
+    clipboardRefused = true
+    setStatus(`⚠ could not copy ${label}. Later copies fail silently.`, "error")
   }
 }
 
@@ -157,6 +169,13 @@ const explorer = new Explorer(world, view, {
   onError: (message) => setStatus(`⚠ ${message}`, "error"),
 })
 
+/**
+ * Repaint the HUD numbers and the island rows.
+ *
+ * The last thing it does is write the idle hint over the status line, unless that line
+ * already holds an error. So a caller with something to say calls this first and
+ * `setStatus` after.
+ */
 function render(): void {
   const accent = view.accent ? world.get(view.accent) : null
   statCentre.textContent = accent?.label ?? "—"
@@ -310,23 +329,27 @@ view.cy.on("tap", "node", (event) => {
   // known and the flight is otherwise idle time.
   const target = ghostTarget(id)
   if (target) {
+    // The name before the journey. A ghost carries it on screen long before the node it
+    // stands for arrives, and the reader may have wanted the one without the other.
+    const named = world.get(target)
+    if (named) void copyLabel(named.label)
     explorer.prefetch(target)
     if (view.flyTo(id, () => render())) render()
     return
   }
 
-  if (!world.has(id)) return
+  const node = world.get(id)
+  if (!node) return
 
-  // A click on the centre belongs to the panel. The page already shows this node's name, so
-  // naming it again would say nothing. `take` in web/src/join.ts puts it in the box, and the
-  // copy below puts it on the clipboard. Neither writes to the graph, and neither moves the
-  // camera.
+  // Every click on a node takes its name. Nothing is written to the graph and the camera does
+  // not move for it.
+  void copyLabel(node.label)
+
+  // The centre's click reaches the panel as well, and no other click does. `take` in
+  // web/src/join.ts puts the caret in the far input. A walk that called it at every step would
+  // keep taking the arrow keys off the map.
   if (id === view.accent) {
-    const node = world.get(id)
-    if (node) {
-      panel.take(node)
-      void copyLabel(node.label)
-    }
+    panel.take(node)
     return
   }
 
@@ -569,6 +592,21 @@ async function applyRename(node: NodeMeta, next: string): Promise<NodeMeta> {
   return renamed
 }
 
+/**
+ * Shift and drag between two nodes to join them.
+ *
+ * The gesture and its arrow are drag-join.ts. What reaches the graph is `joinPair` below.
+ * `ended` is the same resolver the menu above parts an edge with. So a ghost stands for its node
+ * at either end of a drag, as it does under a right-click.
+ */
+new DragJoin(view.cy, el<SVGPathElement>("aim-arrow"), el<SVGLinearGradientElement>("aim-ink"), {
+  ended,
+  join: joinPair,
+  aim: (id) => view.aim(id),
+  // The menu opens at a point on screen, and a drag is about to change what is under it.
+  onStart: closeMenu,
+})
+
 /** Take a node out of the graph, with every edge that reaches it. */
 function removeNode(id: string): void {
   const node = world.get(id)
@@ -605,8 +643,6 @@ function removeNode(id: string): void {
 
       receipt.settle("ok", `removed ${node.label}`)
       void refreshTotals()
-      // Set the status after `render`, never before. `render` writes the idle hint over
-      // whatever the status line holds.
       render()
       setStatus(`removed ${node.label}`, "idle")
     } catch (err) {
@@ -639,8 +675,6 @@ function partEdge(aId: string, bId: string): void {
         writes.run(receipt, () => rejoin(receipt, a, b))
       })
       void refreshTotals()
-      // Set the status after `render`, never before. `render` writes the idle hint over
-      // whatever the status line holds.
       render()
       setStatus(`parted ${a.label} and ${b.label}`, "idle")
     } catch (err) {
@@ -666,22 +700,74 @@ function partOnMap(a: string, b: string): void {
   view.reviseGhosts()
 }
 
+/** Draw a join the store has taken. The mirror of `partOnMap`, and shared with the drag. */
+function joinOnMap(a: string, b: string): void {
+  // Raise the degrees and link together, the mirror of parting above. See World.bumpDegree.
+  world.bumpDegree(a)
+  world.bumpDegree(b)
+  if (world.linkExisting(a, b)) view.add([], [[a, b]])
+  // The mirror of the ghost pass in `partOnMap`. The far end is a neighbour again, and an
+  // off-screen one gets its ghost back now instead of on the next settle.
+  view.reviseGhosts()
+}
+
 /** Join the pair again, from the receipt's undo. */
 async function rejoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void> {
   try {
     await joinNodes(a.id, b.id)
-    // Raise the degrees and link together, the mirror of parting above. See World.bumpDegree.
-    world.bumpDegree(a.id)
-    world.bumpDegree(b.id)
-    if (world.linkExisting(a.id, b.id)) view.add([], [[a.id, b.id]])
-    // The mirror of the ghost pass in `partOnMap`. The far end is a neighbour again, and an
-    // off-screen one gets its ghost back now instead of on the next settle.
-    view.reviseGhosts()
+    joinOnMap(a.id, b.id)
 
     receipt.settle("undone", `joined ${a.label} and ${b.label} again`)
     void refreshTotals()
     render()
     setStatus(`undid parting ${a.label} and ${b.label}`, "idle")
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    receipt.settle("warn", reason)
+    setStatus(`⚠ ${reason}`, "error")
+  }
+}
+
+/**
+ * Join two nodes named by a drag on the map: the store write, then the map, then the way back.
+ *
+ * Nothing is checked here first. A pair the graph already holds is the store's to refuse, and
+ * the receipt is where its sentence lands. A node aimed at itself never reaches here. The
+ * gesture reads a release on its own source as naming one node, not a pair.
+ */
+function joinPair(a: WorldNode, b: WorldNode): void {
+  const receipt = writes.open()
+  receipt.el.textContent = `${a.label} — ${b.label}`
+  writes.run(receipt, async () => {
+    try {
+      await joinNodes(a.id, b.id)
+      joinOnMap(a.id, b.id)
+
+      receipt.settle("ok", `joined ${a.label} and ${b.label}`)
+      receipt.offerUndo("part them again", () => {
+        writes.run(receipt, () => unjoin(receipt, a, b))
+      })
+      void refreshTotals()
+      render()
+      setStatus(`joined ${a.label} and ${b.label}`, "idle")
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      receipt.settle("warn", reason)
+      setStatus(`⚠ ${reason}`, "error")
+    }
+  })
+}
+
+/** Part the pair again, from the receipt's undo. The mirror of `rejoin`. */
+async function unjoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void> {
+  try {
+    await unjoinNodes(a.id, b.id)
+    partOnMap(a.id, b.id)
+
+    receipt.settle("undone", `parted ${a.label} and ${b.label} again`)
+    void refreshTotals()
+    render()
+    setStatus(`undid joining ${a.label} and ${b.label}`, "idle")
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
     receipt.settle("warn", reason)
