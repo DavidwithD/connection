@@ -34,11 +34,17 @@ pair of index attributes bucketing the label by first character so a prefix quer
 partition to land in. Every one of those was working around a store where the key could not be
 the name.
 
-This is [0012](../decisions/0012-the-name-is-the-node.md) taken literally. What it trades away
-is **rename**, and only rename. IndexedDB keys cannot be mutated, so renaming a name-keyed node
+This is [0012](../decisions/0012-the-name-is-the-node.md) taken literally. What it costs is
+**rename**, and only rename. IndexedDB keys cannot be mutated, so renaming a name-keyed node
 means a delete, a re-add, a rewrite of every edge touching it, and a rewrite of every `parent`
-pointing at it. There is no rename and none is planned. If that changes, adding an id is a
-version bump whose upgrade rewrites every record once, offline — so it is not a one-way door.
+pointing at it.
+
+`renameNode` in [write.ts](../../web/src/store/write.ts) pays that price, in one transaction.
+What it costs is in [writing-to-the-graph.md](writing-to-the-graph.md), and why it was worth
+paying is [0040](../decisions/0040-a-node-under-a-new-name.md).
+
+Adding a surrogate id would still be a version bump whose upgrade rewrites every record once,
+offline. That door is still open, and rename is no longer the reason to walk through it.
 
 ## Why both the key and the spelling are stored
 

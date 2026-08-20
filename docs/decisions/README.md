@@ -43,6 +43,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0037](0037-the-centres-name-on-the-clipboard.md) | The centre's name on the clipboard | ♻️ Superseded |
 | [0038](0038-a-drag-that-joins-two-nodes.md) | A drag that joins two nodes | 🔵 Proposed |
 | [0039](0039-any-nodes-name-on-the-clipboard.md) | Any node's name on the clipboard | 🔵 Proposed |
+| [0040](0040-a-node-under-a-new-name.md) | A node under a new name | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

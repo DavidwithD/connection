@@ -15,6 +15,7 @@
     "drive:join": "node scripts/drive-join.mjs",
     "drive:part-edge": "node scripts/drive-part-edge.mjs",
     "drive:drag-join": "node scripts/drive-drag-join.mjs",
+    "drive:rename": "node scripts/drive-rename.mjs",
     "typecheck": "tsc --noEmit",
     "adr": "python3 scripts/adr-gate.py",
     "docs": "python3 scripts/docs-gate.py",
