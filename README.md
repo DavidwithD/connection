@@ -61,6 +61,7 @@ around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
 | `npm run drive:drag-join` | Drive the shift-drag that joins two nodes, and check what it wrote |
 | `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
+| `npm run drive:stub-open` | Drive the hover that opens a long edge, and check the line it drew |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
 ## Where the graph lives
@@ -124,6 +125,7 @@ scripts/
   drive-map.mjs        drives the map in a real browser, for screenshots
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it
   drive-rename.mjs     drives the rename, and checks what the store kept
+  drive-stub-open.mjs  drives the hover that opens a long edge, and checks the line
   hooks/pre-commit     runs both gates on the staged tree
 .github/workflows/
   ci.yml               the same gates, where they cannot be skipped

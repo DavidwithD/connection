@@ -197,9 +197,10 @@ click and puts `undo` on its receipt, the way the box above does
 ([ADR 0031](decisions/0031-parting-an-edge-from-the-map.md)). A ghost's dashed line is the same
 gesture: it stands for the edge between the centre and the node it names.
 
-One join is out of reach. A join too long to draw runs as two short marks instead of a line, and
-those are not a target. Pan until its far end is off screen, and the ghost that stands in for it
-can be right-clicked like any other line.
+A join too long to draw runs as two short marks instead of a line. Rest the pointer on one and
+the whole line appears, from one node to the other. It stays while the pointer is on it, so
+right-click parts that pair like any other line ([ADR 0041](decisions/0041-a-stub-that-opens.md)).
+A dot is 7 pixels wide, so aim at the dash running out of the node rather than the dot itself.
 
 The layers behind all of this are [architecture.md](design/architecture.md); the reasoning and
 what each choice cost are [ADR 0003](decisions/0003-graph-exploration-demo-stack.md),

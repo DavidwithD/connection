@@ -315,10 +315,26 @@ view.cy.on("viewport", () => {
 // `mouseover` and `mouseout`, not `tapdragover` and `tapdragout`. The touch handlers emit only
 // the second pair, so a finger dragging across the map would light every disc it crossed.
 view.cy.on("mouseover", "node", (event) => {
-  view.hover(String(event.target.id()))
+  const id = String(event.target.id())
+  view.hover(id)
+  view.reveal(id)
 })
 view.cy.on("mouseout", "node", () => {
   view.hover(null)
+  view.reveal(null)
+})
+
+// A long edge is drawn as two stubs. Resting the pointer on one opens the full line, and the
+// line stays open while the pointer is on it. So an edge needs the same pair of handlers a node
+// gets above. `reveal` reads which long edge the element belongs to, and every other edge shuts
+// the one that is open.
+//
+// No `hover` here. That flag names a node, and an edge has no name to draw.
+view.cy.on("mouseover", "edge", (event) => {
+  view.reveal(String(event.target.id()))
+})
+view.cy.on("mouseout", "edge", () => {
+  view.reveal(null)
 })
 
 view.cy.on("tap", "node", (event) => {

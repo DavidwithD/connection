@@ -54,7 +54,7 @@ click. The ink is the page's own rather than the ring's, because this node is no
 the centre. The pill is wider than the disc it replaces, and it takes the taps inside it. A
 neighbour whose seat falls under it has to be approached from outside.
 
-Eight kinds of thing, and one of them is not a node.
+The kinds of thing on the map.
 
 | Name | What it is | In the code |
 |---|---|---|
@@ -66,6 +66,7 @@ Eight kinds of thing, and one of them is not a node.
 | pointed at | A field or backdrop node named for as long as the pointer rests on it | `hover` |
 | frontier | Has connections that were never read | `more` |
 | tether | A dashed stub standing in for an edge too long to draw | `stub` |
+| open line | A tether's whole edge, drawn while the pointer holds it | `long` |
 | ghost | A hollow stand-in, in the ring, for a neighbour that is off screen | `ghost` |
 
 *Arrival* is a word for describing behaviour, not a state. Every ring node carries the same
@@ -147,6 +148,13 @@ stays too, running off the edge of the screen — it says which way the neighbou
 the one thing a stand-in in the ring cannot, so the ghost's own edge is dashed to keep the two
 marks apart. Raised and lowered on a settled camera, never per frame, and once at boot for a
 window too small to hold the root's ring.
+
+A tether stops drawing for two reasons, and they are tracked apart. A ghost replacing it adds
+`hidden`. The pointer opening its line adds `eclipsed`. Either class is enough to stop the
+tether drawing, so neither path has to test for the other
+([ADR 0041](../decisions/0041-a-stub-that-opens.md)). Resting the pointer on a tether draws the
+whole edge, solid. Both tethers stay down for as long as the pointer is on the line. The line
+is a real edge with two real ends, so right-click parts the pair.
 
 How many can stand is what the rings have room for, not a number written down:
 `pillsAround` ([placement.ts](../../web/src/placement.ts)) divides a ring's circumference by the

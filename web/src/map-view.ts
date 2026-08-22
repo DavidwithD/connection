@@ -7,6 +7,7 @@
  */
 import cytoscape, {
   type BoundingBox12,
+  type CollectionReturnValue,
   type Core,
   type Css,
   type ElementDefinition,
@@ -350,6 +351,9 @@ function buildStyle(p: Palette): StylesheetJson {
       selector: "edge[?ghost]",
       style: { "line-color": p.edgeActive, "line-style": "dashed", opacity: 0.9, width: 2 },
     },
+    // A stub takes the pointer. Hovering one opens the long edge it stands for, so it cannot
+    // set `events: "no"`. Every rule that would draw a stub as something else excludes it by
+    // name instead.
     {
       selector: "node[?stub]",
       style: {
@@ -359,7 +363,6 @@ function buildStyle(p: Palette): StylesheetJson {
         "border-width": 0,
         label: "",
         "z-index": 1,
-        events: "no",
       },
     },
     {
@@ -374,13 +377,16 @@ function buildStyle(p: Palette): StylesheetJson {
     { selector: "node.loading", style: { "border-width": 3, "border-style": "solid", "border-color": p.accent, "border-opacity": 1 } },
     // The node under the pointer draws as its name, the way a ring node does. Scoped to the
     // nodes that draw as discs: the centre and the ring are already named, and naming one twice
-    // says nothing. A ghost carries no `tier`, which this comparison cannot match, and a stub
-    // sets `events: "no"`, so neither reaches here.
+    // says nothing. A ghost carries no `tier`, which this comparison cannot match.
     //
-    // Last but for `.hidden`, so it beats the base rule's blank label and the backdrop's
-    // dimming. It sets no border property, so the frontier dash and `loading` both survive.
+    // `[!stub]` because a stub does carry `tier: 2`, and it does take the pointer. A stub has
+    // no name. Without the guard it would draw a pill sized from an empty label.
+    //
+    // Last but for the two rules that stop an element drawing, so it beats the base rule's
+    // blank label and the backdrop's dimming. It sets no border property, so the frontier dash
+    // and `loading` both survive.
     {
-      selector: "node[?hover][tier >= 2]",
+      selector: "node[?hover][tier >= 2][!stub]",
       style: {
         shape: "round-rectangle",
         width: "label",
@@ -424,8 +430,23 @@ function buildStyle(p: Palette): StylesheetJson {
         "outline-offset": 1,
       },
     },
-    // Hidden rather than removed. A stub the centre replaced with a ghost comes back when
-    // the centre moves on, and rebuilding it would mean recounting `stubbed`.
+    // A long edge, while a stub holds it open. Solid, and in the active ink. An open line is an
+    // edge like any other, and right-click parts it. A dashed line would still read as a
+    // stand-in for something.
+    //
+    // After `edge[dim = 1]`, so a line the reader asked for is not dimmed to 0.12 because one
+    // of its ends sits near another centre.
+    {
+      selector: "edge[?long]",
+      style: { width: 1.5, "line-color": p.edgeActive, "line-style": "solid", opacity: 0.9 },
+    },
+    // The two stubs of the line above, for as long as it is open. Transparent rather than
+    // `display: none`, because a stub has to keep taking the pointer. One that stopped would
+    // report the pointer leaving, and the line would shut under a pointer that never moved.
+    { selector: ".eclipsed", style: { opacity: 0 } },
+    // Hidden rather than removed, for two things. A stub the centre replaced with a ghost comes
+    // back when the centre moves on, and rebuilding it would mean recounting `stubbed`. A long
+    // edge's line is built once and carries this until a stub opens it.
     { selector: ".hidden", style: { display: "none" } },
   ]
 }
@@ -440,6 +461,10 @@ export class MapView {
   private hovered: string | null = null
   /** The node a drag would join to, or null. */
   private aimed: string | null = null
+  /** The long edge the pointer is holding open, or null. */
+  private opened: string | null = null
+  /** The frame that will shut the open line, or 0 when none is scheduled. */
+  private closing = 0
   /** The ghosts the current centre created, and the node each one stands in for. */
   private ghosts: Ghost[] = []
   /** Ghost positions for the current centre. Built on the first pass, then only extended. */
@@ -546,10 +571,14 @@ export class MapView {
   /**
    * Remove elements, for an undone write.
    *
-   * The only removal on the map. It has to undo whichever form `add` chose. A short edge is
-   * one element under the pair key. A long edge is two stubs and two leads, and removing a
-   * stub node removes its lead with it. Both forms are tried, because which one was drawn
-   * depended on a distance that may have changed since.
+   * The only removal on the map. It has to undo whichever form `add` chose. Both edges are
+   * built under the pair key, so that lookup covers a short edge and a long edge's line. A
+   * long edge also has two stubs and two leads. Removing a stub node removes its lead with it.
+   * Both forms are tried, because which one was drawn depended on a distance that may have
+   * changed since.
+   *
+   * An open line is shut first. Its own element is about to go. The two stubs it eclipsed may
+   * not be. An undone join leaves both nodes and their other edges standing.
    *
    * Ghosts are removed first when a node they stand for is going. A ghost holds its target's
    * id, and one pointing at a node that no longer exists would survive every later
@@ -560,6 +589,7 @@ export class MapView {
    * also lets the remaining slots use the space the removal just freed.
    */
   drop(nodeIds: readonly string[], edges: readonly [string, string][]): void {
+    this.open(null)
     const plan = this.doorways
     if (plan && nodeIds.some((id) => id === plan.centre || plan.at.has(id))) {
       this.clearGhosts()
@@ -638,6 +668,13 @@ export class MapView {
       }
       // Too long to draw as a line without crossing everything in between. Each end gets a
       // short stub pointing at the other, so the direction is visible without the clutter.
+      //
+      // The line is built as well, and starts hidden. `reveal` shows it while the pointer rests
+      // on a stub. Building it here rather than on the hover keeps this class additive: the
+      // pointer toggles a class, and `drop` stays the only removal.
+      //
+      // Every one of the five elements carries `key`, which is the line's own id. So `reveal`
+      // resolves a stub, a lead and the line itself to the same edge.
       const from = this.world.get(a)
       const to = this.world.get(b)
       if (!from || !to) continue
@@ -651,14 +688,21 @@ export class MapView {
         const stub = stubId(key, owner)
         elements.push({
           group: "nodes",
-          data: { id: stub, stub: true, tier: 2 },
+          data: { id: stub, stub: true, tier: 2, key },
           position: { x: sx, y: sy },
         })
         elements.push({
           group: "edges",
-          data: { id: leadId(stub), source: owner, target: stub, stub: true },
+          data: { id: leadId(stub), source: owner, target: stub, stub: true, key },
         })
       }
+      // The id a short edge would have used. Only one of the two branches runs for a pair, so
+      // the id is free. `drop` then finds this line where it already looks for a short one.
+      elements.push({
+        group: "edges",
+        data: { id: key, source: a, target: b, long: true, key },
+        classes: "hidden",
+      })
       this.stubbed++
     }
 
@@ -1109,6 +1153,74 @@ export class MapView {
     if (this.aimed) this.cy.$id(this.aimed).data("aim", false)
     this.aimed = id
     if (id) this.cy.$id(id).data("aim", true)
+  }
+
+  /**
+   * Open the long edge under the pointer, or start shutting the one that is open.
+   *
+   * Every element a long edge draws carries `key`, which is the line's own id. A stub, a lead
+   * and the line itself all resolve to the same edge. So the pointer can leave a stub for the
+   * line it opened without shutting it. That is what makes the line reachable: it is long
+   * enough to right-click, and a stub is 7 pixels wide.
+   *
+   * Anything carrying no `key` shuts the open line. A real node, a short edge and a ghost's
+   * lead all arrive here and all mean the same thing.
+   *
+   * The shut is deferred by one frame. Cytoscape reports the element the pointer left before
+   * the one it entered. Shutting on the spot would take the line down as the pointer arrived
+   * on it. A call naming the same edge inside that frame cancels the shut.
+   */
+  reveal(id: string | null): void {
+    if (this.closing) {
+      cancelAnimationFrame(this.closing)
+      this.closing = 0
+    }
+    const key = id ? (this.cy.$id(id).data("key") as string | undefined) : undefined
+    if (key) {
+      this.open(key)
+      return
+    }
+    this.closing = requestAnimationFrame(() => {
+      this.closing = 0
+      this.open(null)
+    })
+  }
+
+  /**
+   * Draw one long edge as a line, and take down the line drawn before it.
+   *
+   * One at a time, the same shape as `hover` and `aim`. Two open lines would need two pointers.
+   */
+  private open(key: string | null): void {
+    if (key === this.opened) return
+    const was = this.opened
+    this.opened = key
+    this.cy.batch(() => {
+      if (was) {
+        const edge = this.cy.$id(was)
+        edge.addClass("hidden")
+        this.stubsOf(edge).removeClass("eclipsed")
+      }
+      if (key) {
+        const edge = this.cy.$id(key)
+        edge.removeClass("hidden")
+        this.stubsOf(edge).addClass("eclipsed")
+      }
+    })
+  }
+
+  /**
+   * Both stubs of a long edge, each with its lead.
+   *
+   * `eclipsed` is a second reason a stub is not drawn, and `hidden` is the first. `reviseGhosts`
+   * owns `hidden` and toggles it on the centre's stub. Two classes rather than one, so neither
+   * path has to test for the other. A stub carrying either class draws nothing.
+   */
+  private stubsOf(edge: CollectionReturnValue): CollectionReturnValue {
+    if (edge.empty()) return this.cy.collection()
+    const a = String(edge.source().id())
+    const b = String(edge.target().id())
+    return this.stubAt(a, b).union(this.stubAt(b, a))
   }
 
   /**

@@ -197,7 +197,7 @@ want to know what it beat, or what nobody knew at the time.
 | [store/index.ts](../../web/src/store/index.ts) | this page | [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
 | [placement.ts](../../web/src/placement.ts) | [the-centre.md](the-centre.md) | [0003](../decisions/0003-graph-exploration-demo-stack.md), [0027](../decisions/0027-a-ring-holds-what-it-holds.md) |
 | [world.ts](../../web/src/world.ts) | this page, [the-centre.md](the-centre.md), [writing-to-the-graph.md](writing-to-the-graph.md) | [0003](../decisions/0003-graph-exploration-demo-stack.md), [0009](../decisions/0009-the-first-write-outside-the-seed.md), [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) |
-| [map-view.ts](../../web/src/map-view.ts) | [the-centre.md](the-centre.md) | [0003](../decisions/0003-graph-exploration-demo-stack.md), [0004](../decisions/0004-the-centre-and-its-neighbourhood.md), [0012](../decisions/0012-the-name-is-the-node.md), [0025](../decisions/0025-when-a-ghost-stands.md), [0027](../decisions/0027-a-ring-holds-what-it-holds.md) |
+| [map-view.ts](../../web/src/map-view.ts) | [the-centre.md](the-centre.md) | [0003](../decisions/0003-graph-exploration-demo-stack.md), [0004](../decisions/0004-the-centre-and-its-neighbourhood.md), [0012](../decisions/0012-the-name-is-the-node.md), [0025](../decisions/0025-when-a-ghost-stands.md), [0027](../decisions/0027-a-ring-holds-what-it-holds.md), [0041](../decisions/0041-a-stub-that-opens.md) |
 | [palette.ts](../../web/src/palette.ts) | this page, [the-centre.md](the-centre.md) | [0012](../decisions/0012-the-name-is-the-node.md) |
 | [settings.ts](../../web/src/settings.ts) | this page, [the-centre.md](the-centre.md) | [0032](../decisions/0032-the-centre-is-named.md) |
 | [explore.ts](../../web/src/explore.ts) | this page, [the-centre.md](the-centre.md) | [0006](../decisions/0006-only-the-centre-reads.md), [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
@@ -217,6 +217,7 @@ want to know what it beat, or what nobody knew at the time.
 | [drive-join.mjs](../../scripts/drive-join.mjs) | this page, [finding-a-node.md](finding-a-node.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
 | [drive-part-edge.mjs](../../scripts/drive-part-edge.mjs) | this page, [writing-to-the-graph.md](writing-to-the-graph.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
 | [drive-drag-join.mjs](../../scripts/drive-drag-join.mjs) | this page, [writing-to-the-graph.md](writing-to-the-graph.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
+| [drive-stub-open.mjs](../../scripts/drive-stub-open.mjs) | this page, [the-centre.md](the-centre.md) | [0034](../decisions/0034-what-reading-cannot-check.md), [0041](../decisions/0041-a-stub-that-opens.md) |
 | [hooks/pre-commit](../../scripts/hooks/pre-commit) | [checks.md](../checks.md), the README's prerequisites | [0015](../decisions/0015-bash-as-the-script-shell.md), [0016](../decisions/0016-the-gates-run-in-ci.md) |
 | [ci.yml](../../.github/workflows/ci.yml) | [checks.md](../checks.md) | [0016](../decisions/0016-the-gates-run-in-ci.md) |
 | [using-the-demo.md](../using-the-demo.md) | [docs/README.md](../README.md) | [0026](../decisions/0026-a-fourth-kind-of-document.md) |
