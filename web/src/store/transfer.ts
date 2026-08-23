@@ -10,11 +10,9 @@ import { components, stampIslands, writeStamped } from "./islands.js"
 import { edgeEnds, edgeKey, naming, normaliseLabel } from "./keys.js"
 
 /**
- * The export format version this writes.
+ * The export format version this writes, and the only one it reads.
  *
- * Version 2 holds the store's own records. Version 1 held DynamoDB items, and is still read.
- * Those files are the only copy of any graph made before this store existed, so refusing them
- * would strand exactly the graphs worth keeping.
+ * Version 2 holds the store's own records. A file of any other version is refused whole.
  */
 export const EXPORT_VERSION = 2
 
@@ -274,9 +272,6 @@ export function buildGraph(
   return { nodes: all, edges: [...edges.values()], faults }
 }
 
-/** One item of a version 1 export. This is the shape the DynamoDB table held. */
-type LegacyItem = Record<string, unknown>
-
 /**
  * How many shape faults to list. A file of the wrong shape is usually wrong the same way all
  * the way down, so a thousand rows saying so tell the reader no more than five.
@@ -344,16 +339,15 @@ function shapeFaults(nodes: unknown[], edges: unknown[]): string[] {
 /**
  * Read a file into records this store can hold.
  *
- * Version 2 already holds these records. Version 1 keyed its edges by id, so this builds an
- * id-to-name map from the node items and rewrites the edges through it. That is safe for any
- * file the old store produced, because it also enforced one node per name.
+ * A version 2 file already holds these records, so this checks their shape and their
+ * consistency. It does not convert anything.
  */
 export function readExport(payload: unknown): {
   nodes: StoredNode[]
   edges: StoredEdge[]
   faults: string[]
 } {
-  const file = payload as Partial<GraphExport> & { items?: LegacyItem[] }
+  const file = payload as Partial<GraphExport>
 
   if (file.version === EXPORT_VERSION && Array.isArray(file.nodes)) {
     const nodes = file.nodes
@@ -365,47 +359,14 @@ export function readExport(payload: unknown): {
     return { nodes, edges, faults: verify(nodes, edges) }
   }
 
-  if (file.version === 1 && Array.isArray(file.items)) return readLegacy(file.items)
-
   return {
     nodes: [],
     edges: [],
     faults: [
-      `this reads version ${String(EXPORT_VERSION)} and version 1, and that file says ` +
+      `this reads version ${String(EXPORT_VERSION)}, and that file says ` +
         `${String(file.version)}`,
     ],
   }
-}
-
-function readLegacy(items: LegacyItem[]): {
-  nodes: StoredNode[]
-  edges: StoredEdge[]
-  faults: string[]
-} {
-  const named = new Map<string, string>() // old id -> label
-  for (const item of items) {
-    const pk = String(item["pk"] ?? "")
-    if (!pk.startsWith("node#") || item["sk"] !== "#meta") continue
-    named.set(pk.slice("node#".length), String(item["label"] ?? ""))
-  }
-
-  const pairs: [string, string][] = []
-  for (const item of items) {
-    const pk = String(item["pk"] ?? "")
-    const sk = String(item["sk"] ?? "")
-    if (!pk.startsWith("node#") || !sk.startsWith("edge#")) continue
-    const from = named.get(pk.slice("node#".length))
-    const to = named.get(sk.slice("edge#".length))
-    // The old store held both directions of every edge. `buildGraph` deduplicates the pairs,
-    // and drops an edge naming a node the file does not hold.
-    if (from && to) pairs.push([normaliseLabel(from), normaliseLabel(to)])
-  }
-
-  const built = buildGraph(
-    [...named.values()].map((label) => ({ label })),
-    pairs,
-  )
-  return { ...built, faults: [...built.faults, ...verify(built.nodes, built.edges)] }
 }
 
 /** Build the demo graph's records. The generator's ids are mapped to names here. */

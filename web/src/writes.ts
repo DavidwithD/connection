@@ -4,10 +4,8 @@
  * One promise chain, one write at a time, however fast the input comes. The text on a
  * receipt is set by whoever opened it, not here.
  *
- * The chain was added for a reason that no longer applies. Every write used to update one
- * shared item, and DynamoDB cancelled one of two transactions that touched it. That item is
- * gone, and IndexedDB serialises overlapping transactions instead of cancelling either. The
- * chain is kept for what is left: two fast writes land in the order they were made.
+ * IndexedDB serialises overlapping transactions on its own. The chain is kept for ordering:
+ * two fast writes land in the order they were made.
  */
 
 /**

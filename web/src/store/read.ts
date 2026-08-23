@@ -39,9 +39,9 @@ export const SEARCH_LIMIT = 20
 /**
  * A deliberate delay before a neighbourhood read answers.
  *
- * The loading state is part of the demo, and IndexedDB is faster than the local DynamoDB it
- * replaced. Without a delay the demo never shows a loading state. It is a constant rather
- * than an environment variable, because there is no process to read one from.
+ * The loading state is part of the demo. IndexedDB answers fast enough that without a delay
+ * the demo never shows one. It is a constant rather than an environment variable, because
+ * there is no process to read one from.
  *
  * Awaited before a transaction is opened, never inside one. A `setTimeout` is not an
  * IndexedDB request, so awaiting it inside a transaction commits that transaction. See db.ts.
@@ -196,9 +196,9 @@ export async function readIslandCount(): Promise<number> {
 /**
  * Every node whose name starts with `prefix`, in alphabetical order.
  *
- * A key range on the store itself, with no index. The key is the normalised name, so the
- * first-character bucketing and composite sort key this needed as a DynamoDB GSI query are
- * gone. U+FFFF sorts above any character a name can contain, so it bounds the range.
+ * A key range on the store itself, with no index. The key is the normalised name, so a range
+ * over the keys is the whole search. U+FFFF sorts above any character a name can contain, so
+ * it bounds the range.
  */
 export async function searchLabels(
   prefix: string,

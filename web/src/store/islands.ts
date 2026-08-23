@@ -221,8 +221,7 @@ export async function find(nodes: NodeStore, id: string): Promise<Island | null>
  * `byIsland`, and the winner takes the combined size.
  *
  * No conditional updates, and none are needed. IndexedDB serialises overlapping transactions,
- * so what `find` read is still true when this writes. The previous version needed two
- * conditional updates and a retry loop, because DynamoDB gave no such guarantee.
+ * so what `find` read is still true when this writes.
  */
 export async function settle(nodes: NodeStore, aId: string, bId: string): Promise<void> {
   const a = await find(nodes, aId)
