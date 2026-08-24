@@ -425,6 +425,17 @@ function openMenu(
   menu.style.left = `${String(at?.clientX ?? 0)}px`
   menu.style.top = `${String(at?.clientY ?? 0)}px`
   menu.hidden = false
+
+  // Then pulled back inside the window. The menu opens where the pointer is, so a click near
+  // the right or bottom edge would otherwise leave half of it off screen.
+  //
+  // Measured after it is shown, because a hidden box has no size. Its rows are `nowrap`, so
+  // the width it reports at the pointer is the width it has anywhere.
+  const box = menu.getBoundingClientRect()
+  const room = (want: number, size: number, limit: number): number =>
+    Math.max(8, Math.min(want, limit - size - 8))
+  menu.style.left = `${String(room(box.left, box.width, window.innerWidth))}px`
+  menu.style.top = `${String(room(box.top, box.height, window.innerHeight))}px`
 }
 
 /** Swap the edit row for the box it opens. The menu stays where the pointer put it. */
