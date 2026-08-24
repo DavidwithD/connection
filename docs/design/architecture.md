@@ -144,7 +144,7 @@ in Chrome and report numbers.
 
 | Command | Drives |
 |---|---|
-| `npm run drive:map` | Seating, ghosts, the camera, the islands list |
+| `npm run drive:map` | Seating, ghosts, the camera, the island drawer, the guide |
 | `npm run drive:join` | The join panel's keyboard |
 | `npm run drive:part-edge` | The right-click that parts a pair |
 
@@ -206,11 +206,11 @@ want to know what it beat, or what nobody knew at the time.
 | [join.ts](../../web/src/join.ts) | [finding-a-node.md](finding-a-node.md), [writing-to-the-graph.md](writing-to-the-graph.md) | [0011](../decisions/0011-taking-a-write-back.md), [0013](../decisions/0013-one-box-that-grows-into-an-edge.md), [0028](../decisions/0028-where-a-chained-name-lands.md), [0036](../decisions/0036-a-click-that-writes-nothing.md) |
 | [drag-join.ts](../../web/src/drag-join.ts) | [writing-to-the-graph.md](writing-to-the-graph.md) | [0038](../decisions/0038-a-drag-that-joins-two-nodes.md) |
 | [writes.ts](../../web/src/writes.ts) | [writing-to-the-graph.md](writing-to-the-graph.md) | [0011](../decisions/0011-taking-a-write-back.md), [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) |
-| [web/src/islands.ts](../../web/src/islands.ts) | [the-islands.md](the-islands.md) | [0019](../decisions/0019-every-island-has-an-address.md), [0020](../decisions/0020-the-islands-list-is-an-index.md) |
+| [web/src/islands.ts](../../web/src/islands.ts) | [the-islands.md](the-islands.md) | [0019](../decisions/0019-every-island-has-an-address.md), [0020](../decisions/0020-the-islands-list-is-an-index.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md) |
 | [transfer.ts](../../web/src/transfer.ts) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0021](../decisions/0021-a-graph-in-a-text-file.md), [0023](../decisions/0023-the-graph-moves-through-the-page.md) |
-| [index.html](../../web/index.html) | [finding-a-node.md](finding-a-node.md), [the-islands.md](the-islands.md), [writing-to-the-graph.md](writing-to-the-graph.md) | [0013](../decisions/0013-one-box-that-grows-into-an-edge.md), [0020](../decisions/0020-the-islands-list-is-an-index.md), [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) |
+| [index.html](../../web/index.html) | [finding-a-node.md](finding-a-node.md), [the-islands.md](the-islands.md), [writing-to-the-graph.md](writing-to-the-graph.md) | [0013](../decisions/0013-one-box-that-grows-into-an-edge.md), [0020](../decisions/0020-the-islands-list-is-an-index.md), [0024](../decisions/0024-taking-a-node-out-with-its-edges.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md) |
 | [transfer.html](../../web/transfer.html) | [a-graph-as-text.md](a-graph-as-text.md) | [0023](../decisions/0023-the-graph-moves-through-the-page.md), [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
-| [app.css](../../web/app.css) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md) |
+| [app.css](../../web/app.css) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md) |
 | [vite.config.ts](../../vite.config.ts) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0023](../decisions/0023-the-graph-moves-through-the-page.md) |
 | [docs-gate.py](../../scripts/docs-gate.py) | [checks.md](../checks.md) | [0014](../decisions/0014-binding-the-docs-to-the-code.md) |
 | [drive-map.mjs](../../scripts/drive-map.mjs) | this page, [the-centre.md](the-centre.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |

@@ -98,7 +98,7 @@ web/src/
   join.ts       the panel at the top: two ends, and the writes
   drag-join.ts  the drag that joins two nodes, and the arrow it draws
   islands.ts    the panel down the left: every component, as somewhere to go
-  main.ts       wiring, the centre, the HUD
+  main.ts       wiring, the centre, the panels around it
   transfer.ts   the file page, and everything that changes a whole graph
 web/src/store/
   db.ts         the schema: two object stores, three indexes, one connection

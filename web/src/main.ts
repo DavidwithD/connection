@@ -1,5 +1,5 @@
 /**
- * The map page: wiring, the centre and the HUD.
+ * The map page: wiring, the centre and the panels around it.
  *
  * The centre is the node somebody named: a click, a search hit, a doorway, a crossing. Under
  * **walk by pan** the camera names one too, whatever it stops nearest. A click never takes the
@@ -28,7 +28,7 @@ import { MapView, ghostTarget } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { RenameBox } from "./rename-box.js"
 import { distance, type Point } from "./placement.js"
-import { walkByPan, setWalkByPan } from "./settings.js"
+import { railOut, setRailOut, walkByPan, setWalkByPan } from "./settings.js"
 import { World, type WorldNode } from "./world.js"
 import { Writes, type Receipt } from "./writes.js"
 
@@ -81,7 +81,9 @@ const statEdges = el<HTMLSpanElement>("stat-edges")
 const statPending = el<HTMLSpanElement>("stat-pending")
 const statTotal = el<HTMLSpanElement>("stat-total")
 const status = el<HTMLParagraphElement>("status")
-const hudToggle = el<HTMLButtonElement>("hud-toggle")
+const railTab = el<HTMLButtonElement>("rail-tab")
+const guide = el<HTMLDivElement>("guide")
+const guideToggle = el<HTMLButtonElement>("guide-toggle")
 const walkToggle = el<HTMLInputElement>("walk-by-pan")
 /** Shown only when the store holds no graph at all. Raised and lowered by `showTotals`. */
 const empty = el<HTMLDivElement>("empty")
@@ -128,9 +130,9 @@ const islands = new IslandsPanel(
 function setStatus(text: string, tone: "idle" | "busy" | "error"): void {
   status.textContent = text
   status.dataset["tone"] = tone
-  // Folding the HUD hides the status line with it, so put the tone on the chevron too. A
-  // failed read is then still visible as colour while the HUD is folded.
-  hudToggle.dataset["tone"] = tone
+  // The pill is drawn only when the tone is not idle, and it is narrow. Put the tone on the
+  // guide's button as well, which is in the same corner and always there.
+  guideToggle.dataset["tone"] = tone
 }
 
 /** Set once a copy has been turned down. The refusal is reported on that first one only. */
@@ -903,6 +905,14 @@ window.addEventListener("keydown", (event) => {
     return
   }
 
+  // The guide holds the list of keys, so it needs one way in that is not that list. Every
+  // other way out of a popover — Escape, a click outside — is the browser's.
+  if (event.key === "?") {
+    event.preventDefault()
+    guide.togglePopover()
+    return
+  }
+
   const pan: Record<string, [number, number]> = {
     ArrowLeft: [NUDGE, 0],
     ArrowRight: [-NUDGE, 0],
@@ -927,19 +937,21 @@ el<HTMLButtonElement>("home").addEventListener("click", () => {
 })
 
 /**
- * Fold and unfold the HUD.
+ * Pull the island drawer out, and push it back.
  *
- * The HUD holds numbers to glance at. The island list below it is what the map is navigated
- * with, and it should not share the screen with seven rows of numbers. Folded, the left rail
- * moves the list up to the top corner on its own.
- *
- * `aria-expanded` holds the state. CSS reads it as well as a screen reader, so the state
- * lives in one place instead of also being a class.
+ * `aria-expanded` holds the state. CSS reads it as well as a screen reader, so the state lives
+ * in one place instead of also being a class. app.css slides the panel; nothing here measures
+ * or positions it.
  */
-hudToggle.addEventListener("click", () => {
-  const open = hudToggle.getAttribute("aria-expanded") === "true"
-  hudToggle.setAttribute("aria-expanded", String(!open))
+railTab.addEventListener("click", () => {
+  const out = railTab.getAttribute("aria-expanded") === "true"
+  railTab.setAttribute("aria-expanded", String(!out))
+  setRailOut(!out)
 })
+
+// The markup ships shut, so this only ever opens it. Same shape as `walkToggle.checked` below:
+// the attribute is the state, and storage only says what an earlier session left.
+if (railOut()) railTab.setAttribute("aria-expanded", "true")
 
 /**
  * The switch that hands the centre to the camera, and back.

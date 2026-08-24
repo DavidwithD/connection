@@ -4,6 +4,9 @@
  * Every component is listed, including the one the reader is in. Clicking a row never
  * removes it. The list is paged and the heading shows the total, because a graph can have
  * any number of components.
+ *
+ * The panel is a drawer at the left edge, and its list scrolls without a scrollbar. What the
+ * bar used to say is said by the sentinel row and by `markMore` below. See ADR 0041.
  */
 import { fetchIslands, type IslandMeta, type IslandPage } from "./store/index.js"
 
@@ -74,8 +77,9 @@ export class IslandsPanel {
   /**
    * Watches the sentinel against the list box, not the window.
    *
-   * `root` is the scrolling box. The panel is short and the sentinel is below the fold from
-   * the first frame, so an observer relative to the viewport would never fire.
+   * `root` is the scrolling box. The list scrolls inside the drawer, so the sentinel can sit
+   * far below the fold and inside the viewport at once. An observer against the viewport would
+   * never fire on it.
    */
   private readonly watcher: IntersectionObserver
 
@@ -87,6 +91,15 @@ export class IslandsPanel {
   ) {
     this.sentinel.className = "island-more"
     this.sentinel.addEventListener("click", () => void this.more())
+
+    // The list has no scrollbar, so nothing else on the panel says rows continue below the
+    // fold. app.css draws the fade off the attribute `markMore` sets.
+    //
+    // Three things move the answer and none of them implies the others. A scroll changes where
+    // the fold is. A resized window changes how much of the list is shown. Appending rows
+    // changes how much there is, and `append` calls it for that.
+    this.list.addEventListener("scroll", () => this.markMore(), { passive: true })
+    new ResizeObserver(() => this.markMore()).observe(this.list)
 
     this.watcher = new IntersectionObserver(
       (entries) => {
@@ -191,6 +204,20 @@ export class IslandsPanel {
     }
 
     this.paint()
+    this.markMore()
+  }
+
+  /**
+   * Say whether rows sit past the foot of the list.
+   *
+   * Read rather than inferred from the cursor: rows already loaded can be below the fold with
+   * no page left to load. A list scrolled to its end says no, so the fade never covers the
+   * last row.
+   */
+  private markMore(): void {
+    const more = this.list.scrollTop + this.list.clientHeight < this.list.scrollHeight - 1
+    if (more) this.root.dataset["more"] = "true"
+    else delete this.root.dataset["more"]
   }
 
   /** Read the next page. Called when the foot of the list comes into view. */

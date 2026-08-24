@@ -33,18 +33,18 @@ const shot = async (page, name) => {
   console.log(`  📷 ${SHOTS}/${name}.png`)
 }
 
-/** What the HUD's chevron is saying, read off the thing itself rather than off the click. */
-const fold = (page) =>
+/** Where the island drawer is, read off the thing itself rather than off the click. */
+const drawer = (page) =>
   page.evaluate(() => {
-    const toggle = document.querySelector("#hud-toggle")
-    const body = document.querySelector("#hud-body")
+    const tab = document.querySelector("#rail-tab")
+    const panel = document.querySelector("#islands")
     // Decoded from the matrix rather than compared against "none": the turn is animated, so
     // a read taken on the click lands mid-rotation and every string comparison is a coin toss.
     const turn = getComputedStyle(document.querySelector(".chevron")).transform
     const [a, b] = turn === "none" ? [1, 0] : turn.slice(7, -1).split(",").map(Number)
     return (
-      `open=${toggle?.getAttribute("aria-expanded")}` +
-      ` body=${body && getComputedStyle(body).display}` +
+      `out=${tab?.getAttribute("aria-expanded")}` +
+      ` panel=${panel && getComputedStyle(panel).visibility}` +
       ` chevron=${Math.round((Math.atan2(b, a) * 180) / Math.PI)}°`
     )
   })
@@ -86,7 +86,7 @@ async function main() {
 
   await page.goto(WEB, { waitUntil: "domcontentloaded" })
 
-  // The map draws its first frame from two reads, so wait for the HUD to stop saying
+  // The map draws its first frame from two reads, so wait for #status to stop saying
   // "starting…" rather than for a fixed time.
   await page.waitForFunction(
     () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
@@ -276,36 +276,47 @@ async function main() {
     await page.waitForTimeout(600)
   }
 
-  const islands = page.locator("#islands")
-  const listed = await islands.isVisible()
-  console.log(`  islands visible: ${listed}`)
+  // The drawer ships shut, so open it before reading a row. The tab is not drawn at all when
+  // the store holds no islands, which is the other reason this leg can be skipped.
+  const tab = page.locator("#rail-tab")
+  const listed = await tab.isVisible()
+  console.log(`  islands tab: ${listed}`)
 
   if (listed) {
+    await tab.click()
+    await page.waitForTimeout(250)
+    console.log(`  drawer: ${await drawer(page)}`)
+
     const names = await page.locator("#islands .island-name").allTextContents()
     const offMap = await page.locator("#islands .island.off-map .island-name").allTextContents()
     const here = await page.locator("#islands .island[aria-current] .island-name").textContent()
     console.log(`  islands: ${names.join(", ")}`)
     console.log(`  standing in: ${here ?? "—"} · off the map: ${offMap.length}/${names.length}`)
 
-    // A list capped in pixels clips whatever row the cap lands in the middle of, which
-    // reads as a broken panel rather than as something to scroll. Worth knowing on every
-    // run, since the number of islands is a property of the data and not of the layout.
+    // A short window, for the two checks that need more rows than the box holds. The drawer
+    // grows with its rows, so the seeded ten islands fit any ordinary window. 260px is where
+    // they stop fitting. Restored before the shots below.
+    await page.setViewportSize({ width: 1440, height: 260 })
+    await page.waitForTimeout(300)
+
+    // The list has no scrollbar. So the two questions are whether it fills the drawer, and
+    // whether the fade that replaced the bar is drawn while rows sit past the fold.
     const fit = await page.evaluate(() => {
-      const list = document.querySelector("#islands ul")
+      const list = document.querySelector("#islands-list")
       const row = document.querySelector("#islands li")
       return {
         row: row?.getBoundingClientRect().height ?? 0,
         shown: list?.clientHeight ?? 0,
         needed: list?.scrollHeight ?? 0,
+        fade: document.querySelector("#islands")?.dataset.more === "true",
       }
     })
-    const spare = fit.shown % fit.row
     console.log(
-      `  list: ${names.length} rows of ${fit.row.toFixed(1)}px, ` +
+      `  short window: ${names.length} rows of ${fit.row.toFixed(1)}px, ` +
         `${fit.shown}px shown of ${fit.needed}px` +
         (fit.needed > fit.shown
-          ? ` — scrolls, ${spare < 1 || fit.row - spare < 1 ? "cleanly" : `clipping a row at ${spare.toFixed(1)}px`}`
-          : " — fits"),
+          ? ` — scrolls, ${fit.fade ? "fade drawn" : "⚠ no fade, so nothing says rows are below"}`
+          : " — ⚠ still fits, so the scroll checks are untested"),
     )
 
     // The list is a page of an unbounded thing, so the two questions are whether it says so
@@ -332,6 +343,9 @@ async function main() {
         document.querySelector("#islands ul").scrollTop = 0
       })
     }
+
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.waitForTimeout(300)
 
     // The one that costs something: an island off the map is seated by the click, in water,
     // and stays seated. Anything already on the map is only the camera moving.
@@ -390,7 +404,11 @@ async function main() {
     // Halfway rather than to the foot: the foot is where the next page is asked for, and a
     // click that lands twenty rows is a click this cannot hold still against. What is being
     // checked is that using the list does not send it back to the top.
-    if (names.length > 9) {
+    if (fit.needed > fit.shown) {
+      // Short again, for the same reason as above.
+      await page.setViewportSize({ width: 1440, height: 260 })
+      await page.waitForTimeout(300)
+
       // A row that is already on screen at that offset. Clicking one out of view would scroll
       // the list to it, correctly, and the check would be measuring the wrong thing.
       const target = await page.evaluate(() => {
@@ -414,44 +432,93 @@ async function main() {
       )
     }
 
-    // Folded, the list lifts to the top corner and the chevron carries the status tone.
-    await page.locator("#hud-toggle").click()
-    // Past the chevron's 120ms turn, so what is read is where it settled and not where it
-    // happened to be on the way.
-    await page.waitForTimeout(200)
-    console.log(`  folded: ${await fold(page)}`)
-    await shot(page, "7-folded")
-    await page.locator("#hud-toggle").click()
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.waitForTimeout(300)
+
+    // Pushed back, the panel leaves the screen and stops taking focus.
+    await tab.click()
+    // Past the 160ms slide and the chevron's own turn, so what is read is where they settled
+    // and not where they happened to be on the way.
+    await page.waitForTimeout(300)
+    console.log(`  shut: ${await drawer(page)}`)
+    await shot(page, "7-shut")
+    await tab.click()
+    await page.waitForTimeout(250)
   }
 
-  // The left column is one flow so that it can run out of room without overlapping itself.
-  // Nothing but a real window says whether it does — the panels' heights come from the font,
-  // the numbers and the data, and none of those is in the stylesheet.
+  // The three reading aids sit behind one button now. What matters is that all three are in
+  // there, and that the browser's own dismissal works, since nothing in the page listens for
+  // Escape on this panel.
+  {
+    const guide = page.locator("#guide")
+    const before = await guide.isVisible()
+    await page.locator("#guide-toggle").click()
+    await page.waitForTimeout(150)
+    const inside = await page.evaluate(() => {
+      const has = (selector) => Boolean(document.querySelector(`#guide ${selector}`))
+      return {
+        stats: has("#stat-centre"),
+        walk: has("#walk-by-pan"),
+        legend: has("#legend .row"),
+        keys: has("#keys kbd"),
+      }
+    })
+    const open = await guide.isVisible()
+    await shot(page, "9-guide")
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(150)
+    const after = await guide.isVisible()
+    console.log(
+      `  guide: shut=${!before} open on click=${open} shut on Escape=${!after}` +
+        ` · holds ${Object.entries(inside)
+          .filter(([, held]) => held)
+          .map(([part]) => part)
+          .join(", ")}`,
+    )
+  }
+
+  // Boxes pinned to a corner, in two corners now rather than one column. Nothing but a real
+  // window says whether they clear each other: #ends and #controls are sized by whatever the
+  // font stack does with their text, and that is not in the stylesheet.
+  //
+  // #status is in the list and usually absent from it. The pill is drawn only while the tone
+  // is busy or error, so this leg sees it only when a read is still in flight.
   for (const [name, size] of [
     ["7-short", { width: 900, height: 500 }],
     ["8-narrow", { width: 420, height: 800 }],
   ]) {
     await page.setViewportSize(size)
-    const rail = await page.evaluate(() => {
-      const boxes = [...document.querySelectorAll("#left-rail > .panel")]
-        .filter((el) => el.offsetParent !== null)
+    await page.waitForTimeout(200)
+    const chrome = await page.evaluate(() => {
+      const boxes = ["ends", "controls", "guide-toggle", "status", "rail-tab", "islands"]
+        .map((id) => document.getElementById(id))
+        // Not `offsetParent`: it is null on a fixed box, and every box here is fixed.
+        .filter((el) => el?.getClientRects().length && getComputedStyle(el).visibility !== "hidden")
         .map((el) => ({ id: el.id, ...el.getBoundingClientRect().toJSON() }))
-      const over = boxes.filter((a, i) =>
-        boxes.slice(i + 1).some((b) => a.bottom > b.top && b.bottom > a.top),
-      )
-      const list = document.querySelector("#islands ul")
+      const hits = (a, b) =>
+        a.right > b.left && b.right > a.left && a.bottom > b.top && b.bottom > a.top
+      const over = []
+      boxes.forEach((a, i) => {
+        for (const b of boxes.slice(i + 1)) if (hits(a, b)) over.push(`${a.id}×${b.id}`)
+      })
+      const list = document.querySelector("#islands-list")
+      // Measured off a row rather than divided by a constant. --island-row used to state the
+      // height; the drawer's own cap replaced it, so the only source left is a drawn row.
+      const row = document.querySelector("#islands li")?.getBoundingClientRect().height
       return {
         shown: boxes.map((b) => b.id).join(" + ") || "nothing",
-        overlapping: over.map((b) => b.id),
-        spills: boxes.some((b) => b.bottom > window.innerHeight || b.top < 0),
-        rows: list ? Math.round(list.clientHeight / 22) : 0,
+        overlapping: over,
+        spills: boxes
+          .filter((b) => b.bottom > window.innerHeight + 1 || b.top < -1)
+          .map((b) => b.id),
+        rows: list && row ? Math.round(list.clientHeight / row) : 0,
       }
     })
     console.log(
-      `  ${String(size.width)}×${String(size.height)}: ${rail.shown}` +
-        ` · ${String(rail.rows)} island rows` +
-        (rail.overlapping.length ? ` · ⚠ overlap: ${rail.overlapping.join(", ")}` : "") +
-        (rail.spills ? " · ⚠ runs off the window" : ""),
+      `  ${String(size.width)}×${String(size.height)}: ${chrome.shown}` +
+        ` · ${String(chrome.rows)} island rows` +
+        (chrome.overlapping.length ? ` · ⚠ overlap: ${chrome.overlapping.join(", ")}` : "") +
+        (chrome.spills.length ? ` · ⚠ off the window: ${chrome.spills.join(", ")}` : ""),
     )
     await shot(page, name)
   }

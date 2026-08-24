@@ -169,6 +169,12 @@ the heading carries the total. A list that stops at a round number without sayin
 claiming to be the whole graph. The total is counted per load rather than maintained —
 maintaining it would mean riding on the write this index deliberately lets fail.
 
+The panel is a drawer at the left edge, pulled out by a tab and shut on a first visit
+([0041](../decisions/0041-the-chrome-comes-off-the-map.md)). It is as tall as its rows and no
+taller than the window. The list inside it scrolls without a scrollbar. Two things say there
+are rows below the fold. The `N more…` row at the foot is one. The other is a fade along the
+panel's bottom edge, drawn while the list is scrolled short of its end.
+
 ## What has to stay true
 
 **Only a root carries `islandSize`.** This is the whole of what keeps the index to one entry
@@ -211,4 +217,5 @@ sized for is [storing-a-graph.md](../requirements/storing-a-graph.md).
 | [0019](../decisions/0019-every-island-has-an-address.md) | Union-find on the nodes, a sparse index on the roots, and repair over correctness-in-the-moment |
 | [0030](../decisions/0030-the-graph-moves-into-the-browser.md) | That a merge moved inside the write and a split did not, and why |
 | [0020](../decisions/0020-the-islands-list-is-an-index.md) | That the list names every component and a row survives use |
+| [0041](../decisions/0041-the-chrome-comes-off-the-map.md) | That the panel is a drawer, and what replaced its scrollbar |
 | [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) | That taking a node out is not atomic, and asking again finishes it |

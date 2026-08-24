@@ -100,59 +100,79 @@ body.joining #stage { cursor: none; }
   z-index: 2;
 }
 
-/* The left column. It holds the HUD, the island list and the legend.
+/* Off the screen and still in the accessibility tree. The page's only <h1> uses it: every
+   panel that could have carried a title is shut most of the time. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
-   These three were each fixed to the viewport before. That had two problems. Folding the HUD
-   did not move the boxes under it. On a short window the boxes overlapped.
+/* The island drawer, at the left edge, and the tab that pulls it out.
 
-   One flex column fixes both. `margin-top: auto` on #legend pushes it to the bottom. The
-   island list is the part that gives up room when the window is short. */
-#left-rail {
-  position: fixed;
-  z-index: 2;
-  top: 16px;
-  bottom: 16px;
-  left: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  /* The width comes from the widest panel. The HUD's numbers grow with the graph, so a fixed
-     width wraps "603 nodes · 2958 edges" onto two lines. The max caps the island names, which
-     come from the data and can be any length. */
+   Three panels used to share a column here. Two of them and the HUD are in #guide now, and
+   what is left is the list the map is navigated with.
+
+   The panel is as tall as its rows and no taller than the window. Ten islands make a short
+   box; three hundred fill the screen and the list scrolls inside it. It shifts itself off the
+   edge by its own width plus the margin — a percentage of its own width, so the rule holds
+   whatever the longest island name makes it.
+
+   `visibility` waits out the slide, so a shut drawer takes no focus and the slide still
+   draws. */
+#islands {
+  /* Centred on the window, level with the tab that opens it. The centring is written as
+     `translate` so the shut state's `transform` is free to carry the slide on its own. */
+  top: 50%;
+  translate: 0 -50%;
+  max-height: calc(100vh - 32px);
+  /* Clear of the tab, not over it. Both are painted at the same level, and the panel comes
+     second, so any overlap would cover the handle the reader just used. */
+  left: 40px;
+  /* The width comes from the longest row. The max caps the island names, which come from the
+     data and can be any length. */
   width: max-content;
   min-width: 232px;
-  max-width: 320px;
-  /* The rail takes no pointer events, only its panels do. The map stays draggable through
-     the gaps between them. */
-  pointer-events: none;
-}
-#left-rail > .panel { position: static; pointer-events: auto; }
-#legend { margin-top: auto; }
-
-#hud h1 { margin: 0; }
-#hud-toggle {
+  max-width: min(320px, calc(100vw - 80px));
   display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 6px;
-  /* The negative margin pulls the button out to the panel's padding edge. The hover
-     background then spans the full width of the panel. */
-  margin: -3px -6px 2px;
-  padding: 3px 6px;
-  width: calc(100% + 12px);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  text-align: left;
-  cursor: pointer;
+  flex-direction: column;
+  transition: transform 160ms ease, visibility 0s;
 }
-#hud-toggle:hover,
-#hud-toggle:focus-visible { background: var(--plane); }
+body:has(#rail-tab[aria-expanded="false"]) #islands {
+  transform: translateX(calc(-100% - 40px));
+  visibility: hidden;
+  transition-delay: 0s, 160ms;
+}
+
+/* The tab, on the edge itself. Vertically centred, so it never lands in a corner another panel
+   wants. The word is set on its side; the tab is too narrow to read it any other way. */
+#rail-tab {
+  position: fixed;
+  z-index: 2;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  border-left: 0;
+  border-radius: 0 9px 9px 0;
+  padding: 12px 5px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  color: var(--ink-2);
+}
+#rail-tab:hover { color: var(--ink); }
+#rail-tab span:last-child { writing-mode: vertical-rl; letter-spacing: 0.04em; }
+/* islands.ts hides the panel when the store holds no islands. The tab goes with it: there is
+   nothing to pull out, and #empty already says the store is empty. */
+body:has(#islands[hidden]) #rail-tab { display: none; }
 
 /* A CSS triangle, not a text glyph. It rotates between the open and shut states instead of
    being swapped for a different character. */
@@ -165,18 +185,10 @@ body.joining #stage { cursor: none; }
   border-bottom: 4px solid transparent;
   transition: transform 120ms ease;
 }
-#hud-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+/* Pointing at the map while the drawer is shut, and back at the edge while it is out. */
+#rail-tab[aria-expanded="true"] .chevron { transform: rotate(180deg); }
 
-/* #status sits inside #hud-body, which the fold hides. When the HUD is folded the tone moves
-   to the title. A failed read is then still visible as colour. */
-#hud-toggle[data-tone="busy"],
-#hud-toggle[data-tone="error"] { color: var(--accent); }
-#hud:has(#hud-toggle[aria-expanded="true"]) #hud-toggle[data-tone] { color: inherit; }
-
-#hud:has(#hud-toggle[aria-expanded="false"]) #hud-body { display: none; }
-#hud:has(#hud-toggle[aria-expanded="false"]) h1 { margin-bottom: -2px; }
-
-#hud .sub { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; }
+#guide .sub { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; }
 
 dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
 dt { color: var(--ink-2); font-size: 11px; }
@@ -197,35 +209,30 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 
 /* The two sentences that stop being true when the camera names the centre. Both pairs are in
    the markup and the checkbox picks which shows, so the state stays in the one place the box
-   already keeps it. Rooted at body because #keys is outside #hud and a :has() on the panel
-   could not reach it. */
+   already keeps it. Rooted at body rather than at #guide, so a pair that moves back out onto
+   the map still matches. */
 body:not(:has(#walk-by-pan:checked)) .when-walking,
 body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 
+/* The status line, as a pill beside #guide-toggle. Drawn only when it has something to say:
+   idle is the state it is in for all but the first second and whatever a write costs. The text
+   is written in every state, because the drive scripts wait on it. */
 #status {
-  margin: 10px 0 0;
-  padding-top: 9px;
-  border-top: 1px solid var(--hairline);
+  bottom: 16px;
+  right: 74px;
+  max-width: min(46ch, calc(100vw - 150px));
+  margin: 0;
+  padding: 5px 9px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 11px;
   color: var(--ink-2);
 }
+#status[data-tone="idle"] { display: none; }
 #status[data-tone="busy"] { color: var(--accent); }
 #status[data-tone="error"] { color: var(--accent); font-weight: 500; }
 
-/* The list of islands. Capped and scrollable, so a graph in many pieces does not push the
-   panel off the screen.
-
-   The cap is a whole number of rows. That is why --island-row states the row height instead
-   of letting the font decide it. A cap in round pixels cuts the last row in half, which
-   reads as a broken panel. Nine rows, because the default seed makes ten islands. */
-#islands {
-  --island-row: 22px;
-  /* `min-height: 0` lets the rail shrink this panel. Without it a flex item cannot go below
-     its content height, and the content here is the whole list. */
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
 #islands h2 {
   display: flex;
   justify-content: space-between;
@@ -249,19 +256,35 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
   cursor: pointer;
 }
 .island-more:hover { color: var(--ink-2); }
-#islands ul {
+/* The list fills the drawer and scrolls without a bar. The drawer's own cap replaced the pixel
+   cap this had, and with it the row height that cap had to be a multiple of. */
+#islands-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: calc(var(--island-row) * 9);
+  flex: 1 1 auto;
+  /* `min-height: 0` lets the drawer shrink the list. Without it a flex item cannot go below
+     its content height, and the content here is every row loaded so far. */
+  min-height: 0;
   overflow-y: auto;
+  scrollbar-width: none;
+}
+#islands-list::-webkit-scrollbar { display: none; }
+
+/* What the hidden bar used to say. Drawn only while rows sit past the fold, which islands.ts
+   tests on a scroll, a resize and an append — so a list at its end does not fade its last row. */
+#islands[data-more="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 1px 1px;
+  height: 22px;
+  border-radius: 0 0 9px 9px;
+  background: linear-gradient(transparent, var(--panel));
+  pointer-events: none;
 }
 /* The same row style as the ends' list, without the degree number. Both lists are lists of
-   things to pick, so they look the same.
-
-   `line-height` plus the padding must equal `--island-row`. The max-height above is a
-   multiple of it. Without the line-height the font decides the row height, the row lands on
-   a fraction of a pixel, and the cap cuts a name in half. */
+   things to pick, so they look the same. The line height is stated so that every row is the
+   same height whatever the font stack does with a name. */
 .island {
   display: flex;
   align-items: center;
@@ -286,7 +309,7 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 
    Every row draws the dot and only the current row fills it in. A dot on the current row
    alone would indent that row past its neighbours. There is no room outside the list either:
-   `overflow-y: auto` above clips both axes. */
+   `overflow-y: auto` on the list clips both axes. */
 .island::before {
   content: "";
   flex: none;
@@ -297,6 +320,14 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 }
 .island[aria-current]::before { background: var(--accent); }
 .island[aria-current] { font-weight: 500; }
+/* The three groups inside #guide, ruled off from each other. The same hairline #status used to
+   carry when it sat under the numbers. */
+#guide #legend,
+#guide #keys {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--hairline);
+}
 #legend .row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
 #legend .row:first-of-type { margin-top: 0; }
 #legend .label { color: var(--ink-2); font-size: 11px; }
@@ -593,6 +624,28 @@ button {
 }
 button:hover { background: var(--plane); }
 
+/* The button that opens the guide, in the corner the key list used to fill. */
+#guide-toggle {
+  position: fixed;
+  z-index: 2;
+  bottom: 16px;
+  right: 16px;
+}
+#guide-toggle[data-tone="busy"],
+#guide-toggle[data-tone="error"] { color: var(--accent); }
+
+/* The guide itself. A `[popover]` is centred by the UA with `inset: 0` and `margin: auto`, so
+   both are restated here. It opens above its own button and caps its height on a short window.
+   The top layer puts it over everything, #status included. */
+#guide {
+  inset: auto 16px 58px auto;
+  margin: 0;
+  width: min(340px, calc(100vw - 32px));
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  color: var(--ink);
+}
+
 kbd {
   font: inherit;
   font-size: 10px;
@@ -602,21 +655,20 @@ kbd {
   border-radius: 4px;
   padding: 1px 4px;
 }
-#keys { bottom: 16px; right: 16px; display: grid; gap: 4px; font-size: 11px; }
+#keys { display: grid; gap: 4px; font-size: 11px; }
 #keys span { color: var(--ink-2); }
 /* The link to the transfer page, in the same colour as the lines beside it. The underline
    marks it as a link. The accent colour is kept for messages about the graph. */
 #keys a { color: var(--ink-2); }
 
 /* ── Narrow and short windows ─────────────────────────────────────────────────────
-   The five panels need no media query while the window is wide. Below 816px the HUD's
-   right edge reaches #ends' left edge, and two more overlaps follow below that. One
-   rule handles all three: under that width the top strip holds #ends alone. #ends is
-   the only panel up there that is interactive, and the only one that grows.
+   Three panels floated over the map here before, and most of this section decided which one
+   to drop. The drawer and the guide answer that at every window size, so what is left is the
+   two boxes still pinned to a corner: #ends at the top, #controls and #guide-toggle at the
+   bottom.
 
-   #controls is moved out of the strip rather than measured. Its width depends on how
-   the font stack renders "Recentre" at 11px, so the exact width where it overlaps
-   cannot be written here. */
+   #controls is moved rather than measured. Its width depends on how the font stack renders
+   "Recentre" at 11px, so the exact width where it overlaps cannot be written here. */
 
 /* The overlap starts at 816px. The extra 44px covers wider font stacks. */
 @media (max-width: 860px) {
@@ -627,80 +679,36 @@ kbd {
     transform: none;
   }
 
-  /* Moved to the bottom, in reach of a thumb. The other order would not work: the HUD's
-     height changes as its numbers wrap, so nothing can be offset below it. */
+  /* Moved to the bottom, in reach of a thumb. The top strip then holds #ends alone, which is
+     the only panel up there that is interactive and the only one that grows. */
   #controls { top: auto; bottom: 16px; }
 
-  /* 72px is 16 for the page margin, 46 for #controls, 10 between. #controls is one row of
-     11px buttons and its height does not change.
+  /* #controls has taken the corner, so the button crosses to the other one and the pill sits
+     above them both. The guide opens over the pill: it is asked for, and the pill is not. */
+  #guide-toggle { left: 16px; right: auto; }
 
-     The whole rail moves, not the HUD alone. Splitting the column between two corners is
-     what causes overlaps at the next window size.
+  /* The drawer gives up the top and bottom strips. #ends spans the width up there, and
+     #controls and the guide's button are down here.
 
-     `top: auto` lets the column grow upward from the bottom. The island list is what stops
-     it growing, so it is capped shorter here. The room above belongs to #ends and the map. */
-  #left-rail {
-    top: auto;
-    bottom: 72px;
-    left: 16px;
-    right: 16px;
-    width: auto;
-    max-width: none;
-  }
-  #islands ul { max-height: calc(var(--island-row) * 5); }
-
-  /* The two-column list becomes running text. A grid reserves the widest value's width in
-     every row. Running text does not. The colon replaces the column gap. */
-  #hud dl { display: block; }
-  #hud dt,
-  #hud dd { display: inline; }
-  #hud dt::after { content: ":"; }
-  #hud dd { margin-right: 12px; }
-
-  /* Both are reading aids. #keys lists drag, wheel and the arrow keys, which a touch device
-     does not have. */
-  #legend,
-  #keys { display: none; }
+     The 76 is 16 for the page margin, 50 for #ends holding one input, 10 between. The 72 is
+     the same sum over #controls: one row of 11px buttons, 46px tall whatever the graph does.
+     The panel stays centred, so the cap it takes off is split 74 to each end. */
+  #islands { max-height: calc(100vh - 148px); }
+  #status { left: 16px; right: 16px; bottom: 58px; max-width: none; }
+  #guide { inset: auto 16px 58px 16px; width: auto; }
 }
 
 /* A phone in portrait. The side margins drop to 8px, which is worth more as content width.
-   The subtitle goes: the map says the same thing.
-
-   The title stays. It carries the chevron, and the chevron is how the seven rows of numbers
-   are folded away on a small screen. */
+   The drawer keeps its 40px, which is what holds it clear of the tab. */
 @media (max-width: 460px) {
-  #ends,
-  #left-rail { left: 8px; right: 8px; }
+  #ends { left: 8px; right: 8px; }
   #controls { right: 8px; }
-  #hud .sub { display: none; }
 }
 
-/* A window too short for the whole column. The legend goes first and alone. It is the only
-   panel in the rail that does not say where you are, and it is read once. Height only,
-   because the rail is a column and its room is a matter of height at any width. */
-@media (max-height: 620px) {
-  #legend { display: none; }
-}
-
-/* A phone in landscape. The HUD drops the title and the numbers and keeps #status, which is
-   the line that reports errors. Both dimensions are tested: a short but wide window has room
-   for all of it. */
+/* A phone in landscape. The guide caps its own height at every size, so the only box left to
+   shorten is the results list, which opens downward from #ends. */
 @media (max-height: 520px) and (max-width: 860px) {
-  #hud h1,
-  #hud .sub,
-  #hud .setting,
-  #hud dl { display: none; }
-  /* The rule above hides the title, and the chevron is in the title. Unfold #hud-body here.
-     A HUD left folded could not be opened, and #status would be unreachable. */
-  #hud:has(#hud-toggle[aria-expanded="false"]) #hud-body { display: block; }
-  #status { margin: 0; padding: 0; border-top: 0; }
-  /* The results list opens downward and is what runs off a short window. Cap it against the
-     viewport height. */
   .end ul { max-height: 40vh; }
-  /* Shortened, not hidden. The island list is the only thing left on screen that says which
-     part of the graph you are in. Three rows and a scrollbar still answer that. The input
-     above only finds a node whose name you already know. */
-  #islands ul { max-height: calc(var(--island-row) * 3); }
 }
 
 /* ------------------------------------------------------------------ the transfer page

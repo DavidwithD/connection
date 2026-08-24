@@ -118,9 +118,10 @@ The camera decides it because nothing else can. How far a neighbour sits from th
 fixed when it is seated and never changes; whether the reader can see it changes with every
 zoom and every pan. Only the camera knows the second.
 
-The rule reads the canvas, which is not quite what the reader sees: the HUD, the islands and
-the legend float over it, so a neighbour parked under one counts as on screen and gets no
-ghost while being as hidden as one that left.
+The rule reads the canvas, which is not quite what the reader sees. The island drawer floats
+over it while it is out, and the guide does while it is open
+([0041](../decisions/0041-the-chrome-comes-off-the-map.md)). A neighbour parked under either
+counts as on screen and gets no ghost, while being as hidden as one that left.
 
 The box and not the seat, because a ring node draws as its name: a seat just past the edge
 still has half its label readable, and a ghost raised for it would be the same name twice.
