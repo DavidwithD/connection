@@ -13,7 +13,7 @@
  * What gets written, and what the undo does about it, is main.ts. The pair the gesture named is
  * all that comes from here.
  */
-import type { MapView } from "./map-view.js"
+import type { MapSurface } from "./map.js"
 import type { Point } from "./placement.js"
 import type { WorldNode } from "./world.js"
 
@@ -81,7 +81,7 @@ export class DragJoin {
   private armed: Armed | null = null
 
   constructor(
-    private readonly view: MapView,
+    private readonly view: MapSurface,
     private readonly arrow: SVGPathElement,
     private readonly ink: SVGLinearGradientElement,
     private readonly hooks: DragJoinHooks,

@@ -61,6 +61,7 @@ around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
 | `npm run drive:drag-join` | Drive the shift-drag that joins two nodes, and check what it wrote |
 | `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
+| `npm run drive:globe` | Drive the globe renderer at `/?globe`, and photograph what it draws |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
 ## Where the graph lives
@@ -89,7 +90,9 @@ web/src/
   placement.ts  seating geometry + spatial index — pure, no renderer
   projection.ts the surface the map draws on — a screen offset in, a screen offset out
   world.ts      the store: frozen positions, adjacency, degrees
+  map.ts        what every renderer holds: calls, events, ids, shared numbers
   map-view.ts   Cytoscape render; additive only, no layout engine
+  globe-view.ts canvas render on the projected surface; one frame loop, no library
   explore.ts    what the centre reads once the camera settles
   palette.ts    validated colour tokens, light and dark
   settings.ts   what the reader has asked the page to do, kept in the browser

@@ -22,9 +22,11 @@ import {
 import type { Neighbourhood, NodeMeta, Opening } from "./store/index.js"
 import { DragJoin } from "./drag-join.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
+import { GlobeView } from "./globe-view.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
-import { MapView, ghostTarget } from "./map-view.js"
+import { ghostTarget, type MapSurface } from "./map.js"
+import { MapView } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { RenameBox } from "./rename-box.js"
 import { distance, type Point } from "./placement.js"
@@ -89,7 +91,17 @@ const walkToggle = el<HTMLInputElement>("walk-by-pan")
 const empty = el<HTMLDivElement>("empty")
 
 const world = new World()
-const view = new MapView(stage, world)
+
+/**
+ * Which renderer draws the map. Scaffolding, and it goes when map-view.ts does.
+ *
+ * Every drive script that reaches Cytoscape through its container needs the page to keep
+ * opening on Cytoscape. So the globe is behind a query until those scripts address a canvas
+ * instead. Nothing the reader can click chooses a renderer.
+ */
+const view: MapSurface = new URLSearchParams(location.search).has("globe")
+  ? new GlobeView(stage, world)
+  : new MapView(stage, world)
 
 /**
  * The queue every write to the graph goes through.

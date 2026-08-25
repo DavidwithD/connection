@@ -107,7 +107,7 @@ async function main() {
         box.x2 >= view.x1 && box.x1 <= view.x2 && box.y2 >= view.y1 && box.y1 <= view.y2
       const standing = cy.nodes("[?ghost]").map((ghost) => {
         const id = ghost.id()
-        // Split on the second NUL, as `ghostTarget` in map-view.ts does. Splitting on a colon
+        // Split on the second NUL, as `ghostTarget` in map.ts does. Splitting on a colon
         // finds nothing, and `slice(0)` then hands back the ghost's own id — so the twin test
         // below was asking whether each ghost could see itself, and every visible one said yes.
         const cut = id.indexOf("\0", 2)

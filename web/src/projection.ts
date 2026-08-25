@@ -105,6 +105,21 @@ export function bounds(R: number): number {
 }
 
 /**
+ * The angle past which nothing drawn is still on screen, in radians.
+ *
+ * At curvature 1 and below this is the limb. The disc is then drawn inside the viewport, so a
+ * node inside the limb is a node on screen. Above 1 the disc is drawn wider than the window.
+ * The limb alone would then call a node visible that is off the side of it.
+ *
+ * The corner rather than the nearest edge. A node past the corner's radius is outside the
+ * rectangle on every bearing. The corners are the last part of the window a node leaves, and a
+ * ghost may only stand for a node nobody can see.
+ */
+export function horizon(halfW: number, halfH: number, R: number): number {
+  return Math.min(LIMB, Math.asin(Math.min(1, Math.hypot(halfW, halfH) / R)))
+}
+
+/**
  * How far past the limb a neighbour must be before a ghost stands for it, in radians.
  *
  * The argument is a length in screen pixels, and the answer is an angle, because that is the
