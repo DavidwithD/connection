@@ -87,6 +87,7 @@ web/
   app.css       the chrome around both
 web/src/
   placement.ts  seating geometry + spatial index — pure, no renderer
+  projection.ts the surface the map draws on — a screen offset in, a screen offset out
   world.ts      the store: frozen positions, adjacency, degrees
   map-view.ts   Cytoscape render; additive only, no layout engine
   explore.ts    what the centre reads once the camera settles

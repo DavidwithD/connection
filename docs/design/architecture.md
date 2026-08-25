@@ -22,11 +22,13 @@ layer and an HTTP server. There is one process now, and the seam every page read
 [store/index.ts](../../web/src/store/index.ts) — the same eleven functions the wire shape had,
 with store calls in their bodies instead of `fetch`.
 
-The rule repeats inside `web/src`. [placement.ts](../../web/src/placement.ts) and
-[world.ts](../../web/src/world.ts) compute geometry and hold state with no renderer present,
+The rule repeats inside `web/src`. [placement.ts](../../web/src/placement.ts),
+[projection.ts](../../web/src/projection.ts) and [world.ts](../../web/src/world.ts) compute
+geometry and hold state with no renderer present,
 [map-view.ts](../../web/src/map-view.ts) is the only file that knows Cytoscape exists, and
 [palette.ts](../../web/src/palette.ts) is the sole authority on colour. Replacing the renderer
-is meant to touch one file.
+is meant to touch one file, which [ADR 0042](../decisions/0042-the-map-draws-on-a-sphere.md)
+puts to the test.
 
 ## Two stores
 

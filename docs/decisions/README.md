@@ -45,6 +45,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0039](0039-any-nodes-name-on-the-clipboard.md) | Any node's name on the clipboard | 🔵 Proposed |
 | [0040](0040-a-node-under-a-new-name.md) | A node under a new name | 🔵 Proposed |
 | [0041](0041-the-chrome-comes-off-the-map.md) | The chrome comes off the map | 🔵 Proposed |
+| [0042](0042-the-map-draws-on-a-sphere.md) | The map draws on a sphere | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
