@@ -302,7 +302,7 @@ const settle = debounce(() => {
 /** Set by an arrow key, and read by the `viewport` event it causes. */
 let nudged = false
 
-view.cy.on("viewport", () => {
+view.on("viewport", () => {
   // The menu opened over a node at a screen position. Moving the map under it would leave it
   // pointing at whatever drifted under the pointer instead.
   closeMenu()
@@ -312,20 +312,16 @@ view.cy.on("viewport", () => {
 })
 
 // A disc under the pointer draws as its name. The flag goes on whatever node the pointer
-// enters, and the style rule in map-view.ts is what scopes the mark to the discs.
-//
-// `mouseover` and `mouseout`, not `tapdragover` and `tapdragout`. The touch handlers emit only
-// the second pair, so a finger dragging across the map would light every disc it crossed.
-view.cy.on("mouseover", "node", (event) => {
-  view.hover(String(event.target.id()))
+// enters, and the style rule in map-view.ts is what scopes the mark to the discs. Which
+// pointer events stand behind these two is map-view.ts's `bridge`.
+view.on("nodeEnter", (id) => {
+  view.hover(id)
 })
-view.cy.on("mouseout", "node", () => {
+view.on("nodeLeave", () => {
   view.hover(null)
 })
 
-view.cy.on("tap", "node", (event) => {
-  const id = String(event.target.id())
-
+view.on("nodeTap", (id) => {
   // A ghost stands in for an off-screen node. Clicking one flies to that node. The read
   // starts now rather than on the settle at the far end, because the destination is already
   // known and the flight is otherwise idle time.
@@ -475,18 +471,17 @@ window.addEventListener("pointerdown", (event) => {
   if (!menu.hidden && !menu.contains(event.target as Node)) closeMenu()
 })
 
-view.cy.on("cxttap", "node", (event) => {
-  const id = String(event.target.id())
+view.on("nodeMenu", (id, at) => {
   if (id !== view.accent) return
   const node = world.get(id)
   if (!node) return
 
-  openMenu({ kind: "node", id }, priced(node), event.originalEvent as MouseEvent | undefined, node)
+  openMenu({ kind: "node", id }, priced(node), at, node)
 })
 
-view.cy.on("cxttap", "edge", (event) => {
-  const a = ended(String(event.target.source().id()))
-  const b = ended(String(event.target.target().id()))
+view.on("edgeMenu", (from, to, at) => {
+  const a = ended(from)
+  const b = ended(to)
   if (!a || !b) return
   // One end has to be the centre, the same rule the node above follows. A ghost's lead
   // already meets it: a ghost belongs to the centre that created it.
@@ -497,7 +492,7 @@ view.cy.on("cxttap", "edge", (event) => {
   openMenu(
     { kind: "edge", a: near.id, b: far.id },
     `part ${near.label} and ${far.label}`,
-    event.originalEvent as MouseEvent | undefined,
+    at,
     // A line is not a node, so there is nothing here to rename.
     null,
   )
@@ -612,7 +607,7 @@ async function applyRename(node: NodeMeta, next: string): Promise<NodeMeta> {
  * `ended` is the same resolver the menu above parts an edge with. So a ghost stands for its node
  * at either end of a drag, as it does under a right-click.
  */
-new DragJoin(view.cy, el<SVGPathElement>("aim-arrow"), el<SVGLinearGradientElement>("aim-ink"), {
+new DragJoin(view, el<SVGPathElement>("aim-arrow"), el<SVGLinearGradientElement>("aim-ink"), {
   ended,
   join: joinPair,
   aim: (id) => view.aim(id),
@@ -923,14 +918,14 @@ window.addEventListener("keydown", (event) => {
   if (!step) return
   event.preventDefault()
   nudged = true
-  view.cy.panBy({ x: step[0], y: step[1] })
+  view.panBy({ x: step[0], y: step[1] })
 })
 
 el<HTMLButtonElement>("zoom-in").addEventListener("click", () =>
-  view.cy.zoom({ level: view.cy.zoom() * 1.35, renderedPosition: renderedCentre() }),
+  view.zoomAbout(renderedCentre(), 1.35),
 )
 el<HTMLButtonElement>("zoom-out").addEventListener("click", () =>
-  view.cy.zoom({ level: view.cy.zoom() / 1.35, renderedPosition: renderedCentre() }),
+  view.zoomAbout(renderedCentre(), 1 / 1.35),
 )
 el<HTMLButtonElement>("home").addEventListener("click", () => {
   if (view.accent) view.focus(view.accent)

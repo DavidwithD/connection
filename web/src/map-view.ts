@@ -10,6 +10,7 @@ import cytoscape, {
   type Core,
   type Css,
   type ElementDefinition,
+  type EventObject,
   type NodeSingular,
   type StylesheetJson,
 } from "cytoscape"
@@ -430,8 +431,47 @@ function buildStyle(p: Palette): StylesheetJson {
   ]
 }
 
+/**
+ * What the page hears from the map, whichever renderer is drawing it.
+ *
+ * Cytoscape's own names are not in this list on purpose. A second renderer has no `cxttap`, and
+ * no element to be the target of one. A page written against those names could only ever have
+ * one renderer under it. These are named for what the reader did.
+ *
+ * `edgeMenu` carries the two ends rather than the edge. That is what the page asks for. It is
+ * also all a renderer can be relied on to know about a line it drew.
+ */
+export interface MapEvents {
+  /** The camera moved, by any means. */
+  viewport: () => void
+  nodeEnter: (id: string) => void
+  nodeLeave: () => void
+  nodeTap: (id: string) => void
+  nodeMenu: (id: string, at: MouseEvent | undefined) => void
+  edgeMenu: (a: string, b: string, at: MouseEvent | undefined) => void
+  /** A button went down on a node. The rest of the press follows until `pressEnd`. */
+  pressStart: (id: string, at: MouseEvent | undefined) => void
+  pressMove: (at: MouseEvent | undefined) => void
+  /** The button came up. Null where it came up on the background rather than an element. */
+  pressEnd: (id: string | null) => void
+  /** The pointer crossed onto a node mid-press, and off one again. */
+  pressOver: (id: string) => void
+  pressOut: () => void
+}
+
 export class MapView {
-  readonly cy: Core
+  /**
+   * Private, so the seam above is the whole surface. Every call site outside this file went
+   * through `MapEvents` and the methods beside it, and nothing is left that needs the instance.
+   */
+  private readonly cy: Core
+  /**
+   * One list per event name, written only through `on`.
+   *
+   * The read casts, because TypeScript cannot see that a key and its handler list stay in step
+   * across a generic parameter. Nothing else touches the map, so `on` is the whole proof.
+   */
+  private readonly listeners = new Map<keyof MapEvents, unknown[]>()
   private accentId: string | null = null
   private stubbed = 0
   /** True while the camera is flying. Nothing may take the accent until it lands. */
@@ -469,6 +509,102 @@ export class MapView {
       pixelRatio: Math.min(2, window.devicePixelRatio || 1),
     })
     this.panFromNodes()
+    this.bridge()
+  }
+
+  /** Hear one of the map's events. Every handler added for a name is called, in order. */
+  on<K extends keyof MapEvents>(name: K, handler: MapEvents[K]): void {
+    const list = this.listeners.get(name) ?? []
+    list.push(handler)
+    this.listeners.set(name, list)
+  }
+
+  private each<K extends keyof MapEvents>(name: K): MapEvents[K][] {
+    return (this.listeners.get(name) ?? []) as MapEvents[K][]
+  }
+
+  /**
+   * Turn Cytoscape's events into this map's own. The one place the two vocabularies meet.
+   *
+   * `mouseover` and `mouseout` rather than `tapdragover` and `tapdragout`, for `nodeEnter` and
+   * `nodeLeave`. The touch handlers emit only the second pair, so a finger dragging across the
+   * map would light every disc it crossed.
+   *
+   * `pressEnd` reports null where Cytoscape reports the core, because the core is a Cytoscape
+   * object and nothing outside this file may be handed one.
+   */
+  private bridge(): void {
+    const mouse = (event: EventObject): MouseEvent | undefined =>
+      event.originalEvent as MouseEvent | undefined
+
+    this.cy.on("viewport", () => {
+      for (const hear of this.each("viewport")) hear()
+    })
+    this.cy.on("mouseover", "node", (event) => {
+      for (const hear of this.each("nodeEnter")) hear(String(event.target.id()))
+    })
+    this.cy.on("mouseout", "node", () => {
+      for (const hear of this.each("nodeLeave")) hear()
+    })
+    this.cy.on("tap", "node", (event) => {
+      for (const hear of this.each("nodeTap")) hear(String(event.target.id()))
+    })
+    this.cy.on("cxttap", "node", (event) => {
+      for (const hear of this.each("nodeMenu")) hear(String(event.target.id()), mouse(event))
+    })
+    this.cy.on("cxttap", "edge", (event) => {
+      const a = String(event.target.source().id())
+      const b = String(event.target.target().id())
+      for (const hear of this.each("edgeMenu")) hear(a, b, mouse(event))
+    })
+    this.cy.on("tapstart", "node", (event) => {
+      for (const hear of this.each("pressStart")) hear(String(event.target.id()), mouse(event))
+    })
+    this.cy.on("tapdrag", (event) => {
+      for (const hear of this.each("pressMove")) hear(mouse(event))
+    })
+    this.cy.on("tapend", (event) => {
+      const id = event.target === this.cy ? null : String(event.target.id())
+      for (const hear of this.each("pressEnd")) hear(id)
+    })
+    this.cy.on("tapdragover", "node", (event) => {
+      for (const hear of this.each("pressOver")) hear(String(event.target.id()))
+    })
+    this.cy.on("tapdragout", "node", () => {
+      for (const hear of this.each("pressOut")) hear()
+    })
+  }
+
+  /** Where a node is drawn, in canvas pixels. Null for an id the map does not hold. */
+  screenOf(id: string): Point | null {
+    const node = this.cy.$id(id)
+    return node.empty() ? null : (node.renderedPosition() as Point)
+  }
+
+  /**
+   * Where the canvas sits in the viewport, so a caller can put the two together.
+   *
+   * `screenOf` measures from the canvas and a pointer event measures from the viewport. Anything
+   * comparing the two needs this, and reading it is a layout measurement, so the caller decides
+   * how often to pay for it.
+   */
+  containerOffset(): Point {
+    const box = this.cy.container()?.getBoundingClientRect()
+    return { x: box?.left ?? 0, y: box?.top ?? 0 }
+  }
+
+  panBy(by: Point): void {
+    this.cy.panBy(by)
+  }
+
+  /** Zoom by a factor, holding one point on the canvas still. */
+  zoomAbout(at: Point, factor: number): void {
+    this.cy.zoom({ level: this.cy.zoom() * factor, renderedPosition: at })
+  }
+
+  /** Switch panning off for the length of a gesture that wants the drag to itself. */
+  panning(on: boolean): void {
+    this.cy.userPanningEnabled(on)
   }
 
   /**
