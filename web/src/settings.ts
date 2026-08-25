@@ -11,6 +11,7 @@
 const ON = "on"
 
 const WALK_BY_PAN = "connection:walk-by-pan"
+const RAIL_OUT = "connection:rail-out"
 
 /**
  * Reading storage is allowed to fail.
@@ -62,4 +63,16 @@ export function setWalkByPan(on: boolean): void {
   // was just asked for.
   walking = on
   keep(WALK_BY_PAN, on ? ON : "")
+}
+
+/**
+ * Whether the island drawer is out.
+ *
+ * Not held the way `walking` is. Boot reads it once, and a click writes it without reading.
+ * The markup ships shut, so a stored "" and a fresh browser agree.
+ */
+export const railOut = (): boolean => stored(RAIL_OUT) === ON
+
+export function setRailOut(out: boolean): void {
+  keep(RAIL_OUT, out ? ON : "")
 }

@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body class="map">
+    <!-- The page's heading. Visually hidden: every panel that could carry it is now shut
+         most of the time, and a heading inside a closed popover is not in the tree. -->
+    <h1 class="sr-only">Graph exploration</h1>
+
     <div id="stage"></div>
 
     <!-- The arrow a shift-drag draws, from the node it started on to the cursor. Over the
@@ -38,88 +42,25 @@
       </p>
     </div>
 
-    <!-- The left column: one flow, not three separately positioned boxes. Folding the HUD has
-         to move the island list under it. The legend has to be dropped before either of the
-         other two runs off a short window. Neither works if each panel is fixed on its own. -->
-    <div id="left-rail">
-      <section class="panel" id="hud">
-        <!-- The button is inside the <h1>, not wrapped around it. The title stays a heading
-             and the whole title is still clickable. While the panel is folded the chevron
-             carries the status tone, because #status is inside the part that is hidden. -->
-        <h1>
-          <button id="hud-toggle" type="button" aria-expanded="true" aria-controls="hud-body">
-            <span class="chevron" aria-hidden="true"></span>
-            Graph exploration
-          </button>
-        </h1>
+    <!-- The island list, as a drawer at the left edge. Shut on a first visit, and the tab is
+         all that is on screen while it is. The drawer overlays the map rather than moving it:
+         #stage is fixed to the viewport, and resizing it would take the camera with it.
 
-        <div id="hud-body">
-          <!-- One of these is always hidden. Which one is decided by the checkbox below, in
-               app.css, so the sentence that is true is the one on the page and nothing in
-               main.ts writes copy. -->
-          <p class="sub when-pinned">one map, panned freely — the centre is the node you clicked</p>
-          <p class="sub when-walking">one map, walked by panning — the centre is what you stop on</p>
-          <dl>
-            <dt>at centre</dt>
-            <dd id="stat-centre">—</dd>
-            <dt>its degree</dt>
-            <dd id="stat-degree">0</dd>
-            <dt>nodes placed</dt>
-            <dd id="stat-nodes">0</dd>
-            <dt>edges drawn</dt>
-            <dd id="stat-edges">0</dd>
-            <dt>loading</dt>
-            <dd id="stat-pending">0</dd>
-            <dt>in store</dt>
-            <dd id="stat-total">—</dd>
-          </dl>
-          <!-- Off by default: panning is looking, and the centre is whatever was named. Ticked,
-               the node nearest the middle takes it as the camera moves — and keeps whatever
-               that placed on the way. The box's own checkedness is the state; a checkbox has
-               that natively, so nothing repeats it as an attribute. -->
-          <label class="setting">
-            <input id="walk-by-pan" type="checkbox" />
-            <span>walk by pan</span>
-          </label>
-          <p id="status" data-tone="idle">starting…</p>
-        </div>
-      </section>
+         The tab is a sibling of the panel, not a child. The panel translates itself off the
+         edge by its own width, so nothing measures it, and a tab inside would go with it. -->
+    <button id="rail-tab" type="button" aria-expanded="false" aria-controls="islands">
+      <span class="chevron" aria-hidden="true"></span>
+      <span>islands</span>
+    </button>
 
-      <!-- One row per island, each a place to go. Its own panel, not part of the HUD, because
-           the HUD folds away and this is what the map is navigated with. Hidden only when
-           there is no graph at all. -->
-      <section class="panel" id="islands" hidden>
-        <!-- The count compares rows shown against islands that exist. It is empty while the
-             list shows all of them, and filled once the list is capped. -->
-        <h2>islands <span id="islands-count"></span></h2>
-        <ul id="islands-list"></ul>
-      </section>
-
-      <!-- Last in the rail and pushed to the bottom, so it is the first panel dropped on a
-           short window. A legend is read once. The list above it is used all the time. -->
-      <section class="panel" id="legend">
-        <div class="row">
-          <span class="dot accent"></span>
-          <span class="label">the centre</span>
-        </div>
-        <div class="row">
-          <div id="ramp"></div>
-          <span class="label">its neighbours · the rest</span>
-        </div>
-        <div class="row">
-          <span class="dot dashed"></span>
-          <span class="label">more graph behind it</span>
-        </div>
-        <div class="row">
-          <span class="ghost-key"></span>
-          <span class="label">a neighbour off screen</span>
-        </div>
-        <div class="row">
-          <span class="stub-key"></span>
-          <span class="label">edge too long to draw</span>
-        </div>
-      </section>
-    </div>
+    <!-- One row per island, each a place to go. Hidden when the store holds no islands, and
+         app.css takes the tab away with it. -->
+    <section class="panel" id="islands" hidden>
+      <!-- The count compares rows shown against islands that exist. It is empty while the
+           list shows all of them, and filled once the drawer runs out of room. -->
+      <h2>islands <span id="islands-count"></span></h2>
+      <ul id="islands-list"></ul>
+    </section>
 
     <!-- Two name inputs and the line drawn between them. The × buttons have tabindex="-1" on
          purpose. They sit between the two inputs, so Tab would otherwise stop on them on the
@@ -180,22 +121,86 @@
       <button id="home" type="button">Recentre</button>
     </div>
 
-    <div class="panel" id="keys">
-      <span class="when-pinned"><kbd>drag</kbd> pan &nbsp; <kbd>wheel</kbd> zoom</span>
-      <span class="when-walking"><kbd>drag</kbd> pan to the next centre &nbsp; <kbd>wheel</kbd> zoom</span>
-      <span><kbd>click</kbd> make it the centre, and copy its name</span>
-      <span><kbd>click the centre</kbd> name it in the box</span>
-      <span><kbd>right-click the centre</kbd> take it off the map</span>
-      <span><kbd>right-click a line into the centre</kbd> part the two it joins</span>
-      <span><kbd>shift-drag between two nodes</kbd> join them</span>
-      <span><kbd>↑↓←→</kbd> nudge the view</span>
-      <!-- These two keys move focus between the map and the name box. Nothing else on the
-           page says the box can be reached, or left, without a click. -->
-      <span><kbd>/</kbd> name a node</span>
-      <span><kbd>Esc</kbd> back to the map</span>
-      <!-- The only link to the transfer page. It sits with the keys because it is the same
-           kind of thing: what you can do besides move around the map. -->
-      <span><a href="/transfer.html">a graph in or out, as a file</a></span>
+    <!-- The line that reports a read or a write. Out here rather than inside the guide,
+         because an error in a shut panel cannot be read. -->
+    <p class="panel" id="status" data-tone="idle">starting…</p>
+
+    <!-- The numbers, the legend and the keys. Each is read once or glanced at, so all three
+         sit behind one button instead of over the map. The button takes the status tone as
+         well, because the numbers behind a failed read are inside it.
+
+         A native popover. Escape, the click outside and the top layer come from the browser,
+         and nothing here listens for any of them. `?` opens it too, in main.ts, because the
+         key list is now inside the thing it lists. -->
+    <button id="guide-toggle" type="button" popovertarget="guide">guide</button>
+
+    <div class="panel" id="guide" popover>
+      <!-- One of these is always hidden. Which one is decided by the checkbox below, in
+           app.css, so the sentence that is true is the one on the page and nothing in
+           main.ts writes copy. -->
+      <p class="sub when-pinned">one map, panned freely — the centre is the node you clicked</p>
+      <p class="sub when-walking">one map, walked by panning — the centre is what you stop on</p>
+      <dl>
+        <dt>at centre</dt>
+        <dd id="stat-centre">—</dd>
+        <dt>its degree</dt>
+        <dd id="stat-degree">0</dd>
+        <dt>nodes placed</dt>
+        <dd id="stat-nodes">0</dd>
+        <dt>edges drawn</dt>
+        <dd id="stat-edges">0</dd>
+        <dt>loading</dt>
+        <dd id="stat-pending">0</dd>
+        <dt>in store</dt>
+        <dd id="stat-total">—</dd>
+      </dl>
+      <!-- Off by default: panning is looking, and the centre is whatever was named. Ticked,
+           the node nearest the middle takes it as the camera moves — and keeps whatever
+           that placed on the way. The box's own checkedness is the state; a checkbox has
+           that natively, so nothing repeats it as an attribute. -->
+      <label class="setting">
+        <input id="walk-by-pan" type="checkbox" />
+        <span>walk by pan</span>
+      </label>
+
+      <div id="legend">
+        <div class="row">
+          <span class="dot accent"></span>
+          <span class="label">the centre</span>
+        </div>
+        <div class="row">
+          <div id="ramp"></div>
+          <span class="label">its neighbours · the rest</span>
+        </div>
+        <div class="row">
+          <span class="dot dashed"></span>
+          <span class="label">more graph behind it</span>
+        </div>
+        <div class="row">
+          <span class="ghost-key"></span>
+          <span class="label">a neighbour off screen</span>
+        </div>
+        <div class="row">
+          <span class="stub-key"></span>
+          <span class="label">edge too long to draw</span>
+        </div>
+      </div>
+
+      <div id="keys">
+        <span class="when-pinned"><kbd>drag</kbd> pan &nbsp; <kbd>wheel</kbd> zoom</span>
+        <span class="when-walking"><kbd>drag</kbd> pan to the next centre &nbsp; <kbd>wheel</kbd> zoom</span>
+        <span><kbd>shift-drag</kbd> join two nodes</span>
+        <span><kbd>↑↓←→</kbd> nudge the view</span>
+        <!-- These two keys move focus between the map and the name box. Nothing else on the
+             page says the box can be reached, or left, without a click. -->
+        <span><kbd>/</kbd> to the name box</span>
+        <span><kbd>Esc</kbd> back to the map</span>
+        <span><kbd>?</kbd> this panel</span>
+        <!-- The only link to the transfer page. It sits with the keys because it is the same
+             kind of thing: what you can do besides move around the map. The label is that
+             page's own <h1>, so the link says where it lands. -->
+        <span><a href="/transfer.html">Graph files</a></span>
+      </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

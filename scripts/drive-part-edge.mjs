@@ -322,6 +322,22 @@ async function main() {
 
   // ---- a line away from the centre ---------------------------------------------------
   console.log("\n5. right-click a line that misses the centre")
+  // A line that misses the centre is drawn only once the map has walked. A fresh boot draws
+  // the centre's own edges and nothing else, so the ghost leg above left nothing here to find.
+  // Take one step first, which is what a reader does: the node clicked becomes the centre and
+  // its own ring comes with it. The window goes back to full so the click lands clear of the
+  // page's own panels.
+  await page.setViewportSize({ width: 1200, height: 820 })
+  await stillCamera(page)
+  await page.evaluate(() => {
+    const cy = document.querySelector("#stage")?._cyreg?.cy
+    const centre = cy.nodes("[tier = 0]").first()
+    cy.nodes()
+      .filter((n) => n.id() !== centre.id() && !n.data("ghost"))
+      .first()
+      .emit("tap")
+  })
+  await stillCamera(page)
   for (let i = 0; i < 9; i++) {
     await page.locator("#zoom-out").click()
     await page.waitForTimeout(200)

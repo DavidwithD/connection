@@ -59,11 +59,19 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | right-click the centre | Rename it, or take it off the map with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
 | shift-drag between two nodes | Join them. A ghost counts as the node it names |
-| click under **islands** | Cross to a component, or go back to one you crossed to before |
+| click the **islands** tab | Pull the island list out from the left edge, or push it back |
+| click a row in it | Cross to a component, or go back to one you crossed to before |
+| click **guide** | Open the numbers, the legend and the keys, in one panel at the bottom right |
 | `↑↓←→` | Nudge the view |
 | **Recentre** | Go back to the centre, wherever the panning left it |
-| **walk by pan** | Tick it, and panning hands the centre to whatever it passes |
+| **walk by pan** | In the guide. Tick it, and panning hands the centre to whatever it passes |
 | `/` | Put the caret in the box at the top, whatever the focus was on |
+| `?` | Open the guide, or shut it. `Esc` and a click outside shut it too |
+
+The map at rest carries four things: the name box, the zoom buttons, the **islands** tab and
+the **guide** button. Everything else is behind one of the last two
+([0041](decisions/0041-the-chrome-comes-off-the-map.md)). The drawer is shut the first time and
+remembers what you leave it as; the guide is shut every time.
 
 Whatever you click becomes the **centre**, where it stands. The map does not jump, and its
 neighbours draw around the node wherever it sits. A drag only changes what is on screen, and the
@@ -283,7 +291,7 @@ is filed under, and every edge against the nodes at its ends.
 
 **Recount the islands** is the repair for the one thing that is allowed to lag. Parting an edge
 may split a component, and working out what it split into is a walk — so it happens after the
-write and can be cut short. If the islands panel lists something that is not there, or misses
+write and can be cut short. If the island drawer lists something that is not there, or misses
 something that is, this is what fixes it. A join never needs it.
 
 An old backup still reads. Files written before the graph moved into the browser key their

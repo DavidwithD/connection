@@ -51,9 +51,9 @@ builds six hundred nodes, which is a sample rather than a specification.
 ## How anyone would tell it worked
 
 - Seed fifty thousand nodes. The map still draws, the search box still answers as you type,
-  and the islands panel still scrolls.
+  and the island drawer still scrolls.
 - A hub at the read ceiling draws as fast as a node with three edges.
-- The totals in the HUD update after a write without the write getting slower as the graph
+- The totals in the guide update after a write without the write getting slower as the graph
   grows.
 - Join two islands: the list loses a row immediately. Part the bridge: the row comes back,
   and if it does not, **Recount the islands** brings it back.
