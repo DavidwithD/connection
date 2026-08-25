@@ -30,7 +30,15 @@ import { MapView } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { RenameBox } from "./rename-box.js"
 import { distance, type Point } from "./placement.js"
-import { railOut, setRailOut, walkByPan, setWalkByPan } from "./settings.js"
+import { CURVATURE } from "./projection.js"
+import {
+  curvature,
+  railOut,
+  setCurvature,
+  setRailOut,
+  setWalkByPan,
+  walkByPan,
+} from "./settings.js"
 import { World, type WorldNode } from "./world.js"
 import { Writes, type Receipt } from "./writes.js"
 
@@ -87,6 +95,8 @@ const railTab = el<HTMLButtonElement>("rail-tab")
 const guide = el<HTMLDivElement>("guide")
 const guideToggle = el<HTMLButtonElement>("guide-toggle")
 const walkToggle = el<HTMLInputElement>("walk-by-pan")
+const curveRow = el<HTMLLabelElement>("curvature-row")
+const curveSlider = el<HTMLInputElement>("curvature")
 /** Shown only when the store holds no graph at all. Raised and lowered by `showTotals`. */
 const empty = el<HTMLDivElement>("empty")
 
@@ -99,9 +109,8 @@ const world = new World()
  * opening on Cytoscape. So the globe is behind a query until those scripts address a canvas
  * instead. Nothing the reader can click chooses a renderer.
  */
-const view: MapSurface = new URLSearchParams(location.search).has("globe")
-  ? new GlobeView(stage, world)
-  : new MapView(stage, world)
+const onGlobe = new URLSearchParams(location.search).has("globe")
+const view: MapSurface = onGlobe ? new GlobeView(stage, world) : new MapView(stage, world)
 
 /**
  * The queue every write to the graph goes through.
@@ -982,6 +991,27 @@ walkToggle.addEventListener("change", () => {
   // HUD still naming the node that was clicked would be the control appearing to do nothing.
   // `claimCentre` rather than the tracker: one application has no flicker to bias against.
   claimCentre()
+})
+
+/**
+ * The slider that curves the surface the map draws on.
+ *
+ * The ends come from projection.ts, so the range is stated in one file. `input` rather than
+ * `change`, so the map curves under the thumb rather than on release. The stored value is read
+ * back rather than reused, because `setCurvature` clamps.
+ *
+ * The row answers to the query that picks the renderer. Cytoscape draws one flat surface, so a
+ * reader on that page would be given a control with nothing to move.
+ */
+curveSlider.min = String(CURVATURE.min)
+curveSlider.max = String(CURVATURE.max)
+curveSlider.value = String(curvature())
+curveRow.hidden = !onGlobe
+view.curve(curvature())
+
+curveSlider.addEventListener("input", () => {
+  setCurvature(Number(curveSlider.value))
+  view.curve(curvature())
 })
 
 function renderedCentre(): { x: number; y: number } {

@@ -93,6 +93,8 @@ export interface MapSurface {
   flyTo: (ghost: string, onArrive: (target: string) => void) => boolean
   /** The window changed shape. */
   resize: () => void
+  /** Curve the surface the map draws on, for a renderer that has one to curve. */
+  curve: (value: number) => void
 }
 
 /**

@@ -349,10 +349,11 @@ export class GlobeView implements MapSurface {
   private R = 1
 
   /**
-   * How curved the surface is drawn.
+   * How curved the surface is drawn. Written by `curve`, and the fallback until it is.
    *
-   * Held here rather than read from settings.ts, which holds no number yet. It is read where
-   * `R` is computed, so a change takes effect on the frame after it is written.
+   * Kept as the setting rather than as a radius, and read where `R` is computed. So a window
+   * that changed shape and a slider that moved both take effect on the next frame. Neither
+   * leaves a stale radius behind.
    */
   private curvature: number = CURVATURE.fallback
 
@@ -695,6 +696,21 @@ export class GlobeView implements MapSurface {
   resize(): void {
     this.measure()
     this.paint()
+  }
+
+  /**
+   * Curve the surface, or flatten it. The reader's slider is what calls this.
+   *
+   * Not clamped here. `curvature()` in settings.ts is the only source, and it clamps.
+   *
+   * `moved` rather than `paint`, because what the window shows has changed. A flatter surface
+   * reaches over less of the world. A neighbour legible at its own seat before the move may
+   * need a doorway after it. Every settle a pan gets is a settle this one needs.
+   */
+  curve(value: number): void {
+    if (value === this.curvature) return
+    this.curvature = value
+    this.moved()
   }
 
   restyle(palette: Palette): void {

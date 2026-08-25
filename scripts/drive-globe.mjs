@@ -109,7 +109,10 @@ async function main() {
   mkdirSync(SHOTS, { recursive: true })
 
   const browser = await chromium.launch({ channel: "chrome", headless: !headed })
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  // A context of its own, not `browser.newPage`, so the storage-blocked leg at the end can open
+  // a second page beside this one. Both pages then share the store this script seeds.
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const page = await context.newPage()
 
   const problems = []
   page.on("console", (message) => {
@@ -408,17 +411,132 @@ async function main() {
     )
   }
 
-  // The curvature range, both ends. The top end draws a nearly flat map, which is why no
-  // separate setting turns the globe off.
-  for (const [name, theme] of [
-    ["light", "light"],
-    ["dark", "dark"],
-  ]) {
+  /** A curvature no default would land on, so the two legs below can tell a read from a guess. */
+  const STORED = 2.4
+
+  /** Move the slider as a drag does, and hand back the frame that followed. */
+  const curve = async (value) => {
+    await page.evaluate((to) => {
+      const slider = document.querySelector("#curvature")
+      slider.value = String(to)
+      slider.dispatchEvent(new Event("input"))
+    }, value)
+    await page.waitForTimeout(70)
+    return frame(page)
+  }
+
+  // Every value the slider can produce, and what each one draws. `R` is the only thing the
+  // setting reaches, so the radius the probe reports is what says the map heard the slider.
+  {
+    const ends = await page.evaluate(() => {
+      const slider = document.querySelector("#curvature")
+      return slider ? [Number(slider.min), Number(slider.max), Number(slider.step)] : null
+    })
+    // The slider is in the guide panel, and that panel is a popover. So this opens it the way a
+    // reader does before asking whether the row is visible.
+    await page.locator("#guide-toggle").click()
+    await page.waitForTimeout(200)
+    const shown = await page.locator("#curvature-row").isVisible()
+    await shot(page, "globe-7-panel")
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(200)
+    if (!ends || !shown) {
+      problems.push("no curvature slider on the page at /?globe")
+      console.log("  curvature: ⚠ the slider is not on the page")
+    } else {
+      const [low, high, step] = ends
+      const box = await page.locator("#stage").boundingBox()
+      // What `radius` in projection.ts computes: the shorter half-span, times the setting.
+      const halfSpan = Math.min(box.width, box.height) / 2
+      const stops = Math.round((high - low) / step)
+      const blank = []
+      const off = []
+      for (let i = 0; i <= stops; i++) {
+        const value = Number((low + i * step).toFixed(4))
+        const seen = await curve(value)
+        if (!read(seen).drawn.length) blank.push(value.toFixed(2))
+        if (Math.abs(seen.radius - value * halfSpan) > 1) off.push(value.toFixed(2))
+      }
+      console.log(
+        `  curvature: ${String(stops + 1)} values from ${low.toFixed(2)} to ${high.toFixed(2)}` +
+          ` · R ${Math.round(low * halfSpan)} → ${Math.round(high * halfSpan)}px` +
+          (blank.length ? ` · ⚠ drew nothing at ${blank.join(", ")}` : " · every one drew") +
+          (off.length ? ` · ⚠ R did not follow the slider at ${off.join(", ")}` : ""),
+      )
+      for (const [name, value] of [
+        ["curved", low],
+        ["flat", high],
+      ]) {
+        const seen = await curve(value)
+        report(`curvature ${value.toFixed(2)}`, seen)
+        await shot(page, `globe-7-${name}`)
+      }
+    }
+  }
+
+  // Both themes, at the map the walk above left. The palette is a page-wide setting, so this
+  // sets the attribute rather than the browser's own preference.
+  await curve(1)
+  for (const theme of ["light", "dark"]) {
     await page.evaluate((value) => {
       document.documentElement.dataset.theme = value
     }, theme)
     await page.waitForTimeout(250)
-    await shot(page, `globe-7-${name}`)
+    await shot(page, `globe-8-${theme}`)
+  }
+
+  // The setting outlives the tab, which is the only reason it is stored. Last, because the
+  // reload takes down the map the legs above walked out.
+  {
+    await curve(STORED)
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await page.waitForFunction(
+      () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
+      { timeout: 20000 },
+    )
+    await page.waitForTimeout(600)
+    const seen = await frame(page)
+    const box = await page.locator("#stage").boundingBox()
+    const want = STORED * (Math.min(box.width, box.height) / 2)
+    const back = Number(await page.locator("#curvature").inputValue())
+    console.log(
+      `  reloaded: the slider is at ${back.toFixed(2)} · R ${Math.round(seen?.radius ?? 0)}px` +
+        (back === STORED ? "" : ` · ⚠ ${STORED.toFixed(2)} was stored`) +
+        (Math.abs((seen?.radius ?? 0) - want) <= 1 ? " · drawn at it" : " · ⚠ drawn at another"),
+    )
+  }
+
+  // A browser with site data blocked still runs the page. Chrome throws on the localStorage
+  // property rather than on the call, which is the throw settings.ts wraps. The value that comes
+  // up is checked against the stored one, which it must not be.
+  {
+    const shut = await context.newPage()
+    shut.on("pageerror", (err) => problems.push(`site data blocked: ${String(err)}`))
+    shut.on("console", (message) => {
+      if (message.type() === "error") problems.push(`site data blocked: ${message.text()}`)
+    })
+    await shut.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", {
+        get() {
+          throw new Error("site data blocked")
+        },
+      })
+    })
+    await shut.goto(`${WEB}/?globe`, { waitUntil: "domcontentloaded" })
+    await shut.waitForFunction(
+      () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
+      { timeout: 20000 },
+    )
+    await shut.waitForTimeout(600)
+    const seen = await frame(shut)
+    const value = Number(await shut.locator("#curvature").inputValue())
+    const drawn = seen ? read(seen).drawn.length : 0
+    console.log(
+      `  site data blocked: the slider is at ${value.toFixed(2)} · ${String(drawn)} drawn` +
+        (drawn ? "" : " · ⚠ the map drew nothing") +
+        (value === STORED ? " · ⚠ it read the stored value" : ""),
+    )
+    await shut.close()
   }
 
   console.log(problems.length ? `  ⚠ ${String(problems.length)} page problem(s)` : "  no page errors")

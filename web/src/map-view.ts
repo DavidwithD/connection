@@ -1245,4 +1245,12 @@ export class MapView implements MapSurface {
   resize(): void {
     this.cy.resize()
   }
+
+  /**
+   * Nothing to curve here. Cytoscape draws one flat surface, whatever the setting says.
+   *
+   * The page applies the reader's setting to whichever renderer is drawing, so the argument is
+   * taken and dropped. This goes when the file does.
+   */
+  curve(): void {}
 }
