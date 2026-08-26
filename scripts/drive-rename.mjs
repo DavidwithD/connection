@@ -13,12 +13,24 @@
  * graph in the browser on the desktop.
  *
  * The camera has to be still before the right-click, because a `viewport` event closes the
- * menu on purpose. That is the same trap drive-part-edge.mjs documents.
+ * menu on purpose. `still` in probe.mjs is what waits for it.
  *
  * What is worth asserting is not the new name on screen. It is the edges surviving under it,
  * the neighbours' degrees not moving, and the name still being there after a reload.
  */
 import { mkdirSync } from "node:fs"
+
+import {
+  MAP,
+  clickOn,
+  emptyPoint,
+  frame,
+  hit,
+  read,
+  realEdges,
+  stageBox,
+  still,
+} from "./probe.mjs"
 
 const { chromium } = await import("playwright").catch(() => {
   console.error("✗ needs playwright: npm i -D playwright --no-save")
@@ -35,75 +47,48 @@ const ok = (pass, what, detail = "") => {
   if (!pass) failures++
 }
 
-/** Wait for the camera to stop. A `viewport` event closes the menu, so this is not optional. */
-const stillCamera = async (page, quiet = 700) => {
-  await page.evaluate(() => {
-    const cy = document.querySelector("#stage")._cyreg.cy
-    window.__moved = performance.now()
-    if (!window.__watching) {
-      cy.on("viewport", () => {
-        window.__moved = performance.now()
-      })
-      window.__watching = true
-    }
-  })
-  await page.waitForFunction((q) => performance.now() - window.__moved > q, quiet, {
-    timeout: 20000,
-  })
+/**
+ * What the map is drawing right now, read off the renderer's own probe and the page's chrome.
+ *
+ * Two reads rather than one. The probe answers for the map, the DOM answers for the panels
+ * around it, and neither can answer the other's half.
+ */
+const drawn = async (page) => {
+  const seen = await frame(page)
+  if (!seen) return null
+  const it = read(seen)
+  const chrome = await page.evaluate(() => ({
+    totals: document.querySelector("#stat-total")?.textContent ?? "",
+    degree: document.querySelector("#stat-degree")?.textContent ?? "",
+    status: document.querySelector("#status")?.textContent ?? "",
+    undos: document.querySelectorAll("#receipts .undo").length,
+    menuOpen: !document.querySelector("#map-menu")?.hidden,
+    editRow: document.querySelector("#map-rename")?.textContent ?? "",
+    boxOpen: !document.querySelector("#map-edit")?.hidden,
+    verdict: document.querySelector("#map-update")?.textContent ?? "",
+    verdictState: document.querySelector("#map-update")?.dataset.state ?? "",
+    armed: document.querySelector("#map-update")?.disabled === false,
+  }))
+  return {
+    centre: seen.accent,
+    centreLabel: it.centre?.label ?? null,
+    ring: it.ring.length,
+    // Every neighbour's degree, by name, so a rename that re-added edges is visible.
+    ringDegrees: Object.fromEntries(it.ring.map((node) => [node.id, node.degree])),
+    realEdges: realEdges(seen).length,
+    ...chrome,
+  }
 }
 
-/** What the map is drawing right now, read off cytoscape's own registration. */
-const drawn = (page) =>
-  page.evaluate(() => {
-    const cy = document.querySelector("#stage")?._cyreg?.cy
-    if (!cy) return null
-    const centre = cy.nodes("[tier = 0]").first()
-    const ring = cy.nodes("[tier = 1]")
-    return {
-      centre: centre.empty() ? null : centre.id(),
-      centreLabel: centre.empty() ? null : centre.data("label"),
-      ring: ring.length,
-      // Every neighbour's degree, by name, so a rename that re-added edges is visible.
-      ringDegrees: Object.fromEntries(ring.map((n) => [n.id(), n.data("degree")])),
-      realEdges: cy.edges().filter((e) => !e.data("ghost") && !e.data("stub")).length,
-      totals: document.querySelector("#stat-total")?.textContent ?? "",
-      degree: document.querySelector("#stat-degree")?.textContent ?? "",
-      status: document.querySelector("#status")?.textContent ?? "",
-      undos: document.querySelectorAll("#receipts .undo").length,
-      menuOpen: !document.querySelector("#map-menu")?.hidden,
-      editRow: document.querySelector("#map-rename")?.textContent ?? "",
-      boxOpen: !document.querySelector("#map-edit")?.hidden,
-      verdict: document.querySelector("#map-update")?.textContent ?? "",
-      verdictState: document.querySelector("#map-update")?.dataset.state ?? "",
-      armed: document.querySelector("#map-update")?.disabled === false,
-    }
-  })
-
-/** Right-click the centre pill, where it is actually on top. */
-const rightClickCentre = (page) =>
-  page.evaluate(() => {
-    const cy = document.querySelector("#stage")?._cyreg?.cy
-    const centre = cy.nodes("[tier = 0]").first()
-    if (centre.empty()) return null
-    const pan = cy.pan()
-    const zoom = cy.zoom()
-    const box = document.querySelector("#stage").getBoundingClientRect()
-    const at = {
-      x: box.left + centre.position().x * zoom + pan.x,
-      y: box.top + centre.position().y * zoom + pan.y,
-    }
-    const under = document.elementFromPoint(at.x, at.y)
-    const fire = (type) =>
-      under?.dispatchEvent(
-        new MouseEvent(type, {
-          bubbles: true, cancelable: true, clientX: at.x, clientY: at.y, button: 2, buttons: 2,
-        }),
-      )
-    fire("mousedown")
-    fire("mouseup")
-    fire("contextmenu")
-    return { id: centre.id(), label: centre.data("label"), under: under?.tagName ?? "nothing" }
-  })
+/** Right-click the centre pill, where the probe says it is drawn. */
+const rightClickCentre = async (page) => {
+  const seen = await frame(page)
+  const centre = seen?.elements.find((one) => one.id === seen.accent)
+  if (!centre?.at) return null
+  const under = await hit(page, centre.at)
+  await clickOn(page, centre.at, { button: "right" })
+  return { id: centre.id, label: centre.label, under: under?.under ?? "nothing" }
+}
 
 /** Type a name into the box and wait for the row to settle on a verdict. */
 const type = async (page, text) => {
@@ -136,8 +121,8 @@ async function main() {
   )
   console.log(`  ${await page.locator("#told").textContent()}`)
 
-  console.log(`→ ${WEB} — the map`)
-  await page.goto(WEB, { waitUntil: "domcontentloaded" })
+  console.log(`→ ${WEB}${MAP} — the map`)
+  await page.goto(`${WEB}${MAP}`, { waitUntil: "domcontentloaded" })
   await page.waitForFunction(
     () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
     { timeout: 20000 },
@@ -146,12 +131,12 @@ async function main() {
 
   // ---- the menu offers an edit ------------------------------------------------------
   console.log("\n1. right-click the centre")
-  await stillCamera(page)
+  await still(page)
   const before = await drawn(page)
-  const hit = await rightClickCentre(page)
+  const landed = await rightClickCentre(page)
   await page.waitForTimeout(200)
   const opened = await drawn(page)
-  ok(!!hit, "found the centre", hit ? `${hit.label} (${hit.under})` : "none drawn")
+  ok(!!landed, "found the centre", landed ? `${landed.label} (${landed.under})` : "none drawn")
   ok(opened.menuOpen, "the menu opened", opened.editRow)
   ok(opened.editRow === `edit ${before.centreLabel}`, "the edit row names it", opened.editRow)
   ok(!opened.boxOpen, "the box is not open yet", `boxOpen=${String(opened.boxOpen)}`)
@@ -215,26 +200,31 @@ async function main() {
   ok(undone.degree === before.degree, "and its degree", `${before.degree} → ${undone.degree}`)
   ok(/undid renaming/.test(undone.status), "the status says so", undone.status)
 
-  // ---- a pan closes an edit in progress -----------------------------------------------
-  console.log("\n6. pan while the box is open")
-  await stillCamera(page)
+  // ---- a camera move closes an edit in progress ---------------------------------------
+  console.log("\n6. move the camera while the box is open")
+  await still(page)
   await rightClickCentre(page)
   await page.waitForTimeout(200)
   await page.locator("#map-rename").click()
   await page.locator("#map-name").fill("Never Written")
   await page.waitForTimeout(200)
   ok((await drawn(page)).boxOpen, "the box is open")
-  await page.evaluate(() => {
-    document.querySelector("#stage")._cyreg.cy.panBy({ x: 40, y: 0 })
-  })
+  // A wheel rather than a drag. main.ts closes the menu on a press anywhere outside it, and
+  // again on a `viewport` event. A drag would not say which of the two rules fired. A wheel is
+  // no press, and it raises `viewport` from the reader's own hand.
+  const open = await emptyPoint(page)
+  const stage = await stageBox(page)
+  ok(!!open, "found somewhere to point at", open ? `${String(open.x)},${String(open.y)}` : "none")
+  await page.mouse.move(stage.x + open.x, stage.y + open.y)
+  await page.mouse.wheel(0, -120)
   await page.waitForTimeout(400)
-  const panned = await drawn(page)
-  ok(!panned.menuOpen, "the pan closed the menu")
-  ok(panned.centreLabel === before.centreLabel, "and wrote nothing", panned.centreLabel)
+  const stirred = await drawn(page)
+  ok(!stirred.menuOpen, "the camera move closed the menu")
+  ok(stirred.centreLabel === before.centreLabel, "and wrote nothing", stirred.centreLabel)
 
   // ---- rename again, so the reload below has something to find ------------------------
   console.log("\n7. rename once more")
-  await stillCamera(page)
+  await still(page)
   await rightClickCentre(page)
   await page.waitForTimeout(200)
   await page.locator("#map-rename").click()

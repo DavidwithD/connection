@@ -123,7 +123,9 @@ scripts/
   docs-gate-selftest.py  proves each bound check still compares something
   prose-lint.py        the writing rule, on newly written text, as it is written
   prose-lint-selftest.py  proves each writing check still fires, and still holds off
+  probe.mjs            how a drive script asks the map what it drew, and where
   drive-drag-join.mjs  drives the shift-drag that joins two nodes, and checks it
+  drive-globe.mjs      drives the globe renderer, and photographs what it draws
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it

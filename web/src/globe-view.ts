@@ -149,8 +149,8 @@ interface Drawn {
   alpha: number
 }
 
-/** One drawn line, by the ids of the two elements it joins. */
-interface Line {
+/** One drawn line, by the ids of the two elements it joins. A drive script reads these too. */
+export interface Line {
   a: string
   b: string
   kind: "edge" | "stub" | "ghost"
@@ -181,13 +181,29 @@ interface Doorways {
  *
  * Registered on the container, the way Cytoscape registers `_cyreg` on its own. A canvas holds
  * no element per node, so a script driving this map has no other handle on what was drawn.
- * `scripts/drive-globe.mjs` is the only reader.
+ * `scripts/probe.mjs` is the only reader.
  *
- * Read-only, and one call for the whole picture. A script that had to ask twice could be told
- * two different frames.
+ * Read-only, and each of the three answers something the other two cannot. `report` is the
+ * whole picture in one call, so a script cannot be told two different frames about it. `at`
+ * runs the pick, which goes through `unproject` in world coordinates. `path` says where one
+ * line's curve runs, which its two ends do not. A line is drawn as `EDGE_STEPS` segments, and
+ * either end of it may be past the limb.
  */
 export interface MapProbe {
   report: () => Drawing
+  at: (x: number, y: number) => Hit
+  path: (a: string, b: string) => (Point | null)[]
+}
+
+/**
+ * What a press at one canvas point would land on.
+ *
+ * The node wins where both are near, which is the order `contextmenu` asks in. So one answer
+ * covers a click and a right-click alike.
+ */
+export interface Hit {
+  node: string | null
+  line: [string, string] | null
 }
 
 /** One frame, as a drive script sees it. */
@@ -204,7 +220,19 @@ export interface Drawing {
   /** The angle past which nothing is on screen, in radians. */
   horizon: number
   accent: string | null
+  /** The node a release would join to, or null. */
+  aimed: string | null
+  /** False while a gesture has the drag to itself. */
+  panning: boolean
+  /**
+   * True while the camera or a ghost is still travelling.
+   *
+   * A flight to where the camera already is moves nothing, so the pose alone cannot say the
+   * map has stopped. It still ends with a `viewport` event, and that closes the menu.
+   */
+  moving: boolean
   elements: DrawnAs[]
+  lines: Line[]
 }
 
 /** One element, as a drive script sees it. */
@@ -213,6 +241,12 @@ export interface DrawnAs {
   kind: "node" | "stub" | "ghost"
   label: string
   tier: number
+  degree: number
+  /** The node has neighbours nobody has read. */
+  more: boolean
+  /** Where it stands in the world, which is where its box was cut. */
+  x: number
+  y: number
   /** Where it is drawn, in canvas pixels, or null once the surface has turned away. */
   at: Point | null
   /** How much of its size the surface left it: 1 at the middle, 0 at the limb. */
@@ -423,7 +457,11 @@ export class GlobeView implements MapSurface {
     const ctx = this.canvas.getContext("2d")
     if (!ctx) throw new Error("the map needs a 2d canvas")
     this.ctx = ctx
-    ;(container as Probed).__map = { report: () => this.report() }
+    ;(container as Probed).__map = {
+      report: () => this.report(),
+      at: (x, y) => this.hitAt(x, y),
+      path: (a, b) => this.pathOf(a, b),
+    }
     this.measure()
     this.bind()
     requestAnimationFrame(this.frame)
@@ -1931,6 +1969,9 @@ export class GlobeView implements MapSurface {
       radius: this.R,
       horizon: edge,
       accent: this.accentId,
+      aimed: this.aimed,
+      panning: this.panEnabled,
+      moving: this.glide !== null || this.flier !== null,
       elements: [...this.elements.values()].map((node) => {
         const flat = this.flatOf(node)
         const at = node.hidden ? null : project(flat.x, flat.y, this.R)
@@ -1939,12 +1980,53 @@ export class GlobeView implements MapSurface {
           kind: node.kind,
           label: node.label,
           tier: node.tier,
+          degree: node.degree,
+          more: node.more,
+          x: node.x,
+          y: node.y,
           at: at ? { x: this.halfW + at.x, y: this.halfH + at.y } : null,
           k: at?.k ?? 0,
           past: this.outsideBy(node.id, edge),
           box: this.boxOf(node),
         }
       }),
+      // Copied rather than handed out, so a reader cannot write to the map through them.
+      lines: [...this.lines.values()].map(({ a, b, kind }) => ({ a, b, kind })),
     }
+  }
+
+  /**
+   * What a press at one canvas point would land on, for a drive script.
+   *
+   * The node first and the line second, which is the order `contextmenu` asks in. A script
+   * aiming at a line has to know whether a pill covers the point it picked. This is the
+   * answer the page itself would give.
+   */
+  private hitAt(x: number, y: number): Hit {
+    const node = this.pick(x, y)
+    if (node) return { node, line: null }
+    const line = this.pickLine(x, y)
+    return { node: null, line: line ? [line.a, line.b] : null }
+  }
+
+  /**
+   * Where one line is drawn, in canvas pixels, at the steps `strokeLines` draws it through.
+   *
+   * Null at a step the surface has turned away. A ghost's lead from a centre past the limb is
+   * drawn from the first step that lands. Its two ends do not say where it runs.
+   */
+  private pathOf(a: string, b: string): (Point | null)[] {
+    const from = this.elements.get(a)
+    const to = this.elements.get(b)
+    if (!from || !to) return []
+    const fa = this.flatOf(from)
+    const fb = this.flatOf(to)
+    const path: (Point | null)[] = []
+    for (let step = 0; step <= EDGE_STEPS; step++) {
+      const along = step / EDGE_STEPS
+      const at = project(fa.x + (fb.x - fa.x) * along, fa.y + (fb.y - fa.y) * along, this.R)
+      path.push(at ? { x: this.halfW + at.x, y: this.halfH + at.y } : null)
+    }
+    return path
   }
 }

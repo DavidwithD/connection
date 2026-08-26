@@ -19,6 +19,8 @@
  */
 import { mkdirSync } from "node:fs"
 
+import { MAP, frame, read } from "./probe.mjs"
+
 const { chromium } = await import("playwright").catch(() => {
   console.error("✗ needs playwright: npm i -D playwright --no-save")
   process.exit(2)
@@ -69,7 +71,7 @@ async function main() {
     if (res.status() >= 400) problems.push(`${String(res.status())} ${res.url()}`)
   })
 
-  console.log(`→ ${WEB}`)
+  console.log(`→ ${WEB}${MAP}`)
 
   // The graph lives in this profile's IndexedDB, and Playwright opens a fresh profile every
   // run — so there is nothing to drive until this writes one. Through the page's own buttons
@@ -84,7 +86,7 @@ async function main() {
   )
   console.log(`  seeded: ${(await page.locator("#told").textContent())?.trim() ?? ""}`)
 
-  await page.goto(WEB, { waitUntil: "domcontentloaded" })
+  await page.goto(`${WEB}${MAP}`, { waitUntil: "domcontentloaded" })
 
   // The map draws its first frame from two reads, so wait for #status to stop saying
   // "starting…" rather than for a fixed time.
@@ -95,78 +97,55 @@ async function main() {
   await shot(page, "1-landed")
 
   // A ghost stands for a neighbour of the centre while that neighbour is off screen, so the
-  // camera is the only thing that can be asked whether it is right. Cytoscape registers itself
-  // on its container, which is how the page can be asked what it drew without the app having
-  // to expose anything for the asking.
-  const drawn = (page) =>
-    page.evaluate(() => {
-      const cy = document.querySelector("#stage")?._cyreg?.cy
-      if (!cy) return null
-      const view = cy.extent()
-      const shows = (box) =>
-        box.x2 >= view.x1 && box.x1 <= view.x2 && box.y2 >= view.y1 && box.y1 <= view.y2
-      const standing = cy.nodes("[?ghost]").map((ghost) => {
-        const id = ghost.id()
-        // Split on the second NUL, as `ghostTarget` in map.ts does. Splitting on a colon
-        // finds nothing, and `slice(0)` then hands back the ghost's own id — so the twin test
-        // below was asking whether each ghost could see itself, and every visible one said yes.
-        const cut = id.indexOf("\0", 2)
-        const target = cut < 0 ? cy.collection() : cy.$id(id.slice(cut + 1))
-        return {
-          label: ghost.data("label"),
-          at: `${String(Math.round(ghost.position("x")))},${String(Math.round(ghost.position("y")))}`,
-          // A doorway nobody can see is no doorway. Its slot comes from `seat`, which walks
-          // outward past whatever is seated and knows nothing about the viewport.
-          shown: shows(ghost.boundingBox()),
-          // The invariant, and the whole reason the rule reads the camera: never both.
-          twin: target.nonempty() && shows(target.boundingBox()),
-        }
-      })
+  // camera is the only thing that can be asked whether it is right. A canvas holds no element
+  // per node, so the answer comes from the probe globe-view.ts registers on its container.
+  const drawn = async (page) => {
+    const seen = await frame(page)
+    if (!seen) return null
+    const it = read(seen)
+    return {
+      zoom: seen.zoom.toFixed(2),
       // The ring is every neighbour of the centre, whatever its distance. How many of them
       // have left the screen is the population the doorways are drawn from — reported rather
-      // than asserted on, because the threshold for raising one is a margin past the edge and
-      // this script does not know it. A neighbour a few units out is correctly bare.
-      const centre = cy.nodes("[tier = 0]").first()
-      const ring = cy.nodes("[tier = 1]")
-      const offScreen = ring.filter((node) => !shows(node.boundingBox()))
-
-      // Slots are handed out so that no two boxes touch, so any overlap here is that
-      // arithmetic being wrong rather than a judgement call about crowding.
-      const boxes = cy.nodes("[?ghost]").map((ghost) => ghost.boundingBox())
-      let collisions = 0
-      for (let i = 0; i < boxes.length; i++) {
-        for (let j = i + 1; j < boxes.length; j++) {
-          const a = boxes[i]
-          const b = boxes[j]
-          if (a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2) collisions++
-        }
-      }
-
-      return {
-        zoom: cy.zoom().toFixed(2),
-        ring: ring.length,
-        offScreen: offScreen.length,
-        collisions,
-        // Whether the centre is in the frame at all. A pan no longer hands the mark to whatever
-        // it passes, so the doorways can be out of sight with the centre they belong to — which
-        // is what makes the warning below a judgement about the picture rather than about one
-        // element.
-        centreShown: centre.nonempty() && shows(centre.boundingBox()),
-        // How many rings the doorways spread over, which is the thing a single circle could not
-        // do. Distance from the centre, bucketed to the nearest ten so that two slots on one
-        // ring count once whatever rounding did to them.
-        rings: new Set(
-          cy.nodes("[?ghost]").map((ghost) => {
-            if (centre.empty()) return 0
-            const dx = ghost.position("x") - centre.position("x")
-            const dy = ghost.position("y") - centre.position("y")
-            return Math.round(Math.hypot(dx, dy) / 10)
-          }),
-        ).size,
-        dashed: cy.edges("[?ghost]").length === 0 || cy.edges("[?ghost]").style("line-style") === "dashed",
-        standing,
-      }
-    })
+      // than asserted on, because the threshold for raising one is a margin past the horizon
+      // and this script does not know it. A neighbour a few degrees out is correctly bare.
+      ring: it.ring.length,
+      offScreen: it.ring.filter((node) => node.past > 0).length,
+      collisions: it.collisions,
+      // Whether the centre is in the frame at all. A pan no longer hands the mark to whatever
+      // it passes, so the doorways can be out of sight with the centre they belong to — which
+      // is what makes the warning below a judgement about the picture rather than about one
+      // element.
+      centreShown: it.centreShown,
+      // How many rings the doorways spread over, which is the thing a single circle could not
+      // do. Distance from the centre, bucketed to the nearest ten so that two slots on one
+      // ring count once whatever rounding did to them.
+      rings: new Set(
+        it.ghosts.map((ghost) =>
+          it.centre
+            ? Math.round(Math.hypot(ghost.x - it.centre.x, ghost.y - it.centre.y) / 10)
+            : 0,
+        ),
+      ).size,
+      // A doorway is a way out only while the line to it is drawn. `reviseGhosts` raises one
+      // lead per ghost, and lowering a ghost takes its lead with it. A ghost without one is
+      // that pairing having come apart.
+      leads: it.ghosts.filter((ghost) =>
+        seen.lines.some((line) => line.kind === "ghost" && line.b === ghost.id),
+      ).length,
+      standing: it.ghosts.map((ghost) => ({
+        label: ghost.label,
+        // The world position, because that is where the slot was cut and nothing on this map
+        // moves. A camera that came back to where it was would hide a doorway that had not.
+        at: `${String(Math.round(ghost.x))},${String(Math.round(ghost.y))}`,
+        // A doorway nobody can see is no doorway. Its slot comes from `seat`, which walks
+        // outward past whatever is seated and knows nothing about the viewport.
+        shown: ghost.at !== null,
+        // The invariant, and the whole reason the rule reads the camera: never both.
+        twin: (it.targetOf(ghost.id)?.past ?? 1) <= 0,
+      })),
+    }
+  }
 
   const report = (what, seen) => {
     if (!seen) return console.log(`  ${what}: no map on the page`)
@@ -181,7 +160,7 @@ async function main() {
         ` · ${String(seen.offScreen)} off screen` +
         ` · ${String(seen.standing.length)} standing in over ${String(seen.rings)} ring(s)` +
         (seen.centreShown ? "" : " · centre out of frame") +
-        (seen.dashed ? "" : " · ⚠ ghost edge is not dashed") +
+        (seen.leads === seen.standing.length ? "" : " · ⚠ a doorway has no line to it") +
         (both.length ? ` · ⚠ drawn twice: ${both.join(", ")}` : "") +
         (stranded.length ? ` · ⚠ raised off screen: ${stranded.join(", ")}` : "") +
         (seen.collisions ? ` · ⚠ ${String(seen.collisions)} overlapping doorway pair(s)` : ""),
@@ -204,41 +183,24 @@ async function main() {
   report("zoomed out", await drawn(page))
   await shot(page, "2-zoomed-out")
 
-  // Zoomed in, most of a neighbourhood has left the screen and the doorways are what is left
-  // of it. What stops a hub drawing a wheel of them is the rings themselves: each holds what
-  // its circumference holds, and only rings the viewport can show are used at all.
+  // Zoomed in, more of the map is off screen and less of it is legible. Doorways do not come
+  // up here on this centre. `GHOST_MARGIN` is a length in screen pixels, so on a curved
+  // surface it is an angle. A ring this tight never crosses it, however far the map is
+  // zoomed. What raises one is the camera leaving the centre, which the pan below does.
   await zoom("zoom-in", 9)
-  const close = report("zoomed in", await drawn(page))
+  report("zoomed in", await drawn(page))
   await shot(page, "3-zoomed-in")
 
-  // A nudge and the nudge back have to land on the same picture. Any viewport rule flips a
-  // node sitting on the edge unless the two thresholds are apart, and any re-derived slot
-  // walks the ghosts already standing around the ring.
-  if (close?.standing.length) {
-    const before = close.standing.map((g) => `${g.label}@${g.at}`).sort()
-    // Not clicked first, deliberately: the handler is on the window and only stands aside for a
-    // text box, and a click on the stage could land on a node and glide the map somewhere else,
-    // which would read as the ring having moved when nothing here moved it.
-    for (const key of ["ArrowRight", "ArrowLeft"]) {
-      await page.keyboard.press(key)
-      await page.waitForTimeout(300)
-    }
-    const after = (await drawn(page))?.standing.map((g) => `${g.label}@${g.at}`).sort() ?? []
-    const same = before.length === after.length && before.every((g, i) => g === after[i])
-    console.log(
-      `  nudge and back: ${String(before.length)} → ${String(after.length)}` +
-        (same ? " · held" : ` · ⚠ the ring moved under it\n    was ${before.join(" ")}\n    now ${after.join(" ")}`),
-    )
-  }
-
-  // Back to where the page opened, so what follows is read at the zoom it was written for.
-  // Through `cy` rather than the buttons: this is putting the camera back, not a thing under
-  // test, and 1.35 to a power does not land on 1.
-  await page.evaluate(() => {
-    const cy = document.querySelector("#stage")?._cyreg?.cy
-    if (cy) cy.zoom(1)
-  })
-  await page.waitForTimeout(400)
+  // Back to where the page opened, so what follows is read at the zoom it was written for. A
+  // reload rather than the buttons, because 1.35 to a power does not land on 1. This is
+  // putting the camera back rather than a thing under test. The graph is in IndexedDB and
+  // survives a reload.
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await page.waitForFunction(
+    () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
+    { timeout: 20000 },
+  )
+  await page.waitForTimeout(600)
 
   // The centre is named and a pan is looking. Both readouts, because handing the mark over was
   // never only a label change — every node the middle crossed had its ring read and seated for
@@ -267,8 +229,32 @@ async function main() {
         ` · ${before.nodes} nodes placed → ${after.nodes}` +
         (held ? " · held" : " · ⚠ the pan named a centre or seated a neighbourhood"),
     )
-    report("panned away", await drawn(page))
+    const away = report("panned away", await drawn(page))
     await shot(page, "4-panned")
+
+    // A nudge and the nudge back have to land on the same picture. Any viewport rule flips a
+    // node sitting on the edge unless the two thresholds are apart, and any re-derived slot
+    // walks the ghosts already standing around the ring. Read here rather than at the zoom
+    // above, because this is where the doorways are standing.
+    if (away?.standing.length) {
+      const was = away.standing.map((g) => `${g.label}@${g.at}`).sort()
+      // Not clicked first, deliberately: the handler is on the window and only stands aside
+      // for a text box, and a click on the stage could land on a node and glide the map
+      // somewhere else, which would read as the ring having moved when nothing here moved it.
+      for (const key of ["ArrowRight", "ArrowLeft"]) {
+        await page.keyboard.press(key)
+        await page.waitForTimeout(300)
+      }
+      const now = (await drawn(page))?.standing.map((g) => `${g.label}@${g.at}`).sort() ?? []
+      // Every doorway standing before the nudge has to be in the same place after it. The set
+      // may grow: the two thresholds are not opposites, so a neighbour that crossed the margin
+      // on the way out keeps its doorway until it is back in view.
+      const gone = was.filter((one) => !now.includes(one))
+      console.log(
+        `  nudge and back: ${String(was.length)} → ${String(now.length)} standing` +
+          (gone.length ? ` · ⚠ moved under it: ${gone.join(" ")}` : " · none moved"),
+      )
+    }
 
     // Recentre, which is the way back to a centre the panning left behind — and it puts the
     // camera where the legs below expect it.

@@ -223,6 +223,7 @@ want to know what it beat, or what nobody knew at the time.
 | [app.css](../../web/app.css) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md) |
 | [vite.config.ts](../../vite.config.ts) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0023](../decisions/0023-the-graph-moves-through-the-page.md) |
 | [docs-gate.py](../../scripts/docs-gate.py) | [checks.md](../checks.md) | [0014](../decisions/0014-binding-the-docs-to-the-code.md) |
+| [probe.mjs](../../scripts/probe.mjs) | this page | [0034](../decisions/0034-what-reading-cannot-check.md), [0042](../decisions/0042-the-map-draws-on-a-sphere.md) |
 | [drive-map.mjs](../../scripts/drive-map.mjs) | this page, [the-centre.md](the-centre.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
 | [drive-join.mjs](../../scripts/drive-join.mjs) | this page, [finding-a-node.md](finding-a-node.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
 | [drive-part-edge.mjs](../../scripts/drive-part-edge.mjs) | this page, [writing-to-the-graph.md](writing-to-the-graph.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |

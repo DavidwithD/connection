@@ -6,17 +6,15 @@
  *   node scripts/drive-globe.mjs         # shots land in .shots/
  *   node scripts/drive-globe.mjs --head  # watch it happen
  *
- * The other five scripts drive Cytoscape, which registers `_cyreg` on its container and gives
- * every node a place in the scene graph. A canvas holds no element per node, so this one asks
- * `globe-view.ts` for its frame through the probe on `#stage`.
- *
- * The page opens at `/?globe`, which is what puts the globe under the map. That query goes
- * when Cytoscape does.
+ * A canvas holds no element per node, so this asks `globe-view.ts` for its frame through the
+ * probe on `#stage`. probe.mjs is that seam, and every drive script in this directory uses it.
  *
  * Playwright is deliberately not a dependency of this project. Install it where you want it
  * and point NODE_PATH at it, or `npm i -D playwright --no-save` for one session.
  */
 import { mkdirSync } from "node:fs"
+
+import { MAP, clickOn, frame, read, stageBox, still } from "./probe.mjs"
 
 const { chromium } = await import("playwright").catch(() => {
   console.error("✗ needs playwright: npm i -D playwright --no-save")
@@ -30,57 +28,6 @@ const headed = process.argv.includes("--head")
 const shot = async (page, name) => {
   await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false })
   console.log(`  📷 ${SHOTS}/${name}.png`)
-}
-
-/** One frame, as globe-view.ts reports it. */
-const frame = (page) =>
-  page.evaluate(() => document.querySelector("#stage")?.__map?.report() ?? null)
-
-/**
- * What the frame says about the doorways, in the terms the rule is written in.
- *
- * `past` is the angle between a node's box and the horizon. Both thresholds the ghost rule
- * uses are readable from it, so this script needs neither number of its own.
- */
-function read(seen) {
-  const by = new Map(seen.elements.map((one) => [one.id, one]))
-  const ghosts = seen.elements.filter((one) => one.kind === "ghost")
-  const nodes = seen.elements.filter((one) => one.kind === "node")
-  const drawn = seen.elements.filter((one) => one.at !== null)
-  const ring = nodes.filter((one) => one.tier === 1)
-
-  // Split on the second NUL, as `ghostTarget` in map.ts does.
-  const targetOf = (id) => {
-    const cut = id.indexOf("\0", 2)
-    return cut < 0 ? null : by.get(id.slice(cut + 1))
-  }
-  // The invariant: a name is never readable at its own position and shown as a ghost at once.
-  const twins = ghosts.filter((ghost) => (targetOf(ghost.id)?.past ?? 1) <= 0)
-  // A doorway the surface has turned away is one nobody can open. Panned away from, the centre
-  // takes its rings with it, so every doorway being gone there is the picture working as
-  // decided. A slot on the far side of an off-middle centre is past the limb for the same
-  // reason: the ring sits in world space. The fault is every slot being past it while the
-  // centre is drawn, which leaves the reader a centre and no way out of it.
-  const centre = seen.accent ? by.get(seen.accent) : undefined
-  const centreShown = centre?.at != null
-  const lost = centreShown && ghosts.length && !ghosts.some((one) => one.at) ? ghosts : []
-
-  // Slots are handed out so that no two boxes touch, so any overlap is that arithmetic being
-  // wrong rather than a judgement about crowding. Measured in world units, where the slots
-  // were cut.
-  let collisions = 0
-  for (let i = 0; i < ghosts.length; i++) {
-    for (let j = i + 1; j < ghosts.length; j++) {
-      const a = ghosts[i]
-      const b = ghosts[j]
-      if (!a.at || !b.at) continue
-      const gapX = Math.abs(a.at.x - b.at.x) - (a.box.w + b.box.w) / 2
-      const gapY = Math.abs(a.at.y - b.at.y) - (a.box.h + b.box.h) / 2
-      if (gapX < 0 && gapY < 0) collisions++
-    }
-  }
-
-  return { ghosts, nodes, drawn, ring, twins, lost, collisions, centreShown }
 }
 
 const degrees = (radians) => `${(radians * (180 / Math.PI)).toFixed(1)}°`
@@ -126,7 +73,7 @@ async function main() {
     if (res.status() >= 400) problems.push(`${String(res.status())} ${res.url()}`)
   })
 
-  console.log(`→ ${WEB}/?globe`)
+  console.log(`→ ${WEB}${MAP}`)
 
   // Playwright opens a fresh profile every run, so there is nothing to draw until this writes
   // a graph. Through the page's own buttons, because that is the only seam a browser has.
@@ -139,7 +86,7 @@ async function main() {
   )
   console.log(`  seeded: ${(await page.locator("#told").textContent())?.trim() ?? ""}`)
 
-  await page.goto(`${WEB}/?globe`, { waitUntil: "domcontentloaded" })
+  await page.goto(`${WEB}${MAP}`, { waitUntil: "domcontentloaded" })
   await page.waitForFunction(
     () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
     { timeout: 20000 },
@@ -155,19 +102,13 @@ async function main() {
   report("landed", first)
   await shot(page, "globe-1-landed")
 
-  /** Click where the probe says an element is drawn. A canvas has nothing to address by name. */
-  const clickOn = async (element) => {
-    const box = await page.locator("#stage").boundingBox()
-    await page.mouse.click(box.x + element.at.x, box.y + element.at.y)
-  }
-
   // Walk three steps out from the opening node, so the map holds more than one neighbourhood.
   // A read runs for the centre only, on arrival, so clicking is the only way to grow it.
   for (let step = 0; step < 3; step++) {
     const seen = await frame(page)
     const next = read(seen).ring.find((one) => one.at !== null)
     if (!next) break
-    await clickOn(next)
+    await clickOn(page, next.at)
     await page.waitForTimeout(900)
   }
   report("walked", await frame(page))
@@ -175,7 +116,7 @@ async function main() {
   // The pointer, at the simplest picture this script will see. A disc under the pointer draws
   // as its name, so the footprint the renderer reports for it grows from a disc to a pill.
   {
-    const stage = await page.locator("#stage").boundingBox()
+    const stage = await stageBox(page)
     const seen = await frame(page)
     const disc = seen.elements.find((one) => one.kind === "node" && one.tier >= 2 && one.at)
     if (!disc) {
@@ -197,7 +138,7 @@ async function main() {
   // The right-click. Only the centre opens a menu, and that is main.ts's rule rather than this
   // renderer's. What is under test here is a right-click finding the node it landed on.
   {
-    const stage = await page.locator("#stage").boundingBox()
+    const stage = await stageBox(page)
     const seen = await frame(page)
     const centre = seen.elements.find((one) => one.id === seen.accent)
     await page.mouse.click(stage.x + centre.at.x, stage.y + centre.at.y, { button: "right" })
@@ -214,7 +155,7 @@ async function main() {
   // The shift-drag that joins two nodes. Every press event the page hears is in this one
   // gesture. The press on a node, the moves under it, the crossing onto a second, the release.
   {
-    const stage = await page.locator("#stage").boundingBox()
+    const stage = await stageBox(page)
     const seen = await frame(page)
     const ring = read(seen).ring.filter((one) => one.at)
     const [from, to] = [ring[0], ring[ring.length - 1]]
@@ -307,9 +248,7 @@ async function main() {
   // band that holds it: without one, a node sitting on the horizon flips on every pan.
   const standing = (seen) =>
     read(seen)
-      .ghosts.map(
-        (g) => `${g.label}@${String(Math.round(g.at?.x ?? -1))},${String(Math.round(g.at?.y ?? -1))}`,
-      )
+      .ghosts.map((g) => `${g.label}@${String(Math.round(g.x))},${String(Math.round(g.y))}`)
       .sort()
   if (peak.ghosts.length) {
     const before = standing(await frame(page))
@@ -349,7 +288,7 @@ async function main() {
       console.log("  flight: no doorway drawn, so nothing to fly to")
     } else {
       const before = await page.locator("#stat-centre").textContent()
-      await clickOn(doorway)
+      await clickOn(page, doorway.at)
       await page.waitForTimeout(1800)
       const after = await page.locator("#stat-centre").textContent()
       console.log(
@@ -371,7 +310,7 @@ async function main() {
     if (!ring.length) break
     // Not the same slot every time, so the walk spreads instead of going back and forth over
     // ground already read.
-    await clickOn(ring[(step * 3) % ring.length])
+    await clickOn(page, ring[(step * 3) % ring.length].at)
     await page.waitForTimeout(420)
   }
   await page.waitForTimeout(900)
@@ -445,7 +384,7 @@ async function main() {
       console.log("  curvature: ⚠ the slider is not on the page")
     } else {
       const [low, high, step] = ends
-      const box = await page.locator("#stage").boundingBox()
+      const box = await stageBox(page)
       // What `radius` in projection.ts computes: the shorter half-span, times the setting.
       const halfSpan = Math.min(box.width, box.height) / 2
       const stops = Math.round((high - low) / step)
@@ -463,12 +402,17 @@ async function main() {
           (blank.length ? ` · ⚠ drew nothing at ${blank.join(", ")}` : " · every one drew") +
           (off.length ? ` · ⚠ R did not follow the slider at ${off.join(", ")}` : ""),
       )
+      // Settled before each read, unlike the sweep above. A curvature change is a viewport
+      // change, so the doorways are revised on the settle it schedules rather than on the
+      // frame that drew it. A read inside that window finds a ghost still standing over a
+      // neighbour the flatter surface has already brought back.
       for (const [name, value] of [
         ["curved", low],
         ["flat", high],
       ]) {
-        const seen = await curve(value)
-        report(`curvature ${value.toFixed(2)}`, seen)
+        await curve(value)
+        await still(page)
+        report(`curvature ${value.toFixed(2)}`, await frame(page))
         await shot(page, `globe-7-${name}`)
       }
     }
@@ -496,7 +440,7 @@ async function main() {
     )
     await page.waitForTimeout(600)
     const seen = await frame(page)
-    const box = await page.locator("#stage").boundingBox()
+    const box = await stageBox(page)
     const want = STORED * (Math.min(box.width, box.height) / 2)
     const back = Number(await page.locator("#curvature").inputValue())
     console.log(
@@ -522,7 +466,7 @@ async function main() {
         },
       })
     })
-    await shut.goto(`${WEB}/?globe`, { waitUntil: "domcontentloaded" })
+    await shut.goto(`${WEB}${MAP}`, { waitUntil: "domcontentloaded" })
     await shut.waitForFunction(
       () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
       { timeout: 20000 },
