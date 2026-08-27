@@ -46,6 +46,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0040](0040-a-node-under-a-new-name.md) | A node under a new name | 🔵 Proposed |
 | [0041](0041-the-chrome-comes-off-the-map.md) | The chrome comes off the map | 🔵 Proposed |
 | [0042](0042-the-map-draws-on-a-sphere.md) | The map draws on a sphere | 🔵 Proposed |
+| [0043](0043-off-screen-becomes-an-angle.md) | Off screen becomes an angle | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

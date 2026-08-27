@@ -1,6 +1,6 @@
 # 0025 — When a ghost stands
 
-**Status:** 🔵 Proposed
+**Status:** 🔵 Proposed — one row amended by [0043](0043-off-screen-becomes-an-angle.md)
 **Date:** 2026-08-11
 **Deciders:** David HL
 

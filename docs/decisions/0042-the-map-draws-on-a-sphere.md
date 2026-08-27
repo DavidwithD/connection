@@ -1,6 +1,6 @@
 # 0042 — The map draws on a sphere
 
-**Status:** 🔵 Proposed — _decision pending_
+**Status:** 🔵 Proposed — one row amended by [0043](0043-off-screen-becomes-an-angle.md)
 **Date:** 2026-08-25
 **Deciders:** DavidwithD
 
@@ -64,4 +64,4 @@ Ghosts carry more weight, since a node past the limb is unreachable except by pa
 
 ## TODO
 - [ ] Weigh the three accepted costs against a reader, then set the status
-- [ ] Point at this record from the page describing the new renderer
+- [x] Point at this record from the page describing the new renderer
