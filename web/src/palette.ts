@@ -2,6 +2,15 @@
 
 export interface Palette {
   surface: string
+  /**
+   * The page behind the map, which a drawn surface sits on.
+   *
+   * The same `--plane` app.css gives every recessed box, so the ground around a surface reads
+   * as page rather than as a second map.
+   */
+  plane: string
+  /** The line app.css rules a box off with. A drawn surface is outlined in it. */
+  hairline: string
   /** The centre node. A reserved accent. It is not a step on the hop ramp. */
   accent: string
   accentRing: string
@@ -35,6 +44,8 @@ export interface Palette {
 
 const LIGHT: Palette = {
   surface: "#fcfcfb",
+  plane: "#f9f9f7",
+  hairline: "rgba(11, 11, 11, 0.1)",
   accent: "#eb6834",
   accentRing: "#fcfcfb",
   inkOnAccent: "#0b0b0b",
@@ -49,6 +60,8 @@ const LIGHT: Palette = {
 
 const DARK: Palette = {
   surface: "#1a1a19",
+  plane: "#0d0d0d",
+  hairline: "rgba(255, 255, 255, 0.1)",
   accent: "#d95926",
   accentRing: "#1a1a19",
   inkOnAccent: "#0b0b0b",

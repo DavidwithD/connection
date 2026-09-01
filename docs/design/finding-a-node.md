@@ -73,8 +73,8 @@ now appear inside a part and make two different pairs produce one string —
 one drawn element with no error anywhere.
 
 One rule covers all of it: **join with NUL**. No name can hold one, so nothing needs escaping,
-and the sites that build composite element ids in [map-view.ts](../../web/src/map-view.ts) all
-use it. The store itself needs none of this — an edge is keyed on the pair `["a", "b"]`, which
+and every site that builds a composite element id uses it — a ghost's in
+[map.ts](../../web/src/map.ts), a stub's and a lead's in whichever renderer drew them. The store itself needs none of this — an edge is keyed on the pair `["a", "b"]`, which
 is a real composite key rather than a joined string, and arrays compare element by element.
 
 ## The box hands back nodes, not text

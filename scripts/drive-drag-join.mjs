@@ -17,6 +17,18 @@
  */
 import { mkdirSync } from "node:fs"
 
+import {
+  MAP,
+  clickOn,
+  emptyPoint,
+  frame,
+  joined,
+  read,
+  reachable,
+  realEdges,
+  stageBox,
+} from "./probe.mjs"
+
 const { chromium } = await import("playwright").catch(() => {
   console.error("✗ needs playwright: npm i -D playwright --no-save")
   process.exit(2)
@@ -32,17 +44,21 @@ const ok = (pass, what, detail = "") => {
   if (!pass) failures++
 }
 
-/** What the page is showing: the graph, the receipts, and the state of the drag. */
-const drawn = (page) =>
-  page.evaluate(() => {
-    const cy = document.querySelector("#stage")?._cyreg?.cy
-    if (!cy) return null
+/**
+ * What the page is showing: the graph, the receipts, and the state of the drag.
+ *
+ * Two reads rather than one. The probe answers for the map, the DOM answers for the arrow and
+ * the panels, and neither can answer the other's half.
+ */
+const drawn = async (page) => {
+  const seen = await frame(page)
+  if (!seen) return null
+  const chrome = await page.evaluate(() => {
     // The gradient's ends are the arrow's ends. It is aimed with the shape, so reading it back
     // is reading where the arrow was actually drawn.
     const ink = document.querySelector("#aim-ink")
     const box = document.querySelector("#aim")
     return {
-      realEdges: cy.edges().filter((e) => !e.data("ghost") && !e.data("stub")).length,
       totals: document.querySelector("#stat-total")?.textContent ?? "",
       status: document.querySelector("#status")?.textContent ?? "",
       receipts: document.querySelectorAll("#receipts .receipt").length,
@@ -64,11 +80,17 @@ const drawn = (page) =>
       // The page hides the pointer for the length of the drag. A gesture that failed to disarm
       // would leave the reader with no cursor at all.
       cursor: getComputedStyle(document.querySelector("#stage")).cursor,
-      aimed: cy.nodes("[?aim]").map((n) => n.id()).join(","),
-      panning: cy.userPanningEnabled(),
-      pan: `${String(Math.round(cy.pan().x))},${String(Math.round(cy.pan().y))}`,
     }
   })
+  return {
+    realEdges: realEdges(seen).length,
+    aimed: seen.aimed ?? "",
+    panning: seen.panning,
+    // Where the middle of the window looks, which is the whole of this camera's position.
+    pan: `${String(Math.round(seen.centre.x))},${String(Math.round(seen.centre.y))}`,
+    ...chrome,
+  }
+}
 
 /**
  * The centre, and a node with no edge to it. Both clear of the page's own furniture.
@@ -78,145 +100,67 @@ const drawn = (page) =>
  * the centre holds all of its own edges, which is what `centreHasAll` reports.
  *
  * The key check is the second half. A tier is recomputed when the centre changes. A join made
- * since then leaves a node still marked unjoined, and the element carrying the pair says so.
+ * since then leaves a node still marked unjoined, and the map's own lines say so.
  */
-const pickPair = (page) =>
-  page.evaluate(() => {
-    const NUL = String.fromCodePoint(0)
-    const cy = document.querySelector("#stage")._cyreg.cy
-    const box = document.querySelector("#stage").getBoundingClientRect()
-    const pan = cy.pan()
-    const zoom = cy.zoom()
-    const at = (node) => {
-      const p = node.position()
-      return { x: box.left + p.x * zoom + pan.x, y: box.top + p.y * zoom + pan.y }
-    }
-    // Clear means the canvas is the topmost thing there. A panel over a node takes the press,
-    // exactly as it would from a reader.
-    const clear = (p) =>
-      p.x > 0 &&
-      p.y > 0 &&
-      p.x < innerWidth &&
-      p.y < innerHeight &&
-      document.elementFromPoint(p.x, p.y)?.tagName === "CANVAS"
-    const joined = (a, b) => {
-      const key = a < b ? `${a}${NUL}${b}` : `${b}${NUL}${a}`
-      return cy.elements().some((el) => el.id().includes(key))
-    }
-
-    const centre = cy.nodes("[tier = 0]").first()
-    if (centre.empty()) return null
-    const from = at(centre)
-    if (!clear(from)) return null
-    const far = cy
-      .nodes()
-      .filter((n) => !n.data("ghost") && !n.data("stub") && Number(n.data("tier")) >= 2)
-      .toArray()
-    for (const b of far) {
-      if (joined(centre.id(), b.id())) continue
-      const to = at(b)
-      if (!clear(to)) continue
-      return {
-        centreHasAll: !centre.data("more"),
-        a: { id: centre.id(), label: centre.data("label"), ...from },
-        b: { id: b.id(), label: b.data("label"), ...to },
-      }
-    }
-    return null
-  })
+const pickPair = async (page) => {
+  const seen = await frame(page)
+  if (!seen?.accent) return null
+  const centre = read(seen).centre
+  if (!centre) return null
+  if ((await reachable(page, [centre]))?.id !== centre.id) return null
+  const far = seen.elements.filter(
+    (one) => one.kind === "node" && one.tier >= 2 && !joined(seen, centre.id, one.id),
+  )
+  const to = await reachable(page, far)
+  if (!to) return null
+  return {
+    centreHasAll: !centre.more,
+    a: { id: centre.id, label: centre.label, ...centre.at },
+    b: { id: to.id, label: to.label, ...to.at },
+  }
+}
 
 /** A pair the graph has already joined, drawn as one line, with both ends clear. */
-const pickJoined = (page) =>
-  page.evaluate(() => {
-    const cy = document.querySelector("#stage")._cyreg.cy
-    const box = document.querySelector("#stage").getBoundingClientRect()
-    const pan = cy.pan()
-    const zoom = cy.zoom()
-    const at = (node) => {
-      const p = node.position()
-      return { x: box.left + p.x * zoom + pan.x, y: box.top + p.y * zoom + pan.y }
+const pickJoined = async (page) => {
+  const seen = await frame(page)
+  if (!seen) return null
+  const by = new Map(seen.elements.map((one) => [one.id, one]))
+  for (const line of realEdges(seen)) {
+    const source = by.get(line.a)
+    const target = by.get(line.b)
+    if (!source?.at || !target?.at) continue
+    // One end at a time. `reachable` returns the first of a set the pointer can reach. A
+    // single call over the pair would pass a line with one end under a pill.
+    if ((await reachable(page, [source]))?.id !== source.id) continue
+    if ((await reachable(page, [target]))?.id !== target.id) continue
+    return {
+      a: { id: source.id, label: source.label, ...source.at },
+      b: { id: target.id, label: target.label, ...target.at },
     }
-    const clear = (p) =>
-      p.x > 0 &&
-      p.y > 0 &&
-      p.x < innerWidth &&
-      p.y < innerHeight &&
-      document.elementFromPoint(p.x, p.y)?.tagName === "CANVAS"
-    const lines = cy.edges().filter((e) => !e.data("ghost") && !e.data("stub")).toArray()
-    for (const edge of lines) {
-      const [s, t] = [edge.source(), edge.target()]
-      const from = at(s)
-      const to = at(t)
-      if (!clear(from) || !clear(to)) continue
-      return {
-        a: { id: s.id(), label: s.data("label"), ...from },
-        b: { id: t.id(), label: t.data("label"), ...to },
-      }
-    }
-    return null
-  })
-
-/** A point on the canvas with no element under it, for a release that should write nothing. */
-const emptyPoint = (page) =>
-  page.evaluate(() => {
-    const cy = document.querySelector("#stage")._cyreg.cy
-    const box = document.querySelector("#stage").getBoundingClientRect()
-    const pan = cy.pan()
-    const zoom = cy.zoom()
-    const renderer = cy.renderer()
-    for (let y = 80; y < innerHeight - 80; y += 40) {
-      for (let x = 80; x < innerWidth - 80; x += 40) {
-        if (document.elementFromPoint(x, y)?.tagName !== "CANVAS") continue
-        const near = renderer.findNearestElement(
-          (x - box.left - pan.x) / zoom,
-          (y - box.top - pan.y) / zoom,
-          true,
-          false,
-        )
-        if (!near) return { x, y }
-      }
-    }
-    return null
-  })
-
-/**
- * A clear point on one of the centre's neighbours, to click and stand on.
- *
- * A map that has just opened draws the centre and its ring, and nothing else. So every node on
- * screen is joined to the centre already, and there is no pair for a drag to make. Walking one
- * step puts a second ring on the map, and the ring left behind is where a far end comes from.
- */
-const stepTo = (page) =>
-  page.evaluate(() => {
-    const cy = document.querySelector("#stage")._cyreg.cy
-    const box = document.querySelector("#stage").getBoundingClientRect()
-    const pan = cy.pan()
-    const zoom = cy.zoom()
-    for (const node of cy.nodes("[tier = 1]").toArray()) {
-      const p = node.position()
-      const at = { x: box.left + p.x * zoom + pan.x, y: box.top + p.y * zoom + pan.y }
-      if (at.x < 0 || at.y < 0 || at.x > innerWidth || at.y > innerHeight) continue
-      if (document.elementFromPoint(at.x, at.y)?.tagName !== "CANVAS") continue
-      return { id: node.id(), label: node.data("label"), ...at }
-    }
-    return null
-  })
+  }
+  return null
+}
 
 /**
  * Press on one point, drag to another, release. Reports what the page looked like mid-drag,
  * which is the only moment the arrow exists.
+ *
+ * Both points are in canvas pixels, which is what the probe answers in. `drag` converts to
+ * the viewport here, so nothing above this line holds two coordinate systems.
  */
 async function drag(page, from, to, { shift = true, shot = null } = {}) {
+  const box = await stageBox(page)
+  const move = (at, options) => page.mouse.move(box.x + at.x, box.y + at.y, options)
   if (shift) await page.keyboard.down("Shift")
-  await page.mouse.move(from.x, from.y)
+  await move(from)
   await page.mouse.down()
-  await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 6 })
+  await move({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, { steps: 6 })
   const halfway = await drawn(page)
   // The arrow exists only while the button is down, so this is the one place to photograph it.
   // Halfway rather than at the end. The head is over open ground here, and under the far node's
   // own pill by the time the drag arrives.
   if (shot) await page.screenshot({ path: `${SHOTS}/${shot}.png` })
-  await page.mouse.move(to.x, to.y, { steps: 6 })
+  await move(to, { steps: 6 })
   const over = await drawn(page)
   await page.mouse.up()
   if (shift) await page.keyboard.up("Shift")
@@ -228,11 +172,6 @@ async function main() {
   mkdirSync(SHOTS, { recursive: true })
   const browser = await chromium.launch({ channel: "chrome", headless: !headed })
   const page = await browser.newPage({ viewport: { width: 1200, height: 820 } })
-
-  const innerHalf = await page.evaluate(() => ({
-    width: innerWidth / 2,
-    height: innerHeight / 2,
-  }))
 
   const problems = []
   page.on("pageerror", (err) => problems.push(String(err)))
@@ -255,8 +194,8 @@ async function main() {
   )
   console.log(`  ${await page.locator("#told").textContent()}`)
 
-  console.log(`→ ${WEB} — the map`)
-  await page.goto(WEB, { waitUntil: "domcontentloaded" })
+  console.log(`→ ${WEB}${MAP} — the map`)
+  await page.goto(`${WEB}${MAP}`, { waitUntil: "domcontentloaded" })
   await page.waitForFunction(
     () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
     { timeout: 20000 },
@@ -264,14 +203,18 @@ async function main() {
   await page.waitForTimeout(900)
 
   // ---- one step, so there is a pair to make ------------------------------------------
+  // A map that has just opened draws the centre and its ring, and nothing else. Every node on
+  // screen is joined to the centre already, so there is no pair for a drag to make. Walking
+  // one step puts a second ring on the map, and the ring left behind is where a far end comes
+  // from.
   console.log("\n0. walk one step, so two rings are on the map")
-  const step = await stepTo(page)
+  const step = await reachable(page, read(await frame(page)).ring)
   ok(!!step, "found a neighbour to stand on", step ? step.label : "none clickable")
   if (!step) {
     await browser.close()
     process.exit(1)
   }
-  await page.mouse.click(step.x, step.y)
+  await clickOn(page, step.at)
   await page.waitForFunction(
     () => !/loading/.test(document.querySelector("#status")?.textContent ?? ""),
     { timeout: 20000 },
@@ -374,15 +317,16 @@ async function main() {
   const tiny = await pickPair(page)
   const out = await emptyPoint(page)
   ok(!!tiny && !!out, "found a node to press on", tiny ? tiny.a.label : "none")
+  const stage = await stageBox(page)
   await page.keyboard.down("Shift")
-  await page.mouse.move(tiny.a.x, tiny.a.y)
+  await page.mouse.move(stage.x + tiny.a.x, stage.y + tiny.a.y)
   await page.mouse.down()
   // Six pixels, which is under the length that earns a shaft. Only the head is drawn here,
   // and it is the whole of what the reader has to aim with.
-  await page.mouse.move(tiny.a.x + 6, tiny.a.y + 4, { steps: 2 })
+  await page.mouse.move(stage.x + tiny.a.x + 6, stage.y + tiny.a.y + 4, { steps: 2 })
   const barely = await drawn(page)
   // Out to open ground before letting go, so this cannot land as a click on the node.
-  await page.mouse.move(out.x, out.y, { steps: 6 })
+  await page.mouse.move(stage.x + out.x, stage.y + out.y, { steps: 6 })
   await page.mouse.up()
   await page.keyboard.up("Shift")
   await page.waitForTimeout(600)
@@ -395,10 +339,11 @@ async function main() {
   // ---- the map still pans ------------------------------------------------------------
   console.log("\n6. a plain drag still pans")
   const still = await drawn(page)
-  // Aim inward from wherever the press lands, so the drag cannot leave the window.
+  // Aim inward from wherever the press lands, so the drag cannot leave the canvas.
+  const canvas = await stageBox(page)
   const inward = (at) => ({
-    x: at.x < innerHalf.width ? at.x + 140 : at.x - 140,
-    y: at.y < innerHalf.height ? at.y + 90 : at.y - 90,
+    x: at.x < canvas.width / 2 ? at.x + 140 : at.x - 140,
+    y: at.y < canvas.height / 2 ? at.y + 90 : at.y - 90,
   })
 
   const open = await emptyPoint(page)

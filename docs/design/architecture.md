@@ -22,11 +22,18 @@ layer and an HTTP server. There is one process now, and the seam every page read
 [store/index.ts](../../web/src/store/index.ts) — the same eleven functions the wire shape had,
 with store calls in their bodies instead of `fetch`.
 
-The rule repeats inside `web/src`. [placement.ts](../../web/src/placement.ts) and
-[world.ts](../../web/src/world.ts) compute geometry and hold state with no renderer present,
-[map-view.ts](../../web/src/map-view.ts) is the only file that knows Cytoscape exists, and
-[palette.ts](../../web/src/palette.ts) is the sole authority on colour. Replacing the renderer
-is meant to touch one file.
+The rule repeats inside `web/src`. [placement.ts](../../web/src/placement.ts),
+[projection.ts](../../web/src/projection.ts) and [world.ts](../../web/src/world.ts) compute
+geometry and hold state with no renderer present, and
+[palette.ts](../../web/src/palette.ts) is the sole authority on colour. The page calls
+[map.ts](../../web/src/map.ts), and never a renderer by name.
+
+Two renderers stand behind that surface while
+[ADR 0042](../decisions/0042-the-map-draws-on-a-sphere.md) is being built.
+[map-view.ts](../../web/src/map-view.ts) is the only file that knows Cytoscape exists.
+[globe-view.ts](../../web/src/globe-view.ts) draws the projected surface on a canvas of its
+own. `map.ts` also holds the numbers the two have to draw alike — the doorway margin, the pill
+geometry, the flight timings.
 
 ## Two stores
 
@@ -197,7 +204,10 @@ want to know what it beat, or what nobody knew at the time.
 | [store/index.ts](../../web/src/store/index.ts) | this page | [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
 | [placement.ts](../../web/src/placement.ts) | [the-centre.md](the-centre.md) | [0003](../decisions/0003-graph-exploration-demo-stack.md), [0027](../decisions/0027-a-ring-holds-what-it-holds.md) |
 | [world.ts](../../web/src/world.ts) | this page, [the-centre.md](the-centre.md), [writing-to-the-graph.md](writing-to-the-graph.md) | [0003](../decisions/0003-graph-exploration-demo-stack.md), [0009](../decisions/0009-the-first-write-outside-the-seed.md), [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) |
+| [projection.ts](../../web/src/projection.ts) | this page | [0042](../decisions/0042-the-map-draws-on-a-sphere.md), [0043](../decisions/0043-off-screen-becomes-an-angle.md) |
+| [map.ts](../../web/src/map.ts) | this page | [0042](../decisions/0042-the-map-draws-on-a-sphere.md) |
 | [map-view.ts](../../web/src/map-view.ts) | [the-centre.md](the-centre.md) | [0003](../decisions/0003-graph-exploration-demo-stack.md), [0004](../decisions/0004-the-centre-and-its-neighbourhood.md), [0012](../decisions/0012-the-name-is-the-node.md), [0025](../decisions/0025-when-a-ghost-stands.md), [0027](../decisions/0027-a-ring-holds-what-it-holds.md) |
+| [globe-view.ts](../../web/src/globe-view.ts) | this page | [0042](../decisions/0042-the-map-draws-on-a-sphere.md), [0043](../decisions/0043-off-screen-becomes-an-angle.md) |
 | [palette.ts](../../web/src/palette.ts) | this page, [the-centre.md](the-centre.md) | [0012](../decisions/0012-the-name-is-the-node.md) |
 | [settings.ts](../../web/src/settings.ts) | this page, [the-centre.md](the-centre.md) | [0032](../decisions/0032-the-centre-is-named.md) |
 | [explore.ts](../../web/src/explore.ts) | this page, [the-centre.md](the-centre.md) | [0006](../decisions/0006-only-the-centre-reads.md), [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
@@ -213,10 +223,12 @@ want to know what it beat, or what nobody knew at the time.
 | [app.css](../../web/app.css) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md) |
 | [vite.config.ts](../../vite.config.ts) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0023](../decisions/0023-the-graph-moves-through-the-page.md) |
 | [docs-gate.py](../../scripts/docs-gate.py) | [checks.md](../checks.md) | [0014](../decisions/0014-binding-the-docs-to-the-code.md) |
+| [probe.mjs](../../scripts/probe.mjs) | this page | [0034](../decisions/0034-what-reading-cannot-check.md), [0042](../decisions/0042-the-map-draws-on-a-sphere.md) |
 | [drive-map.mjs](../../scripts/drive-map.mjs) | this page, [the-centre.md](the-centre.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
 | [drive-join.mjs](../../scripts/drive-join.mjs) | this page, [finding-a-node.md](finding-a-node.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
 | [drive-part-edge.mjs](../../scripts/drive-part-edge.mjs) | this page, [writing-to-the-graph.md](writing-to-the-graph.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
 | [drive-drag-join.mjs](../../scripts/drive-drag-join.mjs) | this page, [writing-to-the-graph.md](writing-to-the-graph.md) | [0034](../decisions/0034-what-reading-cannot-check.md) |
+| [drive-globe.mjs](../../scripts/drive-globe.mjs) | this page | [0034](../decisions/0034-what-reading-cannot-check.md), [0042](../decisions/0042-the-map-draws-on-a-sphere.md) |
 | [hooks/pre-commit](../../scripts/hooks/pre-commit) | [checks.md](../checks.md), the README's prerequisites | [0015](../decisions/0015-bash-as-the-script-shell.md), [0016](../decisions/0016-the-gates-run-in-ci.md) |
 | [ci.yml](../../.github/workflows/ci.yml) | [checks.md](../checks.md) | [0016](../decisions/0016-the-gates-run-in-ci.md) |
 | [using-the-demo.md](../using-the-demo.md) | [docs/README.md](../README.md) | [0026](../decisions/0026-a-fourth-kind-of-document.md) |

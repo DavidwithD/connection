@@ -16,10 +16,15 @@
  * The browser starts on a fresh profile, so IndexedDB is empty and every name here is created
  * by the run. It writes nothing to the graph you use.
  *
+ * The panel is above the map and does not touch it. The page it sits on is the map, and a
+ * renderer that threw on boot would land in the console errors this run counts.
+ *
  * Playwright is not a dependency of this project. Install it for one session:
  * `npm i -D playwright --no-save`. It uses the Chrome already on the machine.
  */
 import { mkdirSync } from "node:fs"
+
+import { MAP } from "./probe.mjs"
 
 const { chromium } = await import("playwright").catch(() => {
   console.error("✗ needs playwright: npm i -D playwright --no-save")
@@ -117,8 +122,8 @@ async function main() {
     }
   })
 
-  console.log(`→ ${WEB}`)
-  await page.goto(WEB, { waitUntil: "domcontentloaded" })
+  console.log(`→ ${WEB}${MAP}`)
+  await page.goto(`${WEB}${MAP}`, { waitUntil: "domcontentloaded" })
   await page.waitForFunction(
     () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
     { timeout: 20000 },

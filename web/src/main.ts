@@ -22,13 +22,23 @@ import {
 import type { Neighbourhood, NodeMeta, Opening } from "./store/index.js"
 import { DragJoin } from "./drag-join.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
+import { GlobeView } from "./globe-view.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
-import { MapView, ghostTarget } from "./map-view.js"
+import { ghostTarget, type MapSurface } from "./map.js"
+import { MapView } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { RenameBox } from "./rename-box.js"
 import { distance, type Point } from "./placement.js"
-import { railOut, setRailOut, walkByPan, setWalkByPan } from "./settings.js"
+import { CURVATURE } from "./projection.js"
+import {
+  curvature,
+  railOut,
+  setCurvature,
+  setRailOut,
+  setWalkByPan,
+  walkByPan,
+} from "./settings.js"
 import { World, type WorldNode } from "./world.js"
 import { Writes, type Receipt } from "./writes.js"
 
@@ -85,11 +95,22 @@ const railTab = el<HTMLButtonElement>("rail-tab")
 const guide = el<HTMLDivElement>("guide")
 const guideToggle = el<HTMLButtonElement>("guide-toggle")
 const walkToggle = el<HTMLInputElement>("walk-by-pan")
+const curveRow = el<HTMLLabelElement>("curvature-row")
+const curveSlider = el<HTMLInputElement>("curvature")
 /** Shown only when the store holds no graph at all. Raised and lowered by `showTotals`. */
 const empty = el<HTMLDivElement>("empty")
 
 const world = new World()
-const view = new MapView(stage, world)
+
+/**
+ * Which renderer draws the map. Scaffolding, and it goes when map-view.ts does.
+ *
+ * Every drive script that reaches Cytoscape through its container needs the page to keep
+ * opening on Cytoscape. So the globe is behind a query until those scripts address a canvas
+ * instead. Nothing the reader can click chooses a renderer.
+ */
+const onGlobe = new URLSearchParams(location.search).has("globe")
+const view: MapSurface = onGlobe ? new GlobeView(stage, world) : new MapView(stage, world)
 
 /**
  * The queue every write to the graph goes through.
@@ -302,7 +323,7 @@ const settle = debounce(() => {
 /** Set by an arrow key, and read by the `viewport` event it causes. */
 let nudged = false
 
-view.cy.on("viewport", () => {
+view.on("viewport", () => {
   // The menu opened over a node at a screen position. Moving the map under it would leave it
   // pointing at whatever drifted under the pointer instead.
   closeMenu()
@@ -312,20 +333,16 @@ view.cy.on("viewport", () => {
 })
 
 // A disc under the pointer draws as its name. The flag goes on whatever node the pointer
-// enters, and the style rule in map-view.ts is what scopes the mark to the discs.
-//
-// `mouseover` and `mouseout`, not `tapdragover` and `tapdragout`. The touch handlers emit only
-// the second pair, so a finger dragging across the map would light every disc it crossed.
-view.cy.on("mouseover", "node", (event) => {
-  view.hover(String(event.target.id()))
+// enters, and the style rule in map-view.ts is what scopes the mark to the discs. Which
+// pointer events stand behind these two is map-view.ts's `bridge`.
+view.on("nodeEnter", (id) => {
+  view.hover(id)
 })
-view.cy.on("mouseout", "node", () => {
+view.on("nodeLeave", () => {
   view.hover(null)
 })
 
-view.cy.on("tap", "node", (event) => {
-  const id = String(event.target.id())
-
+view.on("nodeTap", (id) => {
   // A ghost stands in for an off-screen node. Clicking one flies to that node. The read
   // starts now rather than on the settle at the far end, because the destination is already
   // known and the flight is otherwise idle time.
@@ -475,18 +492,17 @@ window.addEventListener("pointerdown", (event) => {
   if (!menu.hidden && !menu.contains(event.target as Node)) closeMenu()
 })
 
-view.cy.on("cxttap", "node", (event) => {
-  const id = String(event.target.id())
+view.on("nodeMenu", (id, at) => {
   if (id !== view.accent) return
   const node = world.get(id)
   if (!node) return
 
-  openMenu({ kind: "node", id }, priced(node), event.originalEvent as MouseEvent | undefined, node)
+  openMenu({ kind: "node", id }, priced(node), at, node)
 })
 
-view.cy.on("cxttap", "edge", (event) => {
-  const a = ended(String(event.target.source().id()))
-  const b = ended(String(event.target.target().id()))
+view.on("edgeMenu", (from, to, at) => {
+  const a = ended(from)
+  const b = ended(to)
   if (!a || !b) return
   // One end has to be the centre, the same rule the node above follows. A ghost's lead
   // already meets it: a ghost belongs to the centre that created it.
@@ -497,7 +513,7 @@ view.cy.on("cxttap", "edge", (event) => {
   openMenu(
     { kind: "edge", a: near.id, b: far.id },
     `part ${near.label} and ${far.label}`,
-    event.originalEvent as MouseEvent | undefined,
+    at,
     // A line is not a node, so there is nothing here to rename.
     null,
   )
@@ -612,7 +628,7 @@ async function applyRename(node: NodeMeta, next: string): Promise<NodeMeta> {
  * `ended` is the same resolver the menu above parts an edge with. So a ghost stands for its node
  * at either end of a drag, as it does under a right-click.
  */
-new DragJoin(view.cy, el<SVGPathElement>("aim-arrow"), el<SVGLinearGradientElement>("aim-ink"), {
+new DragJoin(view, el<SVGPathElement>("aim-arrow"), el<SVGLinearGradientElement>("aim-ink"), {
   ended,
   join: joinPair,
   aim: (id) => view.aim(id),
@@ -923,14 +939,14 @@ window.addEventListener("keydown", (event) => {
   if (!step) return
   event.preventDefault()
   nudged = true
-  view.cy.panBy({ x: step[0], y: step[1] })
+  view.panBy({ x: step[0], y: step[1] })
 })
 
 el<HTMLButtonElement>("zoom-in").addEventListener("click", () =>
-  view.cy.zoom({ level: view.cy.zoom() * 1.35, renderedPosition: renderedCentre() }),
+  view.zoomAbout(renderedCentre(), 1.35),
 )
 el<HTMLButtonElement>("zoom-out").addEventListener("click", () =>
-  view.cy.zoom({ level: view.cy.zoom() / 1.35, renderedPosition: renderedCentre() }),
+  view.zoomAbout(renderedCentre(), 1 / 1.35),
 )
 el<HTMLButtonElement>("home").addEventListener("click", () => {
   if (view.accent) view.focus(view.accent)
@@ -975,6 +991,27 @@ walkToggle.addEventListener("change", () => {
   // HUD still naming the node that was clicked would be the control appearing to do nothing.
   // `claimCentre` rather than the tracker: one application has no flicker to bias against.
   claimCentre()
+})
+
+/**
+ * The slider that curves the surface the map draws on.
+ *
+ * The ends come from projection.ts, so the range is stated in one file. `input` rather than
+ * `change`, so the map curves under the thumb rather than on release. The stored value is read
+ * back rather than reused, because `setCurvature` clamps.
+ *
+ * The row answers to the query that picks the renderer. Cytoscape draws one flat surface, so a
+ * reader on that page would be given a control with nothing to move.
+ */
+curveSlider.min = String(CURVATURE.min)
+curveSlider.max = String(CURVATURE.max)
+curveSlider.value = String(curvature())
+curveRow.hidden = !onGlobe
+view.curve(curvature())
+
+curveSlider.addEventListener("input", () => {
+  setCurvature(Number(curveSlider.value))
+  view.curve(curvature())
 })
 
 function renderedCentre(): { x: number; y: number } {

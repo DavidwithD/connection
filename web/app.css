@@ -194,8 +194,8 @@ dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
 dt { color: var(--ink-2); font-size: 11px; }
 dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 
-/* One switch, under the numbers. Sized like a caption rather than a control: the panel is
-   mostly there to be glanced at, and this is set once and then left alone. */
+/* The reader's own settings, under the numbers. Sized like a caption rather than a control:
+   the panel is mostly there to be glanced at, and a setting is left alone once it is set. */
 .setting {
   display: flex;
   align-items: center;
@@ -206,6 +206,8 @@ dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   cursor: pointer;
 }
 .setting input { margin: 0; accent-color: var(--accent); }
+/* The slider takes the rest of its row. A range at its intrinsic width leaves little travel. */
+.setting input[type="range"] { flex: 1; }
 
 /* The two sentences that stop being true when the camera names the centre. Both pairs are in
    the markup and the checkbox picks which shows, so the state stays in the one place the box
