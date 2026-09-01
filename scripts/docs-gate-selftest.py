@@ -70,6 +70,7 @@ BOUND_DOCS = load_gate().BOUND_DOCS
 # reads. These are the gate's own SKIP_DIRS plus the two big gitignored trees.
 SKIP = {
     ".git", "node_modules", ".venv", "venv", "dist", "build", "__pycache__", ".next",
+    "temp",
 }
 
 # A document with no tables and no fenced blocks. Enough to be readable, not enough

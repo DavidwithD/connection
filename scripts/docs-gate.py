@@ -62,8 +62,12 @@ DECISIONS_DIR = "docs/decisions"
 
 # Trees that hold code the docs describe. Everything else is generated or vendored.
 CODE_DIRS = ["web", "scripts"]
+
+# `temp` holds plans, and a plan names files nobody has written yet. The hook and CI read
+# tracked files only, so skipping it keeps a local run in agreement with them.
 SKIP_DIRS = {
     ".git", "node_modules", ".venv", "venv", "dist", "build", "__pycache__", ".next",
+    "temp",
 }
 
 # What counts as a source file when comparing a directory against the layout tree.

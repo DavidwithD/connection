@@ -66,7 +66,8 @@ fact that legitimately lives twice. The first that carries it wins, and the rest
 consulted: two documents holding one table is the stale copy this gate exists to prevent.
 
 `paths` is absent from it on purpose: it binds to every markdown file there is, so it
-nominates no document and has nothing to declare.
+nominates no document and has nothing to declare. Two trees are exempt. Records have their
+own gate. `temp/` is scratch, and a plan there is allowed to name a file nobody has written.
 
 ## Rules
 

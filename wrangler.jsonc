@@ -1,0 +1,21 @@
+// What Cloudflare deploys, and from where.
+//
+// There is no Worker script. The whole app is two HTML pages and their bundles, so this
+// uploads `dist/web/` as static assets and nothing else runs on the edge.
+//
+// This file also stops `wrangler deploy` from guessing. With no config, wrangler detects
+// the framework and rewrites `vite.config.ts` to add its plugin. That config has no
+// `plugins` array, so the rewrite fails and the deploy stops. A config here means wrangler
+// skips detection.
+//
+// The deploy command is `npx wrangler@4.125.0 deploy`, set in the Cloudflare dashboard. The
+// version is pinned there and nowhere else, so this line is the repo's only record of it.
+{
+  "name": "connection",
+  "compatibility_date": "2026-08-22",
+
+  // `npm run build` writes here. Cloudflare's own guess is `dist`, which holds no index.
+  "assets": {
+    "directory": "./dist/web"
+  }
+}
