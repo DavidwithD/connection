@@ -24,6 +24,18 @@ export interface GraphExport {
   counts: { nodes: number; edges: number }
 }
 
+/**
+ * Count the stored records with a scan, rather than reading the cached totals in `counts()`.
+ *
+ * The scan is slow enough that db.ts caches it for the HUD. Call it on a click, where the
+ * reader is already waiting and the number has to be current.
+ */
+export async function readCounts(): Promise<{ nodes: number; edges: number }> {
+  const db = await open()
+  const [nodes, edges] = await Promise.all([db.count("nodes"), db.count("edges")])
+  return { nodes, edges }
+}
+
 /** Load the whole graph into memory. Two `getAll` calls, and this app's largest allocation. */
 export async function readWholeGraph(): Promise<{
   nodes: StoredNode[]
