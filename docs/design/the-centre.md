@@ -226,6 +226,7 @@ reads it.
 | [0012](../decisions/0012-the-name-is-the-node.md) | The pill, and which nodes get one rather than a disc |
 | [0025](../decisions/0025-when-a-ghost-stands.md) | The camera rather than the seat as what raises a ghost |
 | [0027](../decisions/0027-a-ring-holds-what-it-holds.md) | How many doorways a ring offers, and that the number is measured |
+| [0043](../decisions/0043-off-screen-becomes-an-angle.md) | Off screen as an angle from the middle, once the map draws on a sphere |
 | [0006](../decisions/0006-only-the-centre-reads.md) | That drawing is the centre's neighbourhood, and reading runs a hop past it |
 | [0032](../decisions/0032-the-centre-is-named.md) | What moves the mark, and what it costs to let the camera move it |
 | [0033](../decisions/0033-a-click-takes-no-camera.md) | That a click names a node where it stands, and what that costs the doorways |

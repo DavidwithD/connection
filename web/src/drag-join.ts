@@ -7,13 +7,13 @@
  *
  * The arrow is drawn on an `svg` over the canvas rather than as elements in the graph. A node
  * that followed the cursor would be the second thing on this map that moves. It would also join
- * the element set every pass in map-view.ts walks. Nothing here touches Cytoscape's elements
- * except to read where one is drawn.
+ * the element set every pass in map-view.ts walks. The only thing this file asks the map for is
+ * where a node is drawn.
  *
  * What gets written, and what the undo does about it, is main.ts. The pair the gesture named is
  * all that comes from here.
  */
-import type { Core, EventObject } from "cytoscape"
+import type { MapSurface } from "./map.js"
 import type { Point } from "./placement.js"
 import type { WorldNode } from "./world.js"
 
@@ -81,74 +81,67 @@ export class DragJoin {
   private armed: Armed | null = null
 
   constructor(
-    private readonly cy: Core,
+    private readonly view: MapSurface,
     private readonly arrow: SVGPathElement,
     private readonly ink: SVGLinearGradientElement,
     private readonly hooks: DragJoinHooks,
   ) {
-    this.cy.on("tapstart", "node", (event) => this.start(event))
-    this.cy.on("tapdrag", (event) => this.move(event))
-    this.cy.on("tapend", (event) => this.end(event))
-    this.cy.on("tapdragover", "node", (event) => this.over(event))
-    this.cy.on("tapdragout", "node", () => {
+    this.view.on("pressStart", (id, at) => this.start(id, at))
+    this.view.on("pressMove", (at) => this.move(at))
+    this.view.on("pressEnd", (id) => this.end(id))
+    this.view.on("pressOver", (id) => this.over(id))
+    this.view.on("pressOut", () => {
       if (this.armed) this.hooks.aim(null)
     })
 
-    // The backstop. A release Cytoscape never hears about would leave panning switched off, and
-    // the map unable to move at all. `mouseup` on the window runs after `tapend` has had the
+    // The backstop. A release the map never hears about would leave panning switched off, and
+    // the map unable to move at all. `mouseup` on the window runs after `pressEnd` has had the
     // release. The canvas is inside the window, so a bubbling listener is the later of the two.
     window.addEventListener("mouseup", () => this.disarm())
     // A release outside the window arrives as no event at all. This is what covers it.
     window.addEventListener("blur", () => this.disarm())
   }
 
-  private start(event: EventObject): void {
+  private start(from: string, at: MouseEvent | undefined): void {
     if (this.armed) return
-    const original = event.originalEvent as MouseEvent | undefined
-    if (!original?.shiftKey) return
+    if (!at?.shiftKey) return
 
-    const from = String(event.target.id())
     const a = this.hooks.ended(from)
     if (!a) return
 
-    const box = this.cy.container()?.getBoundingClientRect()
-    this.armed = { from, a, offset: { x: box?.left ?? 0, y: box?.top ?? 0 } }
-    // Cytoscape began a pan on this press, and this is what calls it off. Without it the map
+    this.armed = { from, a, offset: this.view.containerOffset() }
+    // The map began a pan on this press, and this is what calls it off. Without it the map
     // slides under the drag, and the arrow chases a node that is moving.
-    this.cy.userPanningEnabled(false)
+    this.view.panning(false)
     this.hooks.onStart()
     document.body.classList.add("joining")
-    this.draw(original.clientX, original.clientY)
+    this.draw(at.clientX, at.clientY)
   }
 
-  private move(event: EventObject): void {
-    if (!this.armed) return
-    const original = event.originalEvent as MouseEvent | undefined
-    if (original) this.draw(original.clientX, original.clientY)
+  private move(at: MouseEvent | undefined): void {
+    if (!this.armed || !at) return
+    this.draw(at.clientX, at.clientY)
   }
 
   /** Mark what a release would take, so the pair is readable before the button comes up. */
-  private over(event: EventObject): void {
+  private over(id: string): void {
     const armed = this.armed
     if (!armed) return
-    const id = String(event.target.id())
     // The element the drag started from is not a target, so it takes no mark.
     if (id === armed.from) return
     this.hooks.aim(this.hooks.ended(id) ? id : null)
   }
 
-  private end(event: EventObject): void {
+  private end(id: string | null): void {
     const armed = this.armed
     if (!armed) return
     // Before anything that can return early. Panning has to come back on every path out.
     this.disarm()
 
-    // The core is the target when the release was over the background. A release on the element
-    // the drag started from is the same non-event. The reader named one node and not a pair, so
-    // there is nothing to refuse and nothing to say.
-    if (event.target === this.cy) return
-    const id = String(event.target.id())
-    if (id === armed.from) return
+    // Null is a release over the background. A release on the element the drag started from is
+    // the same non-event. The reader named one node and not a pair, so there is nothing to
+    // refuse and nothing to say.
+    if (id === null || id === armed.from) return
 
     const b = this.hooks.ended(id)
     if (!b || b.id === armed.a.id) return
@@ -160,8 +153,8 @@ export class DragJoin {
    *
    * The tail is read every frame rather than kept from the press. Panning is off, but the wheel
    * still zooms, and a tail kept from the start would come away from the node it belongs to.
-   * `renderedPosition` is measured from the canvas, and the cursor from the viewport, which is
-   * what `offset` reconciles.
+   * `screenOf` measures from the canvas, and the cursor from the viewport, which is what
+   * `offset` reconciles.
    *
    * The path is drawn from the tail outwards. Down one side to the head's base, out to a barb,
    * to the point, and back the other way. So the shaft and the head are one closed shape, and
@@ -173,7 +166,7 @@ export class DragJoin {
   private draw(x: number, y: number): void {
     const armed = this.armed
     if (!armed) return
-    const from = this.cy.$id(armed.from).renderedPosition() as Point | undefined
+    const from = this.view.screenOf(armed.from)
     if (!from) return
     const tail = { x: from.x + armed.offset.x, y: from.y + armed.offset.y }
 
@@ -213,7 +206,7 @@ export class DragJoin {
   private disarm(): void {
     if (!this.armed) return
     this.armed = null
-    this.cy.userPanningEnabled(true)
+    this.view.panning(true)
     this.hooks.aim(null)
     document.body.classList.remove("joining")
   }

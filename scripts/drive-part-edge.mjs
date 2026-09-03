@@ -16,8 +16,23 @@
  * the script being unlucky. The camera has to be still, because a `viewport` event closes the
  * menu on purpose. And the point aimed at has to be a point where the line is really on top:
  * a pill or a panel in front of it takes the click, exactly as it would from a reader.
+ *
+ * A canvas holds no element per line, so both of those are asked through probe.mjs.
  */
 import { mkdirSync } from "node:fs"
+
+import {
+  MAP,
+  alongLines,
+  clickOn,
+  frame,
+  hitAll,
+  read,
+  reachable,
+  realEdges,
+  samePair,
+  still,
+} from "./probe.mjs"
 
 const { chromium } = await import("playwright").catch(() => {
   console.error("✗ needs playwright: npm i -D playwright --no-save")
@@ -28,6 +43,9 @@ const WEB = process.env.WEB_URL ?? "http://localhost:5173"
 const SHOTS = ".shots"
 const headed = process.argv.includes("--head")
 
+/** How many lines of one kind are searched for a clear point before this gives up. */
+const CANDIDATE_LINES = 20
+
 let failures = 0
 const ok = (pass, what, detail = "") => {
   console.log(`  ${pass ? "✓" : "✗"} ${what}${detail ? ` — ${detail}` : ""}`)
@@ -35,138 +53,93 @@ const ok = (pass, what, detail = "") => {
 }
 
 /**
- * Wait for the camera to stop.
+ * What the map is drawing right now, read off the renderer's own probe and the page's chrome.
  *
- * A `viewport` event closes the menu — that is what it is for, so a menu never points at
- * whatever drifted under the pointer. Right-clicking before the camera is quiet is the script
- * racing the page, and it reads as the gesture failing.
+ * Two reads rather than one. The probe answers for the map, the DOM answers for the panels
+ * around it, and neither can answer the other's half.
  */
-const stillCamera = async (page, quiet = 700) => {
-  await page.evaluate(() => {
-    const cy = document.querySelector("#stage")._cyreg.cy
-    window.__moved = performance.now()
-    if (!window.__watching) {
-      cy.on("viewport", () => {
-        window.__moved = performance.now()
-      })
-      window.__watching = true
-    }
-  })
-  await page.waitForFunction((q) => performance.now() - window.__moved > q, quiet, {
-    timeout: 20000,
-  })
+const drawn = async (page) => {
+  const seen = await frame(page)
+  if (!seen) return null
+  const it = read(seen)
+  const chrome = await page.evaluate(() => ({
+    totals: document.querySelector("#stat-total")?.textContent ?? "",
+    degree: document.querySelector("#stat-degree")?.textContent ?? "",
+    status: document.querySelector("#status")?.textContent ?? "",
+    undos: document.querySelectorAll("#receipts .undo").length,
+    menuOpen: !document.querySelector("#map-menu")?.hidden,
+    menuRow: document.querySelector("#map-remove")?.textContent ?? "",
+  }))
+  return {
+    centre: seen.accent,
+    centreLabel: it.centre?.label ?? null,
+    zoom: Number(seen.zoom.toFixed(2)),
+    ring: it.ring.length,
+    // Past the horizon by any amount, which is the globe's own answer to "off screen".
+    offScreen: it.ring.filter((node) => node.past > 0).length,
+    edges: seen.lines.length,
+    realEdges: realEdges(seen).length,
+    ghostLeads: seen.lines.filter((line) => line.kind === "ghost").length,
+    ...chrome,
+  }
 }
 
-/** What the map is drawing right now, read off cytoscape's own registration. */
-const drawn = (page) =>
-  page.evaluate(() => {
-    const cy = document.querySelector("#stage")?._cyreg?.cy
-    if (!cy) return null
-    const centre = cy.nodes("[tier = 0]").first()
-    const id = centre.empty() ? null : centre.id()
-    const view = cy.extent()
-    const shows = (box) =>
-      box.x2 >= view.x1 && box.x1 <= view.x2 && box.y2 >= view.y1 && box.y1 <= view.y2
-    const ring = cy.nodes("[tier = 1]")
-    return {
-      centre: id,
-      zoom: Number(cy.zoom().toFixed(2)),
-      ring: ring.length,
-      offScreen: ring.filter((n) => !shows(n.boundingBox())).length,
-      centreLabel: centre.empty() ? null : centre.data("label"),
-      edges: cy.edges().length,
-      realEdges: cy.edges().filter((e) => !e.data("ghost") && !e.data("stub")).length,
-      ghostLeads: cy.edges("[?ghost]").length,
-      totals: document.querySelector("#stat-total")?.textContent ?? "",
-      degree: document.querySelector("#stat-degree")?.textContent ?? "",
-      status: document.querySelector("#status")?.textContent ?? "",
-      undos: document.querySelectorAll("#receipts .undo").length,
-      menuOpen: !document.querySelector("#map-menu")?.hidden,
-      menuRow: document.querySelector("#map-remove")?.textContent ?? "",
-    }
-  })
-
 /**
- * Right-click the midpoint of one drawn edge, chosen by a predicate over its data.
- * Returns the pair the edge joins, or null if there was no such edge.
+ * Right-click one drawn line of a given kind, and report the pair it joins.
+ *
+ * Aims where the line is actually on top. A pill can cover a line's midpoint, and the page
+ * hands a right-click to whatever is in front — which is what a reader sees too. So every
+ * candidate point is put to the probe first, and the first one the probe answers with this
+ * line is the one clicked.
+ *
+ * Under `dry` nothing is clicked. That is for the leg looking for a camera where a ghost's
+ * lead can be reached at all.
  */
-const rightClickEdge = async (page, kind, dry = false) =>
-  page.evaluate(([kind, dry]) => {
-    const cy = document.querySelector("#stage")?._cyreg?.cy
-    const centre = cy.nodes("[tier = 0]").first()
-    if (centre.empty()) return null
-    const pick = cy.edges().filter((e) => {
-      const [s, t] = [e.source(), e.target()]
-      const atCentre = s.id() === centre.id() || t.id() === centre.id()
-      if (kind === "ghost") return e.data("ghost") && atCentre
-      if (kind === "away") return !e.data("ghost") && !e.data("stub") && !atCentre
-      return !e.data("ghost") && !e.data("stub") && atCentre
-    })
-    if (pick.empty()) return null
-    const pan = cy.pan()
-    const zoom = cy.zoom()
-    const box = document.querySelector("#stage").getBoundingClientRect()
-    const renderer = cy.renderer()
+const rightClickEdge = async (page, kind, dry = false) => {
+  const seen = await frame(page)
+  if (!seen?.accent) return null
+  const centre = seen.accent
+  const touches = (line) => line.a === centre || line.b === centre
+  const pick = seen.lines.filter((line) => {
+    if (kind === "ghost") return line.kind === "ghost" && touches(line)
+    if (kind === "away") return line.kind === "edge" && !touches(line)
+    return line.kind === "edge" && touches(line)
+  })
+  if (!pick.length) return null
 
-    // Aim where the line is actually on top. A pill can cover an edge's midpoint, and
-    // cytoscape hands a click to whatever is in front — which is what a reader sees too. Walk
-    // along the line until the topmost thing there is this edge.
-    let edge = null
-    let at = null
-    for (const candidate of pick.toArray()) {
-      const [s, t] = [candidate.source().position(), candidate.target().position()]
-      for (const step of [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85]) {
-        const x = s.x + (t.x - s.x) * step
-        const y = s.y + (t.y - s.y) * step
-        const found = renderer.findNearestElement(x, y, true, false)
-        if (!found || found.id() !== candidate.id()) continue
-        const point = { x: box.left + x * zoom + pan.x, y: box.top + y * zoom + pan.y }
-        // And clear of the page's own furniture. The HUD and the panels sit over the canvas,
-        // and a reader cannot click through them either.
-        if (document.elementFromPoint(point.x, point.y)?.tagName !== "CANVAS") continue
-        at = point
-        edge = candidate
-        break
-      }
-      if (edge) break
-    }
-    if (!edge) {
-      // Nothing on this line is in front anywhere along it. Aim at the midpoint anyway and
-      // let the report say what was under the pointer.
-      edge = pick.first()
-      const mid = edge.midpoint()
-      at = { x: box.left + mid.x * zoom + pan.x, y: box.top + mid.y * zoom + pan.y }
-    }
+  // A bounded search. `away` can name hundreds of lines on a walked map, and one clear point
+  // is all this needs.
+  const candidates = pick.slice(0, CANDIDATE_LINES)
+  const runs = await alongLines(page, candidates.map((line) => [line.a, line.b]))
+  const points = candidates.flatMap((line, index) =>
+    (runs[index] ?? []).map((at) => ({ line, at })),
+  )
+  if (!points.length) return null
+  const answers = (await hitAll(page, points.map((one) => one.at))) ?? []
+  const found = points.findIndex(
+    (one, index) =>
+      answers[index]?.clear &&
+      answers[index].line &&
+      samePair(answers[index].line, [one.line.a, one.line.b]),
+  )
 
-    const under = document.elementFromPoint(at.x, at.y)
-    const clear = under?.tagName === "CANVAS"
-    const fire = (type) =>
-      under?.dispatchEvent(
-        new MouseEvent(type, {
-          bubbles: true, cancelable: true, clientX: at.x, clientY: at.y, button: 2, buttons: 2,
-        }),
-      )
-    if (!dry) {
-      fire("mousedown")
-      fire("mouseup")
-      fire("contextmenu")
-    }
-    return {
-      clear,
-      source: edge.source().id(),
-      target: edge.target().id(),
-      ghost: !!edge.data("ghost"),
-      at: `${String(Math.round(at.x))},${String(Math.round(at.y))}`,
-      inWindow: at.x >= 0 && at.y >= 0 && at.x <= innerWidth && at.y <= innerHeight,
-      under: under?.tagName ?? "nothing",
-      nearest: renderer.findNearestElement(
-        (at.x - box.left - pan.x) / zoom,
-        (at.y - box.top - pan.y) / zoom,
-        true,
-        false,
-      )?.id() ?? "nothing",
-    }
-  }, [kind, dry])
+  // Nothing on any of these lines is in front anywhere along it. Aim at the first candidate
+  // anyway and let the report say what was under the pointer.
+  const aimed = points[found < 0 ? 0 : found]
+  const { line, at } = aimed
+  const there = answers[found < 0 ? 0 : found]
+  if (!dry) await clickOn(page, at, { button: "right" })
+  return {
+    clear: Boolean(there?.clear),
+    source: line.a,
+    target: line.b,
+    ghost: line.kind === "ghost",
+    at: `${String(Math.round(at.x))},${String(Math.round(at.y))}`,
+    inWindow: Boolean(there?.inWindow),
+    under: there?.under ?? "nothing",
+    nearest: there?.node ?? (there?.line ? there.line.join(" — ") : "nothing"),
+  }
+}
 
 async function main() {
   mkdirSync(SHOTS, { recursive: true })
@@ -194,8 +167,8 @@ async function main() {
   )
   console.log(`  ${await page.locator("#told").textContent()}`)
 
-  console.log(`→ ${WEB} — the map`)
-  await page.goto(WEB, { waitUntil: "domcontentloaded" })
+  console.log(`→ ${WEB}${MAP} — the map`)
+  await page.goto(`${WEB}${MAP}`, { waitUntil: "domcontentloaded" })
   await page.waitForFunction(
     () => !/starting|loading/.test(document.querySelector("#status")?.textContent ?? ""),
     { timeout: 20000 },
@@ -204,12 +177,12 @@ async function main() {
 
   // ---- a line into the centre -------------------------------------------------------
   console.log("\n1. right-click a line into the centre")
-  await stillCamera(page)
+  await still(page)
   const before = await drawn(page)
-  const hit = await rightClickEdge(page, "line")
+  const aimed = await rightClickEdge(page, "line")
   await page.waitForTimeout(200)
   const opened = await drawn(page)
-  ok(!!hit, "found a line at the centre", hit ? `${hit.source} — ${hit.target}` : "none drawn")
+  ok(!!aimed, "found a line at the centre", aimed ? `${aimed.source} — ${aimed.target}` : "none drawn")
   ok(opened.menuOpen, "the menu opened", opened.menuRow)
   ok(/^part .+ and .+/.test(opened.menuRow), "the row offers a part", opened.menuRow)
   ok(
@@ -250,35 +223,43 @@ async function main() {
 
   // ---- a ghost's dashed lead ---------------------------------------------------------
   console.log("\n3. right-click a ghost's dashed lead")
-  // A ghost stands for a neighbour that is off screen. Zoom alone does not get there on this
-  // centre — its ring still fits at maximum zoom — so shrink the window as well.
+  // A ghost stands for a neighbour the surface has turned away from. Two things have to be
+  // true before one is reachable, and neither is true on the map this opened.
+  //
+  // The camera has to be off the centre. `GHOST_MARGIN` is a length in screen pixels, so on a
+  // curved surface it is an angle, and a zoom alone never crosses it.
+  //
+  // The centre has to hold a wide neighbourhood. Its doorway slots sit in world space around
+  // it, so a tight ring leaves every one of them past the limb. Walking out is what widens
+  // the neighbourhood.
+  for (let step = 0; step < 3; step++) {
+    const next = await reachable(page, read(await frame(page)).ring)
+    if (!next) break
+    await clickOn(page, next.at)
+    await page.waitForTimeout(900)
+  }
   for (let i = 0; i < 9; i++) {
     await page.locator("#zoom-in").click()
     await page.waitForTimeout(160)
   }
-  let room = null
-  for (const size of [
-    { width: 560, height: 420 },
-    { width: 640, height: 470 },
-    { width: 700, height: 520 },
-    { width: 760, height: 560 },
-    { width: 900, height: 620 },
-  ]) {
-    await page.setViewportSize(size)
-    await stillCamera(page)
+  let nudges = 0
+  const climb = []
+  for (let step = 0; step < 12 && !nudges; step++) {
+    await page.keyboard.press("ArrowRight")
+    await page.waitForTimeout(120)
+    await still(page)
     const seen = await drawn(page)
+    climb.push(seen.ghostLeads)
     if (!seen.ghostLeads) continue
-    const probe = await rightClickEdge(page, "ghost", true)
-    console.log(
-      `  ${String(size.width)}×${String(size.height)}: ${String(seen.ghostLeads)} lead(s)` +
-        `, clickable=${String(!!probe?.clear)}`,
-    )
-    if (probe?.clear) {
-      room = size
-      break
-    }
+    const found = await rightClickEdge(page, "ghost", true)
+    if (found?.clear) nudges = step + 1
   }
-  ok(!!room, "a window where a ghost's lead can be clicked", room ? `${String(room.width)}×${String(room.height)}` : "none of five")
+  console.log(`  leads after each nudge: ${climb.join(" -> ")}`)
+  ok(
+    nudges > 0,
+    "a camera where a ghost's lead can be clicked",
+    nudges ? `${String(nudges)} nudge(s)` : "none in twelve",
+  )
   const zoomed = await drawn(page)
   ok(
     zoomed.ghostLeads > 0,
@@ -290,7 +271,7 @@ async function main() {
     await browser.close()
     process.exit(failures ? 1 : 0)
   }
-  await stillCamera(page)
+  await still(page)
   const ghostHit = await rightClickEdge(page, "ghost")
   await page.waitForTimeout(200)
   const ghostMenu = await drawn(page)
@@ -322,27 +303,19 @@ async function main() {
 
   // ---- a line away from the centre ---------------------------------------------------
   console.log("\n5. right-click a line that misses the centre")
-  // A line that misses the centre is drawn only once the map has walked. A fresh boot draws
-  // the centre's own edges and nothing else, so the ghost leg above left nothing here to find.
-  // Take one step first, which is what a reader does: the node clicked becomes the centre and
-  // its own ring comes with it. The window goes back to full so the click lands clear of the
-  // page's own panels.
-  await page.setViewportSize({ width: 1200, height: 820 })
-  await stillCamera(page)
-  await page.evaluate(() => {
-    const cy = document.querySelector("#stage")?._cyreg?.cy
-    const centre = cy.nodes("[tier = 0]").first()
-    cy.nodes()
-      .filter((n) => n.id() !== centre.id() && !n.data("ghost"))
-      .first()
-      .emit("tap")
-  })
-  await stillCamera(page)
+  // The leg above left the camera off its centre with doorways standing. Clicking a neighbour
+  // that is drawn puts the mark on a node in view, and the zoom-out then brings its
+  // neighbourhood on screen. A line that misses the centre needs both.
+  await still(page)
+  const step = await reachable(page, read(await frame(page)).ring)
+  ok(!!step, "found a neighbour to stand on", step ? step.label : "none clickable")
+  if (step) await clickOn(page, step.at)
+  await still(page)
   for (let i = 0; i < 9; i++) {
     await page.locator("#zoom-out").click()
     await page.waitForTimeout(200)
   }
-  await stillCamera(page)
+  await still(page)
   const away = await rightClickEdge(page, "away")
   await page.waitForTimeout(200)
   const quiet = await drawn(page)
@@ -353,12 +326,11 @@ async function main() {
   console.log("\n6. part one, then reload")
   // The camera has to be still first. A `viewport` event closes the menu, which is what it is
   // for, and the zoom above is still settling.
-  await page.setViewportSize({ width: 1200, height: 820 })
-  await stillCamera(page)
-  // Put the centre back in the middle of the window. After the shrink and the zoom it can sit
-  // under the HUD or the status line, and no part of its lines is then clickable.
+  await still(page)
+  // Put the centre back in the middle of the window. After the zoom it can sit under the HUD
+  // or the status line, and no part of its lines is then clickable.
   await page.locator("#home").click()
-  await stillCamera(page)
+  await still(page)
   const last = await rightClickEdge(page, "line")
   await page.waitForTimeout(300)
   const lastMenu = await drawn(page)

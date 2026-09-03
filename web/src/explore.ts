@@ -8,7 +8,7 @@
  * another cache.
  */
 import { fetchNeighbourhood } from "./store/index.js"
-import type { MapView } from "./map-view.js"
+import type { MapSurface } from "./map.js"
 import type { World } from "./world.js"
 
 export interface ExploreHooks {
@@ -23,7 +23,7 @@ export class Explorer {
 
   constructor(
     private readonly world: World,
-    private readonly view: MapView,
+    private readonly view: MapSurface,
     private readonly hooks: ExploreHooks,
   ) {}
 

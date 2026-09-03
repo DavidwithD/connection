@@ -1,17 +1,19 @@
 /** What the reader has asked the page to do, kept in the browser. */
+import { CURVATURE } from "./projection.js"
 
 /**
  * The one stored value that means on.
  *
  * Everything else is off — absent, empty, or a word some later version of this file wrote. The
  * comparison against this one string is therefore the whole of the default, and no branch has
- * to state it. Nothing here parses either: there is no shape to get wrong and nothing to throw
- * on.
+ * to state it. A switch has no shape to get wrong, so neither of the two below parses what it
+ * reads back.
  */
 const ON = "on"
 
 const WALK_BY_PAN = "connection:walk-by-pan"
 const RAIL_OUT = "connection:rail-out"
+const CURVATURE_KEY = "connection:curvature"
 
 /**
  * Reading storage is allowed to fail.
@@ -75,4 +77,39 @@ export const railOut = (): boolean => stored(RAIL_OUT) === ON
 
 export function setRailOut(out: boolean): void {
   keep(RAIL_OUT, out ? ON : "")
+}
+
+/**
+ * Read a stored curvature. A number in range comes back as itself, and the rest as the default.
+ *
+ * The first number this file keeps, and so the first value it can read back wrong. Never set
+ * is `""`, which `Number` reads as 0. A radius of 0 puts every node past the limb, and the map
+ * draws blank. A word another version wrote is `NaN`, and no comparison against `NaN` is true.
+ * A legal number outside the range draws a picture nobody chose.
+ *
+ * The range and the default are projection.ts's, because that file is what the numbers mean.
+ */
+function asCurvature(raw: string | null): number {
+  if (!raw) return CURVATURE.fallback
+  const value = Number(raw)
+  if (!Number.isFinite(value)) return CURVATURE.fallback
+  return Math.min(CURVATURE.max, Math.max(CURVATURE.min, value))
+}
+
+/**
+ * Held rather than read back on each call, which is where this differs from `railOut`.
+ *
+ * A refused write is the reason. The slider has to keep working in a browser with site data
+ * blocked. What comes back from a re-read there is the default, not the value just set.
+ */
+let curve = asCurvature(stored(CURVATURE_KEY))
+
+/** How curved the surface the map draws on is. The slider on the map page is the only writer. */
+export const curvature = (): number => curve
+
+export function setCurvature(value: number): void {
+  // Through the same parse the read uses, so what is stored is what took effect. A number
+  // typed into devtools is clamped on the way in rather than on the next reload.
+  curve = asCurvature(String(value))
+  keep(CURVATURE_KEY, String(curve))
 }

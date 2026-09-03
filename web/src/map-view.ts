@@ -10,45 +10,32 @@ import cytoscape, {
   type Core,
   type Css,
   type ElementDefinition,
+  type EventObject,
   type NodeSingular,
   type StylesheetJson,
 } from "cytoscape"
+import {
+  CENTRE_TEXT,
+  DISSOLVE_MS,
+  FLIGHT_MAX,
+  FLIGHT_MIN,
+  FLIGHT_SPEED,
+  GHOST_MARGIN,
+  PILL_FONT,
+  PILL_HALO,
+  PILL_PAD,
+  RING_TEXT,
+  SLOT_GAP,
+  STUB_REACH,
+  ghostId,
+  ghostTarget,
+  type MapEvents,
+  type MapSurface,
+} from "./map.js"
 import { LONG_EDGE, NODE_SIZE, type Point, type Slot } from "./placement.js"
 import { currentPalette, type Palette } from "./palette.js"
 import { NUL, edgeKey } from "./store/keys.js"
 import type { World, WorldNode } from "./world.js"
-
-/** How far a stub reaches from its node, toward the far end of a hidden long edge. */
-const STUB_REACH = 44
-
-/**
- * How far past the edge of the screen a node must be before a ghost is created for it, in
- * screen pixels. Divided by the zoom to get world units.
- *
- * A length, not a ratio. What has to be bounded here is how far the reader panned, and that
- * is one distance — a ratio wants two to compare. Wider than main.ts's keyboard pan step, so
- * a nudge and the nudge back give the same picture.
- *
- * A ghost is removed as soon as its target is visible at all, with no margin at that end.
- * This whole distance is therefore dead band on the way up. That is what stops a name being
- * shown twice: once as a ghost, once at its own position.
- */
-const GHOST_MARGIN = 160
-
-/**
- * Camera flight speed, in screen pixels per millisecond. Picked by eye from three timings of
- * one 543px flight. 720ms won.
- *
- * Screen pixels, not world units. Zoomed out, the same world distance is a shorter visual
- * move and must not take longer to cross.
- */
-const FLIGHT_SPEED = 0.75
-/** A minimum, so a flight to a close neighbour moves rather than snapping. */
-const FLIGHT_MIN = 320
-/** A maximum, because a very long flight at this speed reads as the page hanging. */
-const FLIGHT_MAX = 900
-/** How long a ghost takes to fade out once the camera has landed. */
-const DISSOLVE_MS = 320
 
 /**
  * The OS setting for reduced motion. Read on each flight rather than once at load, so a
@@ -66,36 +53,11 @@ const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)")
 const EASING = "cubic-bezier(0.4, 0, 0.2, 1)" as Css.TransitionTimingFunction
 
 /**
- * The gap between a name and the edge of the pill drawn around it.
- *
- * A pill takes both its dimensions from its label, and Cytoscape adds `padding` to each
- * (`nodeWidth = node.width() + 2 * padding`, in `drawing-nodes.mjs`). This one number is
- * therefore the whole pill geometry: every pill fits its name equally on all sides.
- *
- * Not one of the `NODE_SIZE` values. Those are diameters. The separations in placement.ts
- * are derived from them, and a distant node still draws as a circle at one of them.
+ * A pill takes both its dimensions from its label, and Cytoscape adds `PILL_PAD` to each
+ * (`nodeWidth = node.width() + 2 * padding`, in `drawing-nodes.mjs`). So the stylesheet below
+ * writes it as a length, and `slotBox` writes it as a number.
  */
-const PILL_PAD = 8
-
-/**
- * The outline a pill draws in the surface colour, so a name reads as sitting over whatever
- * it covers.
- *
- * An outline, not a border. The border is already used: a node with unread neighbours draws
- * a dashed border.
- */
-const PILL_HALO = 3
-
-/** The font every name is set in. Named, because `nameWidth` has to measure in the same one. */
-const PILL_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
-
-/**
- * Font size for a neighbour's name and for the ghost that stands in for one.
- *
- * The same size on purpose. A ghost stands in for a neighbour, so the two should look alike.
- * `nameWidth` measures at this size.
- */
-const RING_FONT_SIZE = 12
+const PAD = `${String(PILL_PAD)}px`
 
 /**
  * `z-index` accepts a `data()` mapper at runtime. Cytoscape's `style/parse.mjs` accepts a
@@ -137,15 +99,6 @@ const GHOST_Z = { top: 29, bottom: 26 } as const
 const HOVER_Z = 25
 
 /**
- * Extra width added to a ghost's slot beyond the pill that goes in it.
- *
- * `nameWidth` measures on its own 2D context and Cytoscape measures on another, so the two
- * agree only to about a pixel. A pill one pixel wider than its slot touches its neighbour,
- * which is what the slot arithmetic exists to prevent.
- */
-const SLOT_GAP = 6
-
-/**
  * The canvas context used for measuring text. Kept between calls, because it is the same
  * context every time and creating one per call is wasteful.
  */
@@ -161,7 +114,7 @@ let measurer: CanvasRenderingContext2D | null = null
  */
 function nameWidth(label: string): number {
   measurer ??= document.createElement("canvas").getContext("2d")!
-  measurer.font = `500 ${String(RING_FONT_SIZE)}px ${PILL_FONT}`
+  measurer.font = `${String(RING_TEXT.weight)} ${String(RING_TEXT.size)}px ${PILL_FONT}`
   return measurer.measureText(label).width
 }
 
@@ -199,24 +152,7 @@ interface Doorways {
   at: Map<string, Point>
 }
 
-/** A ghost's id holds the centre that created it and the node it stands in for. */
-const ghostId = (centre: string, target: string): string =>
-  `g${NUL}${centre}${NUL}${target}`
-
-/**
- * The node a ghost stands in for, or null if this is not a ghost.
- *
- * The split is on the second NUL, so the target is everything after it. The centre cannot be
- * read back out of the id, and nothing needs it.
- */
-export function ghostTarget(id: string): string | null {
-  if (!id.startsWith(`g${NUL}`)) return null
-  const cut = id.indexOf(NUL, 2)
-  return cut < 0 ? null : id.slice(cut + 1)
-}
-
 function buildStyle(p: Palette): StylesheetJson {
-  const pad = `${String(PILL_PAD)}px`
   return [
     // The default node: a small circle with no label. Only the centre and its neighbours
     // are labelled, and a labelled node draws as a pill. See the rules below.
@@ -257,14 +193,14 @@ function buildStyle(p: Palette): StylesheetJson {
         shape: "round-rectangle",
         width: "label",
         height: "label",
-        padding: pad,
+        padding: PAD,
         "background-color": p.surface,
         // Nearly opaque, so where two pills overlap the front one is readable.
         "background-opacity": 0.92,
         label: "data(label)",
         color: p.hop[0]!,
-        "font-size": RING_FONT_SIZE,
-        "font-weight": 500,
+        "font-size": RING_TEXT.size,
+        "font-weight": RING_TEXT.weight,
         "outline-width": PILL_HALO,
         "outline-color": p.surface,
         "z-index": RING_Z.bottom,
@@ -287,12 +223,12 @@ function buildStyle(p: Palette): StylesheetJson {
         shape: "round-rectangle",
         width: "label",
         height: "label",
-        padding: pad,
+        padding: PAD,
         "background-color": p.accent,
         "background-opacity": 1,
         label: "data(label)",
-        "font-size": 15,
-        "font-weight": 700,
+        "font-size": CENTRE_TEXT.size,
+        "font-weight": CENTRE_TEXT.weight,
         color: p.inkOnAccent,
         "border-width": 3,
         "border-color": p.accentRing,
@@ -326,7 +262,7 @@ function buildStyle(p: Palette): StylesheetJson {
         "background-opacity": 0,
         width: "label",
         height: "label",
-        padding: pad,
+        padding: PAD,
         "border-width": 2,
         "border-color": p.hop[0]!,
         "border-style": "dashed",
@@ -335,8 +271,8 @@ function buildStyle(p: Palette): StylesheetJson {
         "outline-color": p.surface,
         label: "data(label)",
         color: p.textSecondary,
-        "font-size": RING_FONT_SIZE,
-        "font-weight": 500,
+        "font-size": RING_TEXT.size,
+        "font-weight": RING_TEXT.weight,
         "z-index": GHOST_Z.bottom,
       },
     },
@@ -385,7 +321,7 @@ function buildStyle(p: Palette): StylesheetJson {
         shape: "round-rectangle",
         width: "label",
         height: "label",
-        padding: pad,
+        padding: PAD,
         label: "data(label)",
         "background-color": p.surface,
         // Opaque, unlike a ring pill's 0.92. Two ring pills overlap and the loser should stay
@@ -394,8 +330,8 @@ function buildStyle(p: Palette): StylesheetJson {
         // The page's own ink, not `p.hop[0]`. The ring's ink says "a neighbour of the centre",
         // and this node is not one. It is also the pair validated against the surface.
         color: p.textPrimary,
-        "font-size": RING_FONT_SIZE,
-        "font-weight": 500,
+        "font-size": RING_TEXT.size,
+        "font-weight": RING_TEXT.weight,
         "outline-width": PILL_HALO,
         "outline-color": p.surface,
         // The backdrop's 0.22 multiplies the label as well as the fill.
@@ -430,8 +366,19 @@ function buildStyle(p: Palette): StylesheetJson {
   ]
 }
 
-export class MapView {
-  readonly cy: Core
+export class MapView implements MapSurface {
+  /**
+   * Private, so `MapSurface` in map.ts is the whole surface. Every call site outside this file
+   * went through that type, and nothing is left that needs the instance.
+   */
+  private readonly cy: Core
+  /**
+   * One list per event name, written only through `on`.
+   *
+   * The read casts, because TypeScript cannot see that a key and its handler list stay in step
+   * across a generic parameter. Nothing else touches the map, so `on` is the whole proof.
+   */
+  private readonly listeners = new Map<keyof MapEvents, unknown[]>()
   private accentId: string | null = null
   private stubbed = 0
   /** True while the camera is flying. Nothing may take the accent until it lands. */
@@ -469,6 +416,102 @@ export class MapView {
       pixelRatio: Math.min(2, window.devicePixelRatio || 1),
     })
     this.panFromNodes()
+    this.bridge()
+  }
+
+  /** Hear one of the map's events. Every handler added for a name is called, in order. */
+  on<K extends keyof MapEvents>(name: K, handler: MapEvents[K]): void {
+    const list = this.listeners.get(name) ?? []
+    list.push(handler)
+    this.listeners.set(name, list)
+  }
+
+  private each<K extends keyof MapEvents>(name: K): MapEvents[K][] {
+    return (this.listeners.get(name) ?? []) as MapEvents[K][]
+  }
+
+  /**
+   * Turn Cytoscape's events into this map's own. The one place the two vocabularies meet.
+   *
+   * `mouseover` and `mouseout` rather than `tapdragover` and `tapdragout`, for `nodeEnter` and
+   * `nodeLeave`. The touch handlers emit only the second pair, so a finger dragging across the
+   * map would light every disc it crossed.
+   *
+   * `pressEnd` reports null where Cytoscape reports the core, because the core is a Cytoscape
+   * object and nothing outside this file may be handed one.
+   */
+  private bridge(): void {
+    const mouse = (event: EventObject): MouseEvent | undefined =>
+      event.originalEvent as MouseEvent | undefined
+
+    this.cy.on("viewport", () => {
+      for (const hear of this.each("viewport")) hear()
+    })
+    this.cy.on("mouseover", "node", (event) => {
+      for (const hear of this.each("nodeEnter")) hear(String(event.target.id()))
+    })
+    this.cy.on("mouseout", "node", () => {
+      for (const hear of this.each("nodeLeave")) hear()
+    })
+    this.cy.on("tap", "node", (event) => {
+      for (const hear of this.each("nodeTap")) hear(String(event.target.id()))
+    })
+    this.cy.on("cxttap", "node", (event) => {
+      for (const hear of this.each("nodeMenu")) hear(String(event.target.id()), mouse(event))
+    })
+    this.cy.on("cxttap", "edge", (event) => {
+      const a = String(event.target.source().id())
+      const b = String(event.target.target().id())
+      for (const hear of this.each("edgeMenu")) hear(a, b, mouse(event))
+    })
+    this.cy.on("tapstart", "node", (event) => {
+      for (const hear of this.each("pressStart")) hear(String(event.target.id()), mouse(event))
+    })
+    this.cy.on("tapdrag", (event) => {
+      for (const hear of this.each("pressMove")) hear(mouse(event))
+    })
+    this.cy.on("tapend", (event) => {
+      const id = event.target === this.cy ? null : String(event.target.id())
+      for (const hear of this.each("pressEnd")) hear(id)
+    })
+    this.cy.on("tapdragover", "node", (event) => {
+      for (const hear of this.each("pressOver")) hear(String(event.target.id()))
+    })
+    this.cy.on("tapdragout", "node", () => {
+      for (const hear of this.each("pressOut")) hear()
+    })
+  }
+
+  /** Where a node is drawn, in canvas pixels. Null for an id the map does not hold. */
+  screenOf(id: string): Point | null {
+    const node = this.cy.$id(id)
+    return node.empty() ? null : (node.renderedPosition() as Point)
+  }
+
+  /**
+   * Where the canvas sits in the viewport, so a caller can put the two together.
+   *
+   * `screenOf` measures from the canvas and a pointer event measures from the viewport. Anything
+   * comparing the two needs this, and reading it is a layout measurement, so the caller decides
+   * how often to pay for it.
+   */
+  containerOffset(): Point {
+    const box = this.cy.container()?.getBoundingClientRect()
+    return { x: box?.left ?? 0, y: box?.top ?? 0 }
+  }
+
+  panBy(by: Point): void {
+    this.cy.panBy(by)
+  }
+
+  /** Zoom by a factor, holding one point on the canvas still. */
+  zoomAbout(at: Point, factor: number): void {
+    this.cy.zoom({ level: this.cy.zoom() * factor, renderedPosition: at })
+  }
+
+  /** Switch panning off for the length of a gesture that wants the drag to itself. */
+  panning(on: boolean): void {
+    this.cy.userPanningEnabled(on)
   }
 
   /**
@@ -864,7 +907,7 @@ export class MapView {
       if (label) widest = Math.max(widest, nameWidth(label))
     }
     const around = 2 * PILL_PAD + 2 * PILL_HALO + SLOT_GAP
-    return { w: widest + around, h: RING_FONT_SIZE + around }
+    return { w: widest + around, h: RING_TEXT.size + around }
   }
 
   /**
@@ -1202,4 +1245,12 @@ export class MapView {
   resize(): void {
     this.cy.resize()
   }
+
+  /**
+   * Nothing to curve here. Cytoscape draws one flat surface, whatever the setting says.
+   *
+   * The page applies the reader's setting to whichever renderer is drawing, so the argument is
+   * taken and dropped. This goes when the file does.
+   */
+  curve(): void {}
 }

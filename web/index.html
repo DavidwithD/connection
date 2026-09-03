@@ -163,6 +163,13 @@
         <span>walk by pan</span>
       </label>
 
+      <!-- The curvature slider. Ships hidden, and main.ts shows it for the renderer that has a
+           surface to curve. The ends are set there too, from projection.ts. -->
+      <label class="setting" id="curvature-row" hidden>
+        <span>curvature</span>
+        <input id="curvature" type="range" step="0.05" />
+      </label>
+
       <div id="legend">
         <div class="row">
           <span class="dot accent"></span>
