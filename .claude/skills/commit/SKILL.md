@@ -1,15 +1,15 @@
 ---
 name: commit
-description: Review the working tree and write the commit. Use when the user asks to commit, stage, or draft a commit message, or says "commit this" / "/commit". Scans the diff for half-finished work, unverified tests, leftover debug code, secrets, approach drift, unrecorded decisions, and writing discipline in comments and docs — placement, single source, duplication, phrasing, unsourced claims; blocks on the serious ones; then generates a message in this repo's style. Also covers splitting one dirty tree into a series of commits, and amend/fixup.
+description: Review the working tree and write the commit. Use when the user asks to commit, stage, or draft a commit message, or says "commit this" / "/commit". Checks the diff for half-finished work, unverified tests, debug leftovers, secrets, approach drift, unrecorded decisions, and writing problems in comments and docs. Blocks on the serious ones, then writes the message in this repo's style. Also covers splitting one dirty tree into several commits, and amend/fixup.
 ---
 
 # Commit gate
 
-What a change must clear before it lands, and what the message has to say.
+What to check before a commit, and what the message must say.
 
-Order is fixed: **read the tree → verify → review → message → confirm → commit.** Never
-write the message first; a message drafted before the review rationalises whatever is in
-the diff.
+Follow this order: **read the tree → verify → review → message → confirm → commit.** Do not
+write the message first. A message written before the review will justify whatever the diff
+happens to contain.
 
 ## 1. Read the tree
 
@@ -23,69 +23,74 @@ git log --format='%s%n%b%n---' -8        # the style to match
 git stash list                           # work that may belong to this change
 ```
 
-Read the actual hunks, not just `--stat`. If nothing is staged, treat the whole working
-tree as the candidate and stage deliberately — never `git add -A` to save a step.
+Read the hunks themselves. `--stat` is not enough. If nothing is staged, treat the whole
+working tree as the candidate. Then stage files one at a time. Do not run `git add -A` to
+save a step.
 
 ## 2. Verify
 
-Run it. An unverified commit is a claim, not a change.
+Run the checks. Do not report a result you did not observe.
 
 ```
 npm run typecheck     # always; needs nothing running
-npm run build         # bundling fails in ways typecheck cannot see
+npm run build         # the build catches errors typecheck misses
 scripts/adr-gate.py   # docs/** touched, or a file a record links to moved
 ```
 
-Verification answers for the **index**, not the disk. Staging the whole working tree makes
-the two the same, and `npm test` runs every leg at once. A partial stage — §5's
-`git add -p` — does not: the file on disk is not the file being committed. Run against the
-staged tree instead, either `git stash push --keep-index --include-untracked` around the
-run, or `git checkout-index -a --prefix=` into a temp dir, which is what
-`scripts/hooks/pre-commit` does and why.
+The checks must answer for the **index**, not for the disk. Staging the whole working tree
+makes those the same, and `npm test` then runs every check at once. A partial stage does
+not, because the file on disk differs from the file being committed. §5's `git add -p`
+produces exactly that. In that case, run the checks against the staged tree. Either wrap the
+run in `git stash push --keep-index --include-untracked`, or copy the index into a temp
+directory with `git checkout-index -a --prefix=`. `scripts/hooks/pre-commit` uses the second
+method.
 
-Typecheck always blocks, and so does the build.
+Typecheck blocks. The build blocks.
 
-Nothing in `npm test` executes a line of `web/src/`. There is no behavioural test in this
-repo at all, so a diff that changes what the graph *does* — anything under
-`web/src/store/`, or a write path in `web/src/` — is unverified until someone drives the
-running page. Offer that, with `npm run web` and `node scripts/drive-map.mjs`. Never quietly
-count a skipped leg as a pass — name the leg that didn't run and what it would have covered.
+`npm test` executes no line of `web/src/`. This repo has no behavioural test at all. So a
+diff that changes what the graph does stays unverified until someone drives the running
+page. That covers anything under `web/src/store/`, and any write path in `web/src/`. Offer
+to drive it, with `npm run web` and `node scripts/drive-map.mjs`. Do not report a skipped
+check as a pass. Name the check that did not run, and say what it would have covered.
 
-The gate is not only for records. `M010` and `D005` read the whole tree, and `M002` breaks
-when a file a record links to is renamed or deleted, so a commit touching only `web/src/`
-can fail it. `scripts/hooks/pre-commit` runs the same gate against the staged tree on every
-commit — but only where someone ran `npm run hooks:install`, since `.git/hooks` is not
-versioned, and only where `python3` is on `PATH`, since it fails the commit outright
-without one. Even with one, a console that isn't UTF-8 kills the gate on the em dash in its
-own output; `PYTHONIOENCODING=utf-8` fixes that, and a `UnicodeEncodeError` traceback is not
-a pass. Where none of that holds, §2 by hand is the only gate there is — say so, rather than
-letting a hook that never ran read as one that found nothing.
+The ADR gate checks more than the records. `M010` and `D005` read the whole tree. `M002`
+breaks when a file a record links to is renamed or deleted. So a commit touching only
+`web/src/` can fail the gate.
+
+`scripts/hooks/pre-commit` runs the same gate against the staged tree on every commit. It
+runs only where someone ran `npm run hooks:install`, because `.git/hooks` is not versioned.
+It also needs `python3` on `PATH`, and it fails the commit outright without one. A console
+that is not UTF-8 crashes the gate on the em dash the gate itself prints. Set
+`PYTHONIOENCODING=utf-8` to fix that. A `UnicodeEncodeError` traceback is a failure, not a
+pass. Where the hook cannot run, §2 by hand is the only check there is. Say so in the
+report. Otherwise the report implies a hook ran and found nothing.
 
 ## 3. Review
 
-Findings carry a code. **Blocks** stop the commit until fixed or explicitly overridden by
-the user. **Warnings** go in the report and the user decides. **Notes** are one line each.
+Every finding carries a code. **Blocks** stop the commit until they are fixed, or until the
+user overrides them. **Warnings** go in the report, and the user decides. **Notes** are one
+line each.
 
-Report only what this diff introduces. Pre-existing mess in a touched file is not this
-commit's problem — mention it once, never block on it.
+Report only what this diff introduces. Do not block on problems that were already in a file
+you touched. The report names them once.
 
-Before reading the hunks, state each modified file's role in one line — what only it
-holds, and what each section it touches is for. Prefer the repo's own declaration where
-one exists (`README.md`, `docs/README.md`, a record) over your reading of the filename.
-`W020`, `W021` and `W024` need that baseline; without it every new line looks like it
-belongs.
+Before reading the hunks, state each modified file's role in one line. Say what only that
+file holds, and what each section it touches is for. Use the repo's own description where
+one exists — `README.md`, `docs/README.md`, or a record. Prefer it over your own reading of
+the filename. `W020`, `W021` and `W024` need that baseline. Without it, every new line looks
+like it belongs.
 
 ### Blocks
 
 `B001` a secret in the diff — key, token, password, connection string, real cloud
-credentials, a `.env` file · `B002` conflict markers or a half-finished merge/rebase ·
+credentials, a `.env` file · `B002` conflict markers, or a half-finished merge or rebase ·
 `B003` typecheck failing, or never run; the build failing, or never run · `B004` the ADR
-gate fails — on any record, not only one this change touches (§2) · `B005` an ADR
-renumbered, or a *decided* one deleted: a reversed decision gets a *new* record and the old
-one flips to ♻️ Superseded. A record still Proposed may be withdrawn, if its index row goes
-with it and its number stays spent (`docs/decisions/README.md`) · `B006` ignored or
+gate fails, on any record, including one this change does not touch (§2) · `B005` an ADR
+renumbered, or a *decided* one deleted. A reversed decision gets a *new* record, and the old
+one becomes ♻️ Superseded. A record still Proposed may be withdrawn. Delete its index row
+with it, and leave its number spent (`docs/decisions/README.md`) · `B006` ignored or
 generated output staged — `dist/`, `__pycache__/`, `*.log` · `B007` the change reverts or
-deletes work and you cannot say why — §6 confirms the message says it.
+deletes work and you cannot say why. §6 confirms the message says it.
 
 ### Warnings
 
@@ -94,73 +99,73 @@ a stub that returns nothing, `throw new Error('not implemented')`, an empty `cat
 `W003` a code path written but never reachable, or a flag added with no reader · `W004`
 one side of a pair changed alone — `db.ts` without `DB_VERSION`, `package.json` without
 `package-lock.json`, a new script with no `npm` entry, a new element id in one page's HTML
-and not in the module that reads it.
+with no reader in the module that loads it.
 
 **Leftovers** — `W005` `console.log`, `debugger`, stray `print()` · `W006` `.only(` or
 `.skip(` in a test, an assertion commented out · `W007` commented-out code kept "just in
-case" — git is the delta, delete it · `W008` a hardcoded endpoint, port, path, or
+case". Delete it; git holds the old version · `W008` a hardcoded endpoint, port, path, or
 `/Users/...` where config belongs.
 
 **Approach** — `W009` drift from what this repo already decided: ESM, no server, no build
 step but Vite, the graph in the browser · `W010` a new dependency where the platform or
-stdlib already does it, or one added without a record · `W011` `any`, `@ts-ignore`,
-non-null `!` used to get past a real type problem · `W012` an error swallowed so a failure
+stdlib already does the job, or one added without a record · `W011` `any`, `@ts-ignore`,
+non-null `!` used to get past a real type problem · `W012` an error swallowed, so a failure
 surfaces as wrong data instead of a crash · `W013` logic duplicated from somewhere else in
 `web/src/` instead of shared · `W014` a schema change — a store, a key path, an index —
 with no `DB_VERSION` bump and no `upgrade` path for a graph already in someone's browser ·
-`W032` an `await` inside an IndexedDB transaction on anything that is not a store request:
-the transaction commits early and the rest of the write is silently dropped
+`W032` an `await` inside an IndexedDB transaction on anything other than a store request.
+The transaction commits early, and the rest of the write is dropped with no error
 (`web/src/store/db.ts`).
 
 **Scope** — `W015` two unrelated concerns in one commit → propose the split (§5) · `W016`
 formatting or rename churn mixed into a behavioural change → separate commits · `W017` a
-deleted or renamed file still referenced by code, docs, or a link — the same for a renamed
-identifier, or content moved between sections or documents. Grep the whole repo for the
-old name; the definition site is never the whole sweep.
+deleted or renamed file still referenced by code, docs, or a link. The same applies to a
+renamed identifier, and to content moved between sections or documents. Search the whole
+repo for the old name. Searching the definition site alone misses the callers.
 
-**Record** — `W018` this change *is* a decision — a fork with a road not taken, a
-constraint future work must obey — and no ADR is open. The value is at write time, so the
-record goes in this change, not after (`docs/decisions/GATE.md`) · `W019` behaviour
-changed and `README.md` now contradicts the code · `W020` a sentence landed in the wrong
-document — reasoning in `design/`, a component or table named in `requirements/`, a number
-copied instead of cited once, a fact true only this week written into a living doc
-(`docs/README.md`). The content is right, the file is wrong, and this is the last moment
-moving it is free.
+**Record** — `W018` this change *is* a decision, and no ADR is open. `W018` fires when the
+change picks between real alternatives, or sets a constraint future work must follow. Write
+the record inside this change. A record written afterwards omits the uncertainty
+(`docs/decisions/GATE.md`) · `W019` behaviour changed, and `README.md` now contradicts the
+code · `W020` a sentence landed in the wrong document — reasoning in `design/`, a component
+or table named in `requirements/`, a number copied instead of cited once, a fact true only
+this week written into a living doc (`docs/README.md`). The content is correct and the file
+is wrong. Moving it later costs more.
 
-**Writing** — `W021` a fact landed one level short of its topic: right file, wrong
-section, or a rule wedged into a figure, tree, or example cell whose job is to illustrate ·
-`W022` a value copied instead of taken from the one place that owns it — imported in code,
-cited by name in a doc (`W020`). Grep the diff for `= \d` and check each against its
-source · `W023` an ad-hoc `python -c` or shell one-off for
-something a repo script or `npm` entry already does; extend the tool · `W024` a sentence a
-reader of the section above already knows — especially a negative aside ("X is unaffected",
-"same pattern as Y") that elaborates a topic outside their current thread · `W025` one
-rationale restated across files, sections, or comments; within a function, a docstring and
-an inline comment carrying the same content — the docstring owns the contract, the comment
-owns why this implementation · `W026` a comment restating what the code says, running
-multi-line where a pointer would do, or measuring the code against an alternative absent
-from the repo, which no reader can check · `W027` provenance outside its home — "confirmed
-by X on date Y", a threshold derived from one sample sitting in a general algorithm
-comment, or first-person narrative in a doc ("my guess was wrong"). The rationale stays;
-the log goes to a record · `W028` "not A but B", its disguises ("A isn't enough — you need
-B", `Aではなく`/`Aではない` trailed by the positive), and the bare `X, not Y` / `X and not Y`.
+**Writing** — `W021` a fact placed one level below its topic: right file, wrong section.
+Also a rule placed inside a figure, tree, or example cell that exists to illustrate ·
+`W022` a value copied instead of taken from the one place that owns it. Import it in code;
+cite it by name in a doc (`W020`). Grep the diff for `= \d` and check each against its
+source · `W023` an ad-hoc `python -c` or shell one-off doing something a repo script or
+`npm` entry already does. Extend the tool instead · `W024` a sentence the reader already
+learned from the section above. Watch for a negative aside ("X is unaffected", "same
+pattern as Y") about a topic the reader is not currently following · `W025` one rationale
+repeated across files, sections, or comments. Inside a function, that means a docstring and
+an inline comment carrying the same content. The docstring owns the contract; the comment
+owns why this implementation · `W026` a comment restating what the code says, or running
+multi-line where a pointer would do, or comparing the code against an alternative that is
+not in the repo for a reader to check · `W027` provenance outside its home — "confirmed by
+X on date Y", a threshold derived from one sample sitting in a general algorithm comment,
+first-person narrative in a doc ("my guess was wrong"). Keep the rationale. Move the log to
+a record · `W028` "not A but B", its disguises ("A isn't enough — you need B",
+`Aではなく`/`Aではない` trailed by the positive), and the bare `X, not Y` / `X and not Y`.
 Grep for `ではなく`, `ではない`, `rather than`, `isn't`, `, not `, `— not `, ` and not `, then
-read the sentence and ask: **would a reader have assumed A?** If yes it disambiguates — "the
+read the sentence and ask: **would a reader have assumed A?** If yes, it disambiguates. "The
 degree in the stored graph, not the number of edges loaded" names the wrong reading a caller
-would reach for. If no, A is a strawman; write only B. Plain negation is not this finding —
-"whichever end is not the anchor" has no B · `W029` a
-struck-through list item (`~~#2~~ — resolved: …`) or a gap left by an earlier deletion —
-delete resolved items outright, renumber from 1, keep it contiguous · `W030` a paragraph
-or bullet breaking the section's established pattern — inline formula where the section
-uses code blocks, outputs mixed into a list of inputs, an item wedged between two
-paragraphs that belong together · `W031` a claim about a schema, column, API shape, config
-value, or enum meaning asserted with no primary source — verify it, or mark it unverified.
-A guess in the body reads as a fact forever · `W033` a sentence written for its sound: a
-metaphor, an abstract noun standing in for the file or function that is the real subject, an
-inverted or aphoristic clause, a run past 25 words. The rule and the one thing it exempts are
-in `docs/README.md`, and it reaches `docs/**` with records included, comments under
-`web/src/`, and §4's message. Read each added sentence once and ask what its subject is — if
-finding that takes a second pass, rewrite it.
+would reach for. If no, A is a strawman, so write only B. Plain negation does not count
+here: "whichever end is not the anchor" has no B · `W029` a struck-through list item
+(`~~#2~~ — resolved: …`), or a gap left by an earlier deletion. Delete resolved items,
+renumber from 1, keep the list contiguous · `W030` a paragraph or bullet breaking the
+section's established pattern — an inline formula where the section uses code blocks,
+outputs mixed into a list of inputs, an item wedged between two paragraphs that belong
+together · `W031` a claim about a schema, column, API shape, config value, or enum meaning
+asserted with no primary source. Verify it, or mark it unverified. A guess written in the
+body will be read later as a fact · `W033` a sentence written for its sound: a metaphor, an
+abstract noun standing in for the file or function the sentence is really about, an inverted
+or aphoristic clause, or a run past 25 words. `docs/README.md` holds the rule and its one
+exemption. It applies to `docs/**` including records, to comments under `web/src/`, and to
+§4's message. Read each added sentence once and ask what its subject is. If finding the
+subject takes a second pass, rewrite the sentence.
 
 ### Notes
 
@@ -172,29 +177,30 @@ intended · `N003` diff over ~600 lines: say what a reviewer should read first �
 
 Ask these yourself, on the hunks:
 
-- **Does the code do what the message will claim?** The single most common defect.
-- **Is this one change?** If the subject needs "and", it's two commits.
-- **Would this bisect cleanly?** A commit that doesn't build is a landmine for whoever
-  bisects through it later.
-- **Is anything load-bearing untested** — not "is coverage up", but: if this broke, would
-  anything fail before a user found it?
-- **What did the author decide?** If a real alternative was rejected, that belongs in a
-  record, not in a commit body nobody greps.
-- **Does each file still hold only what it monopolises?** Not "is this true" — `W019` asks
-  that. Ask whether the code, the design doc, the record, and this commit message are each
-  carrying only the part no other one can.
-- **Does this comment belong *here*?** A comment earns its place by explaining a
-  non-obvious why at the point of confusion, or by stating a contract a caller depends on.
-  Anything else moves or goes, however accurate it is.
+- **Does the code do what the message will claim?** This is the most common defect.
+- **Is this one change?** If the subject needs "and", it is two commits.
+- **Would this bisect cleanly?** Anyone bisecting later stops on a commit that does not
+  build.
+- **Is anything load-bearing untested?** Ask whether anything would fail before a user
+  found the breakage. Rising coverage does not answer that.
+- **What did the author decide?** A rejected alternative belongs in a record. Nobody greps
+  commit bodies for it.
+- **Does each file still hold only what it monopolises?** `W019` covers whether the content
+  is true. This check is different. Confirm that the code, the design doc, the record, and
+  this commit message each carry only the part no other one can.
+- **Does this comment belong *here*?** Keep a comment in two cases. It explains a
+  non-obvious why at the point of confusion, or states a contract a caller depends on. Move
+  or delete anything else, however accurate it is.
 - **Could someone read this section alone and follow it?** And could a maintainer keep it
-  accurate without hunting? A title, an opener, and a first table row saying one thing
-  three times; related facts split between a table and a trailing paragraph — every line
-  correct, the whole harder to keep true.
+  accurate without hunting? Watch for a title, an opener, and a first table row that all say
+  the same thing. Watch for related facts split between a table and a trailing paragraph.
+  Every line can be correct while the whole gets harder to keep true.
 
 ## 4. Message
 
-Everything else in the repo records what is true *now*. A commit's monopoly is **why this
-change, now** — the reason that is invisible in the resulting code. Spend the body there.
+Everything else in the repo records what is true *now*. Only the commit message records
+**why this change, and why now**. That reason is invisible in the resulting code. Write the
+body about that.
 
 ```
 <subject: imperative, sentence case, ≤60 chars, no trailing period>
@@ -207,57 +213,65 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 ```
 
 - Match `git log`, not a convention from elsewhere. This repo uses plain sentence-case
-  subjects and prose bodies — **no** `feat:`/`fix:` prefixes. If the repo later adopts
-  Conventional Commits, follow the log, not this file.
-- Imperative: "Add", "Move", "Drop" — the subject completes "this commit will …".
+  subjects and prose bodies, with **no** `feat:`/`fix:` prefixes. If the repo later adopts
+  Conventional Commits, follow the log rather than this file.
+- Imperative: "Add", "Move", "Drop". The subject completes "this commit will …".
 - No diffstat in prose. "Changed 4 files, added keys.ts" is already in the diff.
-- No time-relative words — "currently", "for now", "soon" go stale in the log forever.
-- Bullets only for a genuine list of independent items. Default to prose.
-- Trailers: `Refs:` a record or issue when one exists; `Co-Authored-By:` when Claude wrote
-  code in the commit. Nothing invented — no issue number that isn't real.
-- Body is optional for a change whose why is truly self-evident (a typo, a version bump).
-  Everything else gets one.
+- No time-relative words. "Currently", "for now" and "soon" become wrong as time passes.
+- Bullets only for a genuine list of independent items. Otherwise write prose.
+- Trailers: `Refs:` a record or issue when one exists. `Co-Authored-By:` when Claude wrote
+  code in the commit. Invent nothing, including an issue number that does not exist.
+- A change whose reason is self-evident needs no body: a typo, a version bump. Everything
+  else gets one.
 
 Rejected subjects: `Update files`, `Fix bug`, `Various improvements`, `WIP`, `Address
-feedback`, anything that would read identically on a hundred other commits.
+feedback`, and any subject that would fit a hundred other commits.
 
 ## 5. Splitting
 
-When the tree holds more than one change, don't average them into one message. Propose the
-series — for each commit: the files or hunks, the subject, and why it stands alone. Then
-stage and commit them one at a time, verifying between (§2) so every commit builds.
+When the tree holds more than one change, do not average them into one message. Propose the
+series instead. For each commit give the files or hunks, the subject, and why it stands
+alone. Then stage and commit them one at a time. Verify between commits (§2), so that every
+commit builds.
 
-Use `git add -p` when one file holds two concerns. Say plainly if a clean split isn't
-possible without editing the code.
+Use `git add -p` when one file holds two concerns. Say plainly when a clean split needs the
+code edited first.
 
 ## 6. Confirm
 
-Show the report and the full message, then wait. Don't commit through an unresolved block.
+Show the report and the full message, then wait. Do not commit through an unresolved block.
 
 Name the checks you applied alongside the findings, and the file roles §3 assumed. A check
-you skipped leaves no trace in a clean report, and that list is what lets the user catch
-the gap. Once fixes land, review the new diff again — placement, structure, and a disguised
-`W028` surface on a second pass far more often than a first.
+you skipped leaves no trace in a clean report, so that list is what lets the user catch the
+gap. Once fixes land, review the new diff again. A second pass catches placement problems,
+structure problems and a disguised `W028` far more often than a first pass does.
 
-Then: `git commit` with the message via a heredoc or `-F`, and report the resulting
+Then run `git commit` with the message via a heredoc or `-F`, and report the resulting
 `git log -1 --stat`.
 
-Never, without being asked in that turn: `push`, `amend` a commit that is already pushed,
-`git checkout`/`restore`/`reset --hard` anything with uncommitted work in it, `stash drop`,
-`rebase`, or a force flag of any kind. A commit is recoverable; those are how work is lost.
+Do none of the following unless the user asks in that turn:
 
-`--no-verify` belongs on that list for a different reason: it costs nothing and voids
-`B004`. The hook names it as the fix whenever it blocks, which is the one moment it must
-not be taken. Fix the record, or ask.
+- `push`
+- `amend` a commit that is already pushed
+- `git checkout`/`restore`/`reset --hard` over uncommitted work
+- `stash drop`
+- `rebase`
+- any force flag
+
+A commit can be undone. These commands destroy work.
+
+`--no-verify` belongs on that list for a different reason. It is easy to type, and it skips
+`B004` entirely. The hook suggests it every time it blocks, which is the one moment to
+refuse it. Fix the record, or ask.
 
 ## Amend and fixup
 
-`amend` — for the tip commit only, and only while it is unpushed. `git status --porcelain=v2
---branch` has to show `# branch.ab +N -M` with N ≥ 1: those are the commits the upstream
-does not have yet. `+0` means the tip is already published and amending rewrites history
-someone else may hold. No `branch.ab` line at all means nothing was compared, which is not
-an answer either — ask. Re-run §2 and §3 against the *combined* diff, and rewrite the
-message to describe the result rather than appending "also fix X".
+Use `amend` on the tip commit only, and only while that commit is unpushed. `git status
+--porcelain=v2 --branch` must show `# branch.ab +N -M` with N ≥ 1. Those N commits are the
+ones the upstream does not have yet. `+0` means the tip is already published, so amending
+would rewrite history someone else may hold. A missing `branch.ab` line means nothing was
+compared, which is also not an answer — ask. Re-run §2 and §3 against the *combined* diff.
+Rewrite the message to describe the result, instead of appending "also fix X".
 
-`fixup` — once the commit is pushed or shared, a follow-up commit is the answer. Say that
-instead of rewriting history.
+Use `fixup` once the commit is pushed or shared. A follow-up commit is the answer there. Say
+so, rather than rewriting history.
