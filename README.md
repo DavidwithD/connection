@@ -157,6 +157,8 @@ scripts/
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it
   drive-rename.mjs     drives the rename, and checks what the store kept
   hooks/pre-commit     runs both gates on the staged tree
+.github/
+  dependabot.yml       opens the pull request when an action version goes stale
 .github/workflows/
   ci.yml               the same gates, where they cannot be skipped
 ```
