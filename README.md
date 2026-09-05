@@ -25,7 +25,7 @@ being about setup.
 | | Why |
 |---|---|
 | **Node 20.19+ or 22.12+** | Runtime. The floor is Vite's, not ours, and `engines` is held to it by the [docs gate](docs/checks.md) |
-| **npm 12** | `packageManager` names it. Only the npm that writes the lock has to agree with the npm that reads it — npm 11.6.2 writes one that CI rejects |
+| **npm 12** | `packageManager` names it. Only the npm that writes the lock has to agree with the npm that reads it — npm 11.6.2 writes one that CI rejects. An install from another major is refused by [scripts/npm-guard.mjs](scripts/npm-guard.mjs) |
 | **A browser with IndexedDB** | Which is every current one, outside a private window. It is where the graph lives — see [ADR 0030](docs/decisions/0030-the-graph-moves-into-the-browser.md) |
 | **bash** | npm runs every script through it, so the POSIX ones work on Windows too. Ships with git. See [ADR 0015](docs/decisions/0015-bash-as-the-script-shell.md) |
 | **python3** | The two documentation gates. Only needed to run `npm test` |
@@ -64,6 +64,7 @@ around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.
 | `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
 | `npm run drive:nodes` | Drive the node list: the controls, the walk into a neighbour, and back |
 | `npm run drive:globe` | Drive the globe renderer at `/?globe`, and photograph what it draws |
+| `npm run preinstall` | Runs on every install. Refuses one from an npm that would rewrite the lock |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
 ## Where the graph lives
@@ -135,6 +136,7 @@ test/
   write.test.ts          every write, against a real IndexedDB
   read.test.ts           every read, and the island paging
   node-list.test.ts      what the controls select, and where a click leaves the page
+  npm-guard.test.ts      the install guard, and the one case it lets past
   load.test.ts           a text file against the store
   transfer.test.ts       export, import, check and recount
   combobox.dom.test.ts   the box that returns nodes — needs a document
@@ -151,6 +153,7 @@ scripts/
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
   drive-nodes.mjs      drives the node list, its controls and its walk
+  npm-guard.mjs        refuses an install that would rewrite the lock under another npm
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it
   drive-rename.mjs     drives the rename, and checks what the store kept
   hooks/pre-commit     runs both gates on the staged tree
