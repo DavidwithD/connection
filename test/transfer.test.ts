@@ -142,6 +142,15 @@ describe("buildGraph", () => {
   it("reports a node with no usable name", () => {
     expect(buildGraph([{ label: "   " }], []).faults).toEqual(["a node has no usable name"])
   })
+
+  it("gives every node in one file the same date", () => {
+    const built = buildGraph(
+      [{ label: "Kavara" }, { label: "Miselin" }],
+      [["kavara", "miselin"]],
+    )
+    expect(typeof built.nodes[0]?.created).toBe("number")
+    expect(new Set(built.nodes.map((node) => node.created)).size).toBe(1)
+  })
 })
 
 describe("readExport", () => {
@@ -163,6 +172,24 @@ describe("readExport", () => {
   it("refuses anything that is not a graph", () => {
     expect(readExport(null).faults).toHaveLength(1)
     expect(readExport("a string").faults).toHaveLength(1)
+  })
+
+  it("dates a file written before the record carried a date", () => {
+    const { nodes, edges } = pair()
+    const undated = nodes.map(({ created: _gone, ...rest }) => rest)
+    const read = readExport({ version: EXPORT_VERSION, nodes: undated, edges })
+    expect(read.faults).toEqual([])
+    expect(read.nodes.every((node) => typeof node.created === "number")).toBe(true)
+    // They arrive together, so they take one date: the moment of the load.
+    expect(new Set(read.nodes.map((node) => node.created)).size).toBe(1)
+  })
+
+  it("refuses a file whose date is not a number", () => {
+    const { nodes, edges } = pair()
+    const wrong = nodes.map((node) => ({ ...node, created: "yesterday" }))
+    const read = readExport({ version: EXPORT_VERSION, nodes: wrong, edges })
+    expect(read.faults[0]).toContain("created that is not a number")
+    expect(read.nodes).toEqual([])
   })
 
   it("checks the shape before asking whether the graph is consistent", () => {

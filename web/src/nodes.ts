@@ -18,8 +18,19 @@ import {
   whenEvicted,
 } from "./store/index.js"
 import type { NodeMeta, NodeRow } from "./store/index.js"
-import { normaliseLabel } from "./store/keys.js"
 import { MAX_EDGES_PER_NODE } from "./store/read.js"
+import {
+  backTo as backFrom,
+  owner as ownerOf,
+  pageCount as countPages,
+  pageHolding,
+  pageOf,
+  select,
+  walkTo,
+  type Controls,
+  type Order,
+  type Walk,
+} from "./node-list.js"
 
 /** One hue per depth of the stack, so each card is its own colour. */
 const HUES = [24, 190, 265, 95, 330, 45]
@@ -27,23 +38,11 @@ const HUES = [24, 190, 265, 95, 330, 45]
 /** How long typing has to stop before the search runs. */
 const TYPING_MS = 150
 
-type Order = "label" | "date" | "random"
-
-interface State {
+interface State extends Controls, Walk {
   /** Every node, read once at boot. */
   all: NodeRow[]
-  query: string
-  from: number | null
-  to: number | null
-  order: Order
-  /** Re-rolled by the shuffle button. The random order has to hold still while you page. */
-  seed: number
   size: number
   page: number
-  /** The row expanded in the list, or null. */
-  open: string | null
-  /** The nodes walked into. Empty means the list is showing. */
-  trail: NodeMeta[]
   /** Neighbours of whatever is expanded now: the open row, or the last card in the stack. */
   sub: NodeMeta[]
   /** Which node `sub` belongs to. A sublist is never drawn under another node's name. */
@@ -93,68 +92,36 @@ const next = el<HTMLButtonElement>("list-next")
 
 const DAY = 86_400_000
 
-/** FNV-1a, 32 bit. It gives the random order a roll per name that survives paging. */
-function hash(text: string): number {
-  let value = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) {
-    value ^= text.charCodeAt(i)
-    value = Math.imul(value, 0x01000193) >>> 0
-  }
-  return value >>> 0
-}
-
+/**
+ * The rows the controls let through, kept until a control changes.
+ *
+ * `select` walks the whole list, and a render asks for the rows several times. The key is
+ * every control that feeds it.
+ */
 let cache: { key: string; rows: NodeRow[] } | null = null
 
-/**
- * Every node the controls let through, in the order they ask for.
- *
- * Filtering and sorting happen here, over the whole list in memory. No index in the store
- * answers a substring, a date or a shuffle. See `readAllNodes` in the store.
- */
 function matched(): NodeRow[] {
   const key = [state.query, state.from, state.to, state.order, state.seed].join(" ")
   if (cache && cache.key === key) return cache.rows
-
-  // The key is the name with case and spacing normalised. Matching against the key is what
-  // makes "Old  Mill" find the node filed as "old mill".
-  const needle = normaliseLabel(state.query)
-  const rows = state.all.filter((row) => {
-    if (needle && !row.id.includes(needle)) return false
-    if (state.from !== null && row.created < state.from) return false
-    if (state.to !== null && row.created > state.to) return false
-    return true
-  })
-
-  if (state.order === "label") rows.sort((a, b) => a.label.localeCompare(b.label))
-  if (state.order === "date") {
-    rows.sort((a, b) => b.created - a.created || a.id.localeCompare(b.id))
-  }
-  if (state.order === "random") {
-    const roll = new Map(rows.map((row) => [row.id, hash(`${String(state.seed)} ${row.id}`)]))
-    rows.sort((a, b) => (roll.get(a.id) ?? 0) - (roll.get(b.id) ?? 0))
-  }
-
+  const rows = select(state.all, state)
   cache = { key, rows }
   return rows
 }
 
-const pageCount = (): number => Math.max(1, Math.ceil(matched().length / state.size))
+const pageCount = (): number => countPages(matched().length, state.size)
 
 /** The rows on the page you are looking at. */
-function shown(): NodeRow[] {
-  const start = state.page * state.size
-  return matched().slice(start, start + state.size)
-}
+const shown = (): NodeRow[] => pageOf(matched(), state.page, state.size)
 
-/** Move to the page holding `id`, or say that the controls have hidden it. */
+/** Move to the page holding `node`, or say that the controls have hidden it. */
 function reveal(node: NodeMeta): void {
-  const at = matched().findIndex((row) => row.id === node.id)
-  if (at < 0) {
+  const at = pageHolding(matched(), node.id, state.size)
+  if (at === null) {
     state.open = null
     state.note = `${node.label} is not in what the controls let through`
     return
   }
-  state.page = Math.floor(at / state.size)
+  state.page = at
   state.open = node.id
 }
 
@@ -229,41 +196,19 @@ async function toggle(node: NodeRow): Promise<void> {
   await expand(node)
 }
 
-/**
- * Click a neighbour. Two outcomes.
- *
- * On the list: a neighbour that is one of the rows on this page closes the open row and opens
- * its own. A neighbour that is not on this page starts the stack, and the row it was clicked
- * from becomes the first card.
- *
- * In the stack: a neighbour already in the stack cuts the stack back to it. Anything else is
- * pushed on top.
- */
+/** Click a neighbour. `walkTo` decides where that leaves the page. */
 async function step(node: NodeMeta): Promise<void> {
-  if (state.trail.length === 0) {
-    if (shown().some((row) => row.id === node.id)) {
-      state.open = node.id
-    } else {
-      const from = shown().find((row) => row.id === state.open)
-      state.trail = from ? [from, node] : [node]
-    }
-  } else {
-    const at = state.trail.findIndex((card) => card.id === node.id)
-    state.trail = at >= 0 ? state.trail.slice(0, at + 1) : [...state.trail, node]
-  }
+  Object.assign(state, walkTo(state, node, shown()))
   await expand(node)
 }
 
-/** Click a card. The first card goes back to the list. */
+/** Click a card. The first card goes back to the list, on the page that holds it. */
 async function backTo(depth: number): Promise<void> {
   const card = state.trail[depth]
-  if (!card || depth === state.trail.length - 1) return
-  if (depth === 0) {
-    state.trail = []
-    reveal(card)
-  } else {
-    state.trail = state.trail.slice(0, depth + 1)
-  }
+  const next = backFrom(state, depth)
+  if (!card || next === state) return
+  state.trail = next.trail
+  if (!next.trail.length) reveal(card)
   await expand(card)
 }
 
@@ -367,12 +312,6 @@ function paintSub(): void {
   mounted = fresh
 }
 
-/** The node whose neighbours are on screen: the top card, or the open row. */
-function owner(): NodeMeta | null {
-  if (state.trail.length) return state.trail[state.trail.length - 1] ?? null
-  return state.all.find((row) => row.id === state.open) ?? null
-}
-
 /**
  * One placeholder per neighbour the node is about to show.
  *
@@ -399,7 +338,7 @@ function sublist(): HTMLElement {
   const list = document.createElement("ul")
   list.className = "subrows"
 
-  const holder = owner()
+  const holder = ownerOf(state, state.all)
   // A stale list belongs to the node clicked before this one. Never draw it under this name.
   if (state.reading || state.subOf !== holder?.id) return waiting(list, holder)
   if (state.note) return one(list, state.note)

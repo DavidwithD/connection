@@ -107,7 +107,8 @@ web/src/
   drag-join.ts  the drag that joins two nodes, and the arrow it draws
   islands.ts    the panel down the left: every component, as somewhere to go
   main.ts       wiring, the centre, the panels around it
-  nodes.ts      the node list page: what the controls select, and what a click opens
+  node-list.ts  what the controls select, and where a click leaves the page — pure
+  nodes.ts      the node list page: the elements, the reads and the drawing
   transfer.ts   the file page, and everything that changes a whole graph
 web/src/store/
   db.ts         the schema: two object stores, three indexes, one connection
@@ -133,6 +134,7 @@ test/
   generate.test.ts       the demo graph generator
   write.test.ts          every write, against a real IndexedDB
   read.test.ts           every read, and the island paging
+  node-list.test.ts      what the controls select, and where a click leaves the page
   load.test.ts           a text file against the store
   transfer.test.ts       export, import, check and recount
   combobox.dom.test.ts   the box that returns nodes — needs a document

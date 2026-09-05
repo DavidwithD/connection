@@ -12,7 +12,7 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
 import { emptyGraph } from "./graph.js"
-import { readIslandCount, readNeighbourhood, readNode } from "../web/src/store/read.js"
+import { readAllNodes, readIslandCount, readNeighbourhood, readNode } from "../web/src/store/read.js"
 import {
   ALREADY_JOINED,
   Missing,
@@ -69,6 +69,37 @@ describe("createNode", () => {
     await createNode("Kavara")
     await createNode("Miselin")
     expect(await readIslandCount()).toBe(2)
+  })
+})
+
+describe("the date a node carries", () => {
+  /** The record for one name, as the store holds it. */
+  const dateOf = async (id: string): Promise<number | undefined> =>
+    (await readAllNodes()).find((row) => row.id === id)?.created
+
+  it("stamps a new node with the moment it was written", async () => {
+    const before = Date.now()
+    await createNode("Kavara")
+    const made = await dateOf("kavara")
+    expect(made).toBeGreaterThanOrEqual(before)
+    expect(made).toBeLessThanOrEqual(Date.now())
+  })
+
+  it("keeps the date across a rename, because it is the same node", async () => {
+    await createNode("Kavara")
+    const made = await dateOf("kavara")
+    await renameNode("kavara", "Vessarin")
+    expect(await dateOf("vessarin")).toBe(made)
+    expect(await dateOf("kavara")).toBeUndefined()
+  })
+
+  it("gives one date to every node a joined pair created", async () => {
+    // Two nodes, two calls, one graph. Each is stamped as it is written.
+    await createNode("Kavara")
+    await createNode("Miselin")
+    await addEdge("kavara", "miselin")
+    const dates = (await readAllNodes()).map((row) => row.created)
+    expect(dates.every((date) => typeof date === "number")).toBe(true)
   })
 })
 

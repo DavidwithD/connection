@@ -1,5 +1,5 @@
 /**
- * Every read the two pages make, from web/src/store/read.ts.
+ * Every read the three pages make, from web/src/store/read.ts.
  *
  * The paging is the part worth testing. `byIsland` is keyed by size and then by name, so no
  * two rows share a key. A page that repeated or skipped a component would be hard to notice
@@ -14,6 +14,7 @@ import {
   fetchIslands,
   readIslandCount,
   readIslandPage,
+  readAllNodes,
   readNeighbourhood,
   readNode,
   readOpening,
@@ -103,6 +104,31 @@ describe("readNode", () => {
     // The one read whose good answer is nothing. It is how the rename box asks if a name
     // is free.
     expect(await readNode("nobody")).toBeNull()
+  })
+})
+
+describe("readAllNodes", () => {
+  it("answers with every node, and the date on each one", async () => {
+    await seed(["Kavara | Miselin", "Thorne"])
+    const rows = await readAllNodes()
+    expect(rows.map((row) => row.id).sort()).toEqual(["kavara", "miselin", "thorne"])
+    expect(rows.every((row) => typeof row.created === "number")).toBe(true)
+  })
+
+  it("carries the label and the stored degree, as the other reads do", async () => {
+    await seed(["Kavara | Miselin"])
+    const kavara = (await readAllNodes()).find((row) => row.id === "kavara")
+    expect(kavara?.label).toBe("Kavara")
+    expect(kavara?.degree).toBe(1)
+  })
+
+  it("stops at the limit it is given", async () => {
+    await seed(["Kavara", "Miselin", "Thorne"])
+    expect(await readAllNodes(2)).toHaveLength(2)
+  })
+
+  it("answers with nothing for a graph with no nodes", async () => {
+    expect(await readAllNodes()).toEqual([])
   })
 })
 
