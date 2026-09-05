@@ -1,12 +1,20 @@
 /**
- * Every read the two pages make.
+ * Every read the three pages make.
  *
- * Each one is a key lookup, a key range, or an index range. Nothing here scans a store.
+ * Each one is a key lookup, a key range, or an index range. `readAllNodes` is the only read
+ * here that scans the store, and it says why.
  */
 import { counts, open, type StoredNode } from "./db.js"
 import { normaliseLabel } from "./keys.js"
 import { Missing } from "./refused.js"
-import type { IslandMeta, IslandPage, Neighbourhood, NodeMeta, Opening } from "./shapes.js"
+import type {
+  IslandMeta,
+  IslandPage,
+  Neighbourhood,
+  NodeMeta,
+  NodeRow,
+  Opening,
+} from "./shapes.js"
 
 /**
  * The most edges read for one node.
@@ -134,6 +142,31 @@ export async function readNode(id: string): Promise<NodeMeta | null> {
   const db = await open()
   const node = await db.get("nodes", id)
   return node ? metaOf(node) : null
+}
+
+/**
+ * The most nodes one list read returns.
+ *
+ * The store is built for 50,000 nodes, so this is the whole graph rather than a page of it. A
+ * graph past this is cut off, and the page that asked has to say so.
+ */
+export const MAX_LIST_NODES = 50_000
+
+/**
+ * Every node, with its date. The only read here that scans the store.
+ *
+ * The node list searches names by substring, orders by date, and orders at random. No index
+ * in this schema answers any of those. `byIsland` holds one entry per component and
+ * `byParent` groups by root, so neither one lists nodes. So the page takes the whole list
+ * once and works over it in memory.
+ *
+ * The cost is one read of every record at boot, and the page reports how long it took. The
+ * map does not use this. It walks outward from one node and reads a neighbourhood at a time.
+ */
+export async function readAllNodes(limit: number = MAX_LIST_NODES): Promise<NodeRow[]> {
+  const db = await open()
+  const found = await db.getAll("nodes", null, limit)
+  return found.map((node) => ({ ...metaOf(node), created: node.created }))
 }
 
 /** Where a page of islands stopped: the index key of its last row. */

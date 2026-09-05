@@ -14,6 +14,16 @@ export interface NodeMeta {
   degree: number
 }
 
+/**
+ * A node in a list, with the date it was written.
+ *
+ * `NodeMeta` is what the map needs to draw a node. This is what a list needs to order one.
+ * The date is on the record and no index covers it. See read.ts.
+ */
+export interface NodeRow extends NodeMeta {
+  created: number
+}
+
 export interface Neighbourhood {
   node: NodeMeta
   neighbours: NodeMeta[]

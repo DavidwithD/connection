@@ -1,9 +1,9 @@
-/* Styles for both pages: the map page and the transfer page.
+/* Styles for all three pages: the map, the node list and the transfer page.
 
    Linked from the HTML, not imported by the bundle. A script error then breaks a page's
    behaviour but not its styling.
 
-   One file for both pages, so the tokens and the bordered-box style are written once. */
+   One file for all three, so the tokens and the bordered-box style are written once. */
 
 /* Colour tokens. They match web/src/palette.ts. Dark mode is not an inversion of light
    mode. Each dark value is picked by hand. */

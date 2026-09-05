@@ -15,15 +15,16 @@ design page that answers properly — and that page wins if the two ever disagre
 
 ```bash
 npm install
-npm run web             # both pages at :5173
+npm run web             # all three pages at :5173
 ```
 
 That is the whole of it. There is no database to start, no API to run, and nothing to seed
 before the page will open — the graph lives in the browser
 ([0030](decisions/0030-the-graph-moves-into-the-browser.md)).
 
-Two pages. The map draws the graph. The other draws nothing at all, and is where a graph
-arrives as a file, leaves as one, and is seeded, checked and repaired.
+Three pages. The map draws the graph. The node list names every node at once, and walks from
+one to its neighbours. The transfer page draws nothing at all, and is where a graph arrives as
+a file, leaves as one, and is seeded, checked and repaired.
 
 **A fresh browser holds no graph.** The map says so and points at the transfer page, where
 **Seed a demo graph** gives you something to walk around.
@@ -213,6 +214,42 @@ The layers behind all of this are [architecture.md](design/architecture.md); the
 what each choice cost are [ADR 0003](decisions/0003-graph-exploration-demo-stack.md),
 [ADR 0004](decisions/0004-the-centre-and-its-neighbourhood.md) and
 [ADR 0006](decisions/0006-only-the-centre-reads.md).
+
+## The node list — `/nodes.html`
+
+Linked from the guide on the map. Every node the store holds, as rows you can search, order
+and page through. The map answers "what is around this node"; this page answers "what is in
+the graph at all".
+
+| Control | What it does |
+|---|---|
+| **search names** | Keeps a row whose name contains what you typed, spacing and case ignored |
+| **order** | By name, by date newest first, or at random. **shuffle** re-rolls the random one |
+| **made … to …** | Keeps a row written in that range of days. Either end can be left empty |
+| **per page** | 25, 50 or 100 rows |
+| **clear** | Back to every node, by name, on the first page |
+
+**Click a row** to open its neighbours under it. Click it again to close them. One row is open
+at a time.
+
+**Click a neighbour** and one of two things happens. A neighbour that is one of the rows on
+this page opens in place: the row you were in closes, and that node's row opens. A neighbour
+that is not on this page opens as a card over the row you came from, offset to the right, so
+the row you came from still shows as a strip at the left edge. Its neighbours are listed under
+the card. Walking on stacks another card, and each card is a different colour.
+
+**Click a strip** to go back to that node. The first card goes back to the list, on whatever
+page holds it.
+
+**The dates come from the record**, and every node stored before
+[ADR 0044](decisions/0044-the-node-record-carries-a-date.md) carries the date of that upgrade.
+So a graph seeded or loaded before then reads as one day, and the date order is only useful
+once newer nodes arrive.
+
+The read time next to the pager is the whole store. This page holds every node in memory,
+because no index in the store answers a substring, a date range or a shuffle
+([architecture.md](design/architecture.md)). `npm run drive:nodes` drives the page in a real
+browser and checks each of these.
 
 ## Graph files — `/transfer.html`
 

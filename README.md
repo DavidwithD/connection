@@ -36,19 +36,19 @@ No AWS account, no credentials, and no database process.
 
 ```bash
 npm install
-npm run web             # both pages at :5173
+npm run web             # all three pages at :5173
 ```
 
 A fresh browser holds no graph. The map says so and points at
 [/transfer.html](web/transfer.html), where **Seed a demo graph** gives you something to walk
-around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
+around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 
 ## Commands
 
 | Command | Does |
 |---|---|
-| `npm run web` | The dev server, on `:5173` — both pages |
-| `npm run build` | Bundle both pages to `dist/web/` |
+| `npm run web` | The dev server, on `:5173` — all three pages |
+| `npm run build` | Bundle all three pages to `dist/web/` |
 | `npm run typecheck` | `tsc --noEmit` over `web/src/` |
 | `npm test` | `typecheck` + `adr` + `docs` |
 | `npm run adr` | Run the decision gate over `docs/decisions/` |
@@ -61,6 +61,7 @@ around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
 | `npm run drive:drag-join` | Drive the shift-drag that joins two nodes, and check what it wrote |
 | `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
+| `npm run drive:nodes` | Drive the node list: the controls, the walk into a neighbour, and back |
 | `npm run drive:globe` | Drive the globe renderer at `/?globe`, and photograph what it draws |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
@@ -85,7 +86,9 @@ writes, so the second one drifts until you reload it.
 web/
   index.html    the map
   transfer.html a graph out as a file, a file in as a graph, and the whole-graph acts
-  app.css       the chrome around both
+  nodes.html    the node list: search, dates, order, paging, and the walk into a neighbour
+  app.css       the chrome around all three
+  nodes.css     the rows, the sublist and the stack of cards
 web/src/
   placement.ts  seating geometry + spatial index — pure, no renderer
   projection.ts the surface the map draws on — a screen offset in, a screen offset out
@@ -103,6 +106,7 @@ web/src/
   drag-join.ts  the drag that joins two nodes, and the arrow it draws
   islands.ts    the panel down the left: every component, as somewhere to go
   main.ts       wiring, the centre, the panels around it
+  nodes.ts      the node list page: what the controls select, and what a click opens
   transfer.ts   the file page, and everything that changes a whole graph
 web/src/store/
   db.ts         the schema: two object stores, three indexes, one connection
@@ -128,6 +132,7 @@ scripts/
   drive-globe.mjs      drives the globe renderer, and photographs what it draws
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
+  drive-nodes.mjs      drives the node list, its controls and its walk
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it
   drive-rename.mjs     drives the rename, and checks what the store kept
   hooks/pre-commit     runs both gates on the staged tree
@@ -165,9 +170,9 @@ The full argument — why the name is the key, why `degree` stays denormalised, 
 
 ## The graph demo
 
-Two pages: a map you pan around, and a page a graph arrives at as a file and leaves as one.
-Seeding one, driving both, and every gesture that changes a graph are in
-**[docs/using-the-demo.md](docs/using-the-demo.md)**.
+Three pages: a map you pan around, a list of every node, and a page a graph arrives at as a
+file and leaves as one. Seeding one, driving all three, and every gesture that changes a graph
+are in **[docs/using-the-demo.md](docs/using-the-demo.md)**.
 
 ## Docs
 

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>connection — node list</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/nodes.css" />
+  </head>
+  <body class="nodes">
+    <main id="nodes">
+      <header>
+        <h1>Node list</h1>
+        <a href="/">← map</a>
+      </header>
+
+      <!-- The controls. Each one narrows or reorders the same list, so they sit in one row
+           and the list below is the only thing that answers. -->
+      <section class="sheet" id="list-controls">
+        <input id="list-search" type="search" placeholder="search names"
+               autocomplete="off" spellcheck="false" aria-label="Search names" />
+
+        <label for="list-order">order</label>
+        <select id="list-order">
+          <option value="label">by name</option>
+          <option value="date">by date, newest first</option>
+          <option value="random">at random</option>
+        </select>
+        <button id="list-shuffle" type="button" title="a new random order">shuffle</button>
+
+        <!-- Every node stored before the graph carried dates has the date of that upgrade.
+             The tooltip is where that belongs: it matters when the dates look wrong, and
+             nowhere else. -->
+        <span class="dates">
+          <label for="list-from" title="nodes from before the upgrade share one date">made</label>
+          <input id="list-from" type="date" aria-label="Made on or after" />
+          <label for="list-to">to</label>
+          <input id="list-to" type="date" aria-label="Made on or before" />
+        </span>
+
+        <label for="list-size">per page</label>
+        <select id="list-size">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+        </select>
+
+        <button id="list-clear" type="button">clear</button>
+      </section>
+
+      <!-- What the controls left, or what went wrong. One line, above the list it counts. -->
+      <p id="list-status"></p>
+
+      <div id="list-view"></div>
+
+      <div class="pager">
+        <button id="list-prev" type="button">← previous</button>
+        <span id="list-page"></span>
+        <button id="list-next" type="button">next →</button>
+        <span id="list-read"></span>
+      </div>
+    </main>
+
+    <script type="module" src="/src/nodes.ts"></script>
+  </body>
+</html>
