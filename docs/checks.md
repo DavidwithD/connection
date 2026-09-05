@@ -106,6 +106,14 @@ so a binding that moves takes its own test with it. Everything else in there is 
 deliberate reimplementation — a test sharing its subject's table parser agrees with it
 bug for bug.
 
+## The suite beside the gates
+
+`npm test` also runs `test:unit`, which is the only step that executes a line of
+`web/src/`. It needs no browser and no server. happy-dom stands in for the document and
+fake-indexeddb for the store, so it runs beside the gates rather than beside the drive
+scripts. What it covers, what it costs, and what it cannot reach is
+[ADR 0045](decisions/0045-a-runner-for-the-browser-code.md).
+
 ## Where a check cannot reach
 
 - **Is the sentence true?** The gate knows `explore.ts` exists, never that it does what

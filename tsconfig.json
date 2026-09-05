@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["web/src/**/*.ts", "vite.config.ts"]
+  "include": ["web/src/**/*.ts", "vite.config.ts", "vitest.config.ts"]
 }
