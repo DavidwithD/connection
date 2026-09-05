@@ -872,9 +872,15 @@ kbd {
   border-radius: 8px;
 }
 #ask-what { margin: 0 0 10px; font-size: 12px; }
-/* `.act.go` has a top margin for the place where it follows a box. Here it is a grid cell
-   and has to line up with the buttons beside it. */
-#ask .act.go { margin-top: 0; }
+
+/* The report from the backup button inside #ask. Spaced like #ask-what, since the three
+   buttons follow it. */
+#ask-downloaded { margin: 0 0 10px; color: var(--ink-2); font-size: 12px; }
+#ask-downloaded:empty { display: none; }
+
+/* `confirmThen` moves focus to Cancel. A mouse click leaves :focus-visible unset, so the
+   default ring would not draw for a reader who opened the box by clicking. */
+#ask .act:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 /* Faults from a whole-graph action, styled like #faults above. Scrollable, because a broken
    graph reports many faults at once. */

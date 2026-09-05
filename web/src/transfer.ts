@@ -19,6 +19,7 @@ import {
   buildSeed,
   checkGraph,
   exportGraph,
+  readCounts,
   readExport,
   readWholeGraph,
   recountIslands,
@@ -75,6 +76,8 @@ const downloaded = el<HTMLParagraphElement>("downloaded")
 const jsonIn = el<HTMLInputElement>("in-json")
 const ask = el<HTMLDivElement>("ask")
 const askWhat = el<HTMLParagraphElement>("ask-what")
+const askDownloaded = el<HTMLParagraphElement>("ask-downloaded")
+const askNo = el<HTMLButtonElement>("ask-no")
 const report = el<HTMLUListElement>("report")
 const told = el<HTMLParagraphElement>("told")
 
@@ -145,15 +148,21 @@ async function downloadText(shape: Shape): Promise<void> {
       : `${String(nodes.length)} node(s) and ${String(edges.length)} edge(s).`
 }
 
-async function downloadJson(): Promise<void> {
-  downloaded.textContent = ""
+/**
+ * Write a backup file, and report what it holds into `into`.
+ *
+ * The two callers sit far apart in the page. The report belongs next to the button that was
+ * pressed: the export section at the top, or the box further down.
+ */
+async function downloadJson(into: HTMLParagraphElement): Promise<void> {
+  into.textContent = ""
   const payload = await exportGraph()
   if (!payload.counts.nodes) {
-    downloaded.textContent = "There is no graph here to back up."
+    into.textContent = "There is no graph here to back up."
     return
   }
   download(`graph-export-${stamped()}.json`, JSON.stringify(payload, null, 2), "application/json")
-  downloaded.textContent =
+  into.textContent =
     `${String(payload.counts.nodes)} node(s) and ${String(payload.counts.edges)} edge(s). ` +
     "Keep it somewhere that is not this browser."
 }
@@ -168,19 +177,29 @@ let pending: (() => Promise<void>) | null = null
  *
  * The backup download is one of the three buttons on purpose. Someone who has to go
  * elsewhere to take a copy will not take one, and after this there is no copy to take.
+ *
+ * The counts open the sentence, so the reader can weigh what the write costs. They are read
+ * here, so both questions carry the same prefix.
+ *
+ * Cancel takes the focus, the standard for a destructive confirm. The box sits far below the
+ * button that opens it, and nothing else would move focus there.
  */
-function confirmThen(what: string, run: () => Promise<void>): void {
+async function confirmThen(what: string, run: () => Promise<void>): Promise<void> {
+  const stored = await readCounts()
   pending = run
-  askWhat.textContent = what
+  askWhat.textContent =
+    `${String(stored.nodes)} node(s) and ${String(stored.edges)} edge(s) are stored. ${what}`
   ask.hidden = false
+  askDownloaded.textContent = ""
   listed([])
   tell("", "idle")
+  askNo.focus()
 }
 
 el<HTMLButtonElement>("ask-save").addEventListener("click", () => {
-  void downloadJson().catch(fail)
+  void downloadJson(askDownloaded).catch(fail)
 })
-el<HTMLButtonElement>("ask-no").addEventListener("click", () => {
+askNo.addEventListener("click", () => {
   pending = null
   ask.hidden = true
   tell("Nothing was changed.", "idle")
@@ -219,13 +238,12 @@ el<HTMLButtonElement>("out-names").addEventListener("click", () => {
   })
 })
 el<HTMLButtonElement>("out-json").addEventListener("click", () => {
-  void downloadJson().catch(fail)
+  void downloadJson(downloaded).catch(fail)
 })
 
 el<HTMLButtonElement>("seed").addEventListener("click", () => {
-  confirmThen(
-    "Seeding writes a generated graph over whatever is stored. There is no way back to " +
-      "what is here now except a file you already have.",
+  void confirmThen(
+    "Seeding writes over them. There is no way back except a file you already have.",
     async () => {
       tell("Generating…", "busy")
       const built = buildSeed(SEED)
@@ -242,7 +260,7 @@ el<HTMLButtonElement>("seed").addEventListener("click", () => {
         "idle",
       )
     },
-  )
+  ).catch(fail)
 })
 
 jsonIn.addEventListener("change", () => {
@@ -250,9 +268,9 @@ jsonIn.addEventListener("change", () => {
   jsonIn.value = ""
   if (!file) return
 
-  confirmThen(
-    `Importing ${file.name} replaces the whole graph. It lands in one transaction, so it ` +
-      "either replaces it or leaves it exactly as it is.",
+  void confirmThen(
+    `Importing ${file.name} replaces them. It lands in one transaction, so it either ` +
+      "replaces them or leaves them exactly as they are.",
     async () => {
       tell("Reading it…", "busy")
       let parsed: unknown
@@ -280,7 +298,7 @@ jsonIn.addEventListener("change", () => {
         "idle",
       )
     },
-  )
+  ).catch(fail)
 })
 
 el<HTMLButtonElement>("check").addEventListener("click", () => {
