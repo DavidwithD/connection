@@ -46,6 +46,12 @@ jobs:
       - run: npm ci
 
       - run: npm run typecheck
+
+      # The only step here that runs a line of web/src/. It needs no browser and no server:
+      # happy-dom stands in for the document and fake-indexeddb for the store. So it belongs
+      # with the gates rather than beside the drive scripts, which nothing automated runs.
+      - run: npm run test:unit
+
       - run: npm run adr
       - run: npm run docs
 
