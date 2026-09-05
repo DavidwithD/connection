@@ -48,6 +48,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0042](0042-the-map-draws-on-a-sphere.md) | The map draws on a sphere | 🔵 Proposed |
 | [0043](0043-off-screen-becomes-an-angle.md) | Off screen becomes an angle | 🔵 Proposed |
 | [0044](0044-the-node-record-carries-a-date.md) | The node record carries a date | 🔵 Proposed |
+| [0045](0045-a-runner-for-the-browser-code.md) | A runner for the browser code | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

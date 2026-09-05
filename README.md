@@ -49,8 +49,9 @@ around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.
 |---|---|
 | `npm run web` | The dev server, on `:5173` — all three pages |
 | `npm run build` | Bundle all three pages to `dist/web/` |
-| `npm run typecheck` | `tsc --noEmit` over `web/src/` |
-| `npm test` | `typecheck` + `adr` + `docs` |
+| `npm run typecheck` | `tsc --noEmit` over `web/src/` and `test/` |
+| `npm test` | `typecheck` + `test:unit` + `adr` + `docs` |
+| `npm run test:unit` | Run the suite in `test/` — `npx vitest` for watch mode |
 | `npm run adr` | Run the decision gate over `docs/decisions/` |
 | `npm run docs` | Run the docs gate: the living documents against the code |
 | `npm run docs:selftest` | Prove each bound check still compares something — mutates a throwaway copy |
@@ -121,6 +122,21 @@ web/src/store/
   transfer.ts   a whole graph out, a whole graph in, and the checks over one
   generate.ts   Watts–Strogatz generator (pure, deterministic)
   index.ts      the seam every page reads the graph through
+test/
+  graph.ts               a graph in memory, for the tests that read and write one
+  widgets.ts             the elements the keyboard widgets are built on
+  projection.test.ts     the surface the map draws on
+  placement.test.ts      seating geometry and the spatial index
+  keys.test.ts           the normalised name, and the pair key
+  text.test.ts           the text format, read and written
+  islands.test.ts        components, derived from a whole graph
+  generate.test.ts       the demo graph generator
+  write.test.ts          every write, against a real IndexedDB
+  read.test.ts           every read, and the island paging
+  load.test.ts           a text file against the store
+  transfer.test.ts       export, import, check and recount
+  combobox.dom.test.ts   the box that returns nodes — needs a document
+  rename-box.dom.test.ts the box that renames a node — needs a document
 scripts/
   adr-gate.py          the decision gate — shape, budgets, wiring
   docs-gate.py         the docs gate — the living docs against the code

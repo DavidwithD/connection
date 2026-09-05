@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // The root config declares `types: []`, so nothing ambient reaches the app. The tests
+    // need Node's globals for the timers. Vitest's own types arrive with the `vitest`
+    // import rather than from here.
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"]
+}

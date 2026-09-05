@@ -6,9 +6,9 @@
  *   node scripts/drive-map.mjs         # shots land in .shots/
  *   node scripts/drive-map.mjs --head  # watch it happen
  *
- * There is no test runner here and this is not one: it is the way to *see* the page, for
- * changes whose whole result is visual. A typecheck cannot tell you an island landed on top
- * of the graph it was supposed to be clear of.
+ * The suite in test/ opens no browser. This script opens one, for changes whose whole result
+ * is visual. A typecheck cannot tell you an island landed on top of the graph it was supposed
+ * to be clear of.
  *
  * Uses the Chrome already on the machine (`channel: "chrome"`) rather than downloading a
  * browser, so this costs nothing to run the first time.

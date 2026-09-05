@@ -33,6 +33,7 @@ Run the checks. Do not report a result you did not observe.
 
 ```
 npm run typecheck     # always; needs nothing running
+npm run test:unit     # always; needs no browser and no server
 npm run build         # the build catches errors typecheck misses
 scripts/adr-gate.py   # docs/** touched, or a file a record links to moved
 ```
@@ -45,13 +46,14 @@ run in `git stash push --keep-index --include-untracked`, or copy the index into
 directory with `git checkout-index -a --prefix=`. `scripts/hooks/pre-commit` uses the second
 method.
 
-Typecheck blocks. The build blocks.
+Typecheck blocks. The suite blocks. The build blocks.
 
-`npm test` executes no line of `web/src/`. This repo has no behavioural test at all. So a
-diff that changes what the graph does stays unverified until someone drives the running
-page. That covers anything under `web/src/store/`, and any write path in `web/src/`. Offer
-to drive it, with `npm run web` and `node scripts/drive-map.mjs`. Do not report a skipped
-check as a pass. Name the check that did not run, and say what it would have covered.
+`npm test` runs the suite in `test/`, which executes `web/src/` against happy-dom and
+fake-indexeddb. No browser opens. The store and the pure functions are covered. The two
+renderers are not, and neither is the wiring in `main.ts`. So a diff touching those stays
+unverified until someone drives the running page. Offer to drive it, with `npm run web` and
+`node scripts/drive-map.mjs`. Do not report a skipped check as a pass. Name the check that
+did not run, and say what it would have covered.
 
 The ADR gate checks more than the records. `M010` and `D005` read the whole tree. `M002`
 breaks when a file a record links to is renamed or deleted. So a commit touching only
@@ -84,10 +86,10 @@ like it belongs.
 
 `B001` a secret in the diff — key, token, password, connection string, real cloud
 credentials, a `.env` file · `B002` conflict markers, or a half-finished merge or rebase ·
-`B003` typecheck failing, or never run; the build failing, or never run · `B004` the ADR
-gate fails, on any record, including one this change does not touch (§2) · `B005` an ADR
-renumbered, or a *decided* one deleted. A reversed decision gets a *new* record, and the old
-one becomes ♻️ Superseded. A record still Proposed may be withdrawn. Delete its index row
+`B003` typecheck failing, or never run; the suite failing, or never run; the build failing,
+or never run · `B004` the ADR gate fails, on any record, including one this change does not
+touch (§2) · `B005` an ADR renumbered, or a *decided* one deleted. A reversed decision gets
+a *new* record, and the old one becomes ♻️ Superseded. A record still Proposed may be withdrawn. Delete its index row
 with it, and leave its number spent (`docs/decisions/README.md`) · `B006` ignored or
 generated output staged — `dist/`, `__pycache__/`, `*.log` · `B007` the change reverts or
 deletes work and you cannot say why. §6 confirms the message says it.

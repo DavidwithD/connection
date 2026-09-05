@@ -18,14 +18,15 @@
     "drive:rename": "node scripts/drive-rename.mjs",
     "drive:nodes": "node scripts/drive-nodes.mjs",
     "drive:globe": "node scripts/drive-globe.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
     "adr": "python3 scripts/adr-gate.py",
     "docs": "python3 scripts/docs-gate.py",
     "docs:selftest": "python3 scripts/docs-gate-selftest.py",
     "prose": "python3 scripts/prose-lint.py",
     "prose:selftest": "python3 scripts/prose-lint-selftest.py",
     "hooks:install": "ln -sfn ../../scripts/hooks/pre-commit .git/hooks/pre-commit && echo 'pre-commit: gates installed'",
-    "test": "npm run typecheck && npm run adr && npm run docs"
+    "test:unit": "vitest run",
+    "test": "npm run typecheck && npm run test:unit && npm run adr && npm run docs"
   },
   "keywords": [],
   "license": "UNLICENSED",
@@ -35,7 +36,10 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.14.0",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5"
+    "vite": "^8.1.5",
+    "vitest": "^4.1.11"
   }
 }
