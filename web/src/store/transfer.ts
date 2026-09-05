@@ -347,7 +347,11 @@ export function readExport(payload: unknown): {
   edges: StoredEdge[]
   faults: string[]
 } {
-  const file = payload as Partial<GraphExport>
+  // `null` is valid JSON and reading `.version` off it throws. The reader would then see a
+  // TypeError where a fault was wanted. Anything that is not an object falls through to the
+  // version fault below.
+  const file = (typeof payload === "object" && payload !== null ? payload : {}) as
+    Partial<GraphExport>
 
   if (file.version === EXPORT_VERSION && Array.isArray(file.nodes)) {
     const nodes = file.nodes
