@@ -239,6 +239,7 @@ export function buildGraph(
 ): { nodes: StoredNode[]; edges: StoredEdge[]; faults: string[] } {
   const faults: string[] = []
   const nodes = new Map<string, StoredNode>()
+  const made = Date.now()
 
   for (const { label } of named) {
     const minted = naming(label)
@@ -256,6 +257,9 @@ export function buildGraph(
       degree: 0,
       parent: minted.labelKey,
       islandSize: 1,
+      // Every node in one file shares a date, because they were written together. A file
+      // holding its own dates goes through `readExport`, which keeps them.
+      created: made,
     })
   }
 
@@ -325,6 +329,12 @@ function shapeFaults(nodes: unknown[], edges: unknown[]): string[] {
     if (size !== undefined && typeof size !== "number") {
       faults.push(`node ${String(at)} carries an islandSize that is not a number`)
     }
+    // A file older than `created` has none, and `stampUndated` gives it one. A file that
+    // carries something else there is a file nobody can date.
+    const born = (node as Record<string, unknown>)["created"]
+    if (born !== undefined && typeof born !== "number") {
+      faults.push(`node ${String(at)} carries a created that is not a number`)
+    }
   }
 
   for (let at = 0; at < edges.length && faults.length < SHAPE_SHOWN; at++) {
@@ -372,7 +382,8 @@ export function readExport(payload: unknown): {
     // there, and "is this graph consistent" has no answer for something that is not a graph.
     const malformed = shapeFaults(nodes, edges)
     if (malformed.length) return { nodes: [], edges: [], faults: malformed }
-    return { nodes, edges, faults: verify(nodes, edges) }
+    const dated = stampUndated(nodes)
+    return { nodes: dated, edges, faults: verify(dated, edges) }
   }
 
   return {
@@ -383,6 +394,20 @@ export function readExport(payload: unknown): {
         `${String(file.version)}`,
     ],
   }
+}
+
+/**
+ * Give a date to every node in a file that carries none.
+ *
+ * A file written before the record held `created` has nodes without one. They all take the
+ * moment of the load. It is the only date such a file supports, and a node with no date at
+ * all would sort nowhere.
+ */
+function stampUndated(nodes: StoredNode[]): StoredNode[] {
+  const read = Date.now()
+  return nodes.map((node) =>
+    typeof node.created === "number" ? node : { ...node, created: read },
+  )
 }
 
 /** Build the demo graph's records. The generator's ids are mapped to names here. */

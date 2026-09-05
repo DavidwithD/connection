@@ -5,13 +5,15 @@ export type {
   LoadPlan,
   Neighbourhood,
   NodeMeta,
+  NodeRow,
   Opening,
 } from "./shapes.js"
 export { Missing, Refused } from "./refused.js"
 export { Unavailable, persist, whenEvicted } from "./db.js"
 
-export { fetchIslands, readNeighbourhood as fetchNeighbourhood, readOpening as fetchOpening,
-  readNode, searchLabels } from "./read.js"
+export { MAX_LIST_NODES, fetchIslands, readAllNodes,
+  readNeighbourhood as fetchNeighbourhood, readOpening as fetchOpening, readNode,
+  searchLabels } from "./read.js"
 export { createNode, deleteNode, deleteNodeWithEdges, renameNode } from "./write.js"
 
 import { addEdge, removeEdge } from "./write.js"

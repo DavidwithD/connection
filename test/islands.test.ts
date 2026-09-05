@@ -10,12 +10,16 @@ import { describe, expect, it } from "vitest"
 import type { StoredNode } from "../web/src/store/db.js"
 import { components, pickRoot, stampIslands } from "../web/src/store/islands.js"
 
+/** The date every record in this file carries. Nothing here reads it. */
+const MADE = Date.UTC(2026, 0, 1)
+
 /** A node record, as a graph written before this index existed would hold it. */
 const rec = (id: string, parent: string = id): StoredNode => ({
   labelKey: id,
   label: id,
   degree: 0,
   parent,
+  created: MADE,
 })
 
 const ids = (nodes: StoredNode[]): string[] => nodes.map((node) => node.labelKey)

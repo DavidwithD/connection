@@ -10,12 +10,16 @@ import type { StoredNode } from "../web/src/store/db.js"
 import { normaliseLabel } from "../web/src/store/keys.js"
 import { Unwritable, format, parse, spelledPair } from "../web/src/store/text.js"
 
+/** The date every record in this file carries. `format` never reads it. */
+const MADE = Date.UTC(2026, 0, 1)
+
 /** A stored record. `format` reads the two name fields and nothing else. */
 const node = (label: string): StoredNode => ({
   labelKey: normaliseLabel(label),
   label,
   degree: 0,
   parent: normaliseLabel(label),
+  created: MADE,
   islandSize: 1,
 })
 

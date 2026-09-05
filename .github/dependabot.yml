@@ -1,0 +1,19 @@
+# Version bumps this repo would otherwise find in a warning.
+#
+# `actions/checkout` and `actions/setup-node` pin a major. GitHub retires the Node runtime an
+# action version runs on, and the run says so in a log nobody reads until something breaks.
+# This opens the bump as a pull request, where CI runs it.
+#
+# npm is deliberately absent. Dependabot would write package-lock.json with its own npm, and
+# `packageManager` names the one this lock is written by. scripts/npm-guard.mjs holds that
+# line locally, and it cannot reach a bot. A dependency bump here is a person running
+# `corepack npm@<pinned> install`.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      # The repo writes sentence-case subjects with no prefix. See git log.
+      prefix: Move

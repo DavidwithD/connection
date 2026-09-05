@@ -7,10 +7,23 @@
  * directory is IndexedDB only, from `db.transaction(...)` to `tx.done`. Breaking this rule
  * shows no symptom until a write silently does not commit.
  */
-import { openDB, type DBSchema, type IDBPDatabase } from "idb"
+import {
+  openDB,
+  type DBSchema,
+  type IDBPDatabase,
+  type IDBPObjectStore,
+  type StoreNames,
+} from "idb"
 
 export const DB_NAME = "connection"
-export const DB_VERSION = 1
+
+/**
+ * Version 2 added `created` to every node. Version 1 recorded nothing about time.
+ *
+ * The upgrade is one way. A browser holding version 2 refuses to open at version 1. Code from
+ * before this change cannot read a database that has been through it.
+ */
+export const DB_VERSION = 2
 
 /**
  * A node, as the store holds it.
@@ -31,6 +44,14 @@ export interface StoredNode {
   parent: string
   /** Set on roots only. Its absence keeps a record out of the `byIsland` index. */
   islandSize?: number
+  /**
+   * When the node was written, in milliseconds since the epoch.
+   *
+   * Written once. A rename carries it across, because a renamed node is the same node. No
+   * index covers it: the node list sorts on it in memory, and an index would be maintained by
+   * every write to serve one page. See read.ts.
+   */
+  created: number
 }
 
 /**
@@ -130,6 +151,29 @@ export function open(): Promise<IDBPDatabase<GraphDB>> {
   return connection
 }
 
+/**
+ * Give every node already in the store a `created`, in the version change itself.
+ *
+ * They all get the same moment: the upgrade. Version 1 recorded nothing about when a node was
+ * written, so there is no truer date to give them. A graph built over months reads as one
+ * day. The date control on the node list says so.
+ *
+ * The walk stays inside the version change transaction. Every await here is on a store
+ * request, so the transaction cannot commit halfway through. Nothing awaits this function:
+ * the open does not resolve until its transaction finishes, and that waits for these
+ * requests. See the rule at the top of this file.
+ */
+async function stampCreated(
+  nodes: IDBPObjectStore<GraphDB, ArrayLike<StoreNames<GraphDB>>, "nodes", "versionchange">,
+): Promise<void> {
+  const stamp = Date.now()
+  let cursor = await nodes.openCursor()
+  while (cursor) {
+    await cursor.update({ ...cursor.value, created: stamp })
+    cursor = await cursor.continue()
+  }
+}
+
 async function connect(): Promise<IDBPDatabase<GraphDB>> {
   if (typeof indexedDB === "undefined") throw new Unavailable(NO_INDEXEDDB)
 
@@ -146,12 +190,19 @@ async function connect(): Promise<IDBPDatabase<GraphDB>> {
   let abandoned = false
 
   const opening = openDB<GraphDB>(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      const nodes = db.createObjectStore("nodes", { keyPath: "labelKey" })
-      nodes.createIndex("byIsland", ["islandSize", "labelKey"])
-      nodes.createIndex("byParent", "parent")
-      const edges = db.createObjectStore("edges", { keyPath: ["a", "b"] })
-      edges.createIndex("byEnd", "ends", { multiEntry: true })
+    upgrade(db, from, _to, tx) {
+      if (from < 1) {
+        const nodes = db.createObjectStore("nodes", { keyPath: "labelKey" })
+        nodes.createIndex("byIsland", ["islandSize", "labelKey"])
+        nodes.createIndex("byParent", "parent")
+        const edges = db.createObjectStore("edges", { keyPath: ["a", "b"] })
+        edges.createIndex("byEnd", "ends", { multiEntry: true })
+      }
+      // A failed request aborts the version change, and `opening` below rejects with it.
+      // The catch keeps that one failure from also arriving as an unhandled rejection.
+      if (from >= 1 && from < 2) {
+        void stampCreated(tx.objectStore("nodes")).catch(() => undefined)
+      }
     },
     blocked() {
       abandoned = true

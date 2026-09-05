@@ -1,0 +1,172 @@
+/* The node list page. app.css holds the tokens, the body and the bordered-box style; this
+   file holds the list, the sublist and the stack of cards.
+
+   Its own file rather than more of app.css, because nothing here is shared: the map and the
+   transfer page have no rows. */
+
+#nodes {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 22px 16px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#nodes header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+#nodes h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+#nodes header a { color: var(--ink-muted); text-decoration: none; }
+#nodes header a:hover { color: var(--ink); }
+
+/* The controls wrap on a narrow window. They stay in source order, so the label before a
+   box is always the label of that box. */
+#list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+#list-controls label { color: var(--ink-muted); }
+#list-controls input,
+#list-controls select {
+  padding: 5px 8px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font: inherit;
+}
+#list-controls input[type="search"] { flex: 1 1 10rem; min-width: 8rem; }
+/* The two date boxes and their labels wrap as one thing. Split across a line break, "to"
+   ends up beside the box it does not label. */
+#list-controls .dates { display: flex; align-items: center; gap: 8px; }
+#list-controls button {
+  padding: 5px 10px;
+  background: var(--plane);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+#list-controls button:hover:not(:disabled) { color: var(--ink); }
+#list-controls button:disabled { opacity: 0.4; cursor: default; }
+
+#list-status { margin: 0; color: var(--ink-muted); min-height: 1.4em; }
+
+/* ------------------------------------------------------------------- the rows */
+
+.rows, .subrows { list-style: none; margin: 0; padding: 0; }
+.rows > li { margin-bottom: 4px; }
+.rows > li.empty, .subrows > li.empty { color: var(--ink-muted); padding: 8px 2px; }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--plane);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.row:hover { border-color: var(--accent); }
+.row .mark { width: 10px; color: var(--ink-muted); }
+.row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.subrows {
+  margin: 4px 0 10px 18px;
+  padding-left: 10px;
+  border-left: 1px solid var(--hairline);
+}
+.subrows > li { margin-bottom: 4px; }
+.subrows .row { background: transparent; }
+
+/* A placeholder row while the neighbours are read. The same box as a real row, so the
+   sublist opens at the height it will keep and the page below it does not move. */
+.subrows .skel {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.subrows .skel .bar {
+  height: 1.5em;
+  width: 9rem;
+  background: var(--hairline);
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------------ the stack
+
+   One line of cards. Each card starts further right than the one under it and covers the
+   width to its right, so the cards below show as a strip on the left. That strip is the way
+   back, and its width is what `--depth` sets. */
+
+.stack { position: relative; height: 36px; }
+.card {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--depth) * 22px);
+  z-index: calc(var(--depth) + 1);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 0 10px;
+  color: #0b0b0b;
+  background: hsl(var(--hue) 62% 88%);
+  border: 1px solid hsl(var(--hue) 40% 72%);
+  border-radius: 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.card.top { cursor: default; font-weight: 600; }
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .card {
+    color: #ffffff;
+    background: hsl(var(--hue) 26% 24%);
+    border-color: hsl(var(--hue) 24% 38%);
+  }
+}
+:root[data-theme="dark"] .card {
+  color: #ffffff;
+  background: hsl(var(--hue) 26% 24%);
+  border-color: hsl(var(--hue) 24% 38%);
+}
+
+/* ------------------------------------------------------------------ the pager */
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-muted);
+}
+.pager button {
+  padding: 5px 10px;
+  background: var(--plane);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+.pager button:hover:not(:disabled) { color: var(--ink); }
+.pager button:disabled { opacity: 0.4; cursor: default; }
+#list-read { margin-left: auto; }

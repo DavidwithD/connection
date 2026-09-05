@@ -41,7 +41,7 @@ One database, two object stores, three indexes
 ([db.ts](../../web/src/store/db.ts)). Four item kinds collapsed into two records:
 
 ```
-nodes   keyed by labelKey    { label, degree, parent, islandSize? }
+nodes   keyed by labelKey    { label, degree, parent, islandSize?, created }
         byIsland  ["islandSize", "labelKey"]   sparse — roots only
         byParent  "parent"                     who points here
 edges   keyed by [a, b]      { ends }
@@ -113,6 +113,11 @@ because it is on the hot path: every neighbour's degree is what `World.missing` 
 whether there is more graph behind a node, so deriving it would turn one read of a hub into a
 range count per neighbour, on the main thread, on every settle. The invariant is checked rather
 than assumed — **Check the graph** compares every stored degree against the edges themselves.
+
+**A node's date is written once and never changed.** `created` is milliseconds, set by
+`createNode` and by the file paths that build a whole graph. A rename carries it across,
+because a renamed node is the same node. No index covers it, so anything ordering by date
+sorts in memory ([0044](../decisions/0044-the-node-record-carries-a-date.md)).
 
 **A node's `label` is the spelling of its own key.** One helper mints the pair
 ([keys.ts](../../web/src/store/keys.ts)) and nothing else writes either field. A record whose

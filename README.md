@@ -25,7 +25,7 @@ being about setup.
 | | Why |
 |---|---|
 | **Node 20.19+ or 22.12+** | Runtime. The floor is Vite's, not ours, and `engines` is held to it by the [docs gate](docs/checks.md) |
-| **npm 12** | `packageManager` names it. Only the npm that writes the lock has to agree with the npm that reads it — npm 11.6.2 writes one that CI rejects |
+| **npm 12** | `packageManager` names it. Only the npm that writes the lock has to agree with the npm that reads it — npm 11.6.2 writes one that CI rejects. An install from another major is refused by [scripts/npm-guard.mjs](scripts/npm-guard.mjs) |
 | **A browser with IndexedDB** | Which is every current one, outside a private window. It is where the graph lives — see [ADR 0030](docs/decisions/0030-the-graph-moves-into-the-browser.md) |
 | **bash** | npm runs every script through it, so the POSIX ones work on Windows too. Ships with git. See [ADR 0015](docs/decisions/0015-bash-as-the-script-shell.md) |
 | **python3** | The two documentation gates. Only needed to run `npm test` |
@@ -36,19 +36,19 @@ No AWS account, no credentials, and no database process.
 
 ```bash
 npm install
-npm run web             # both pages at :5173
+npm run web             # all three pages at :5173
 ```
 
 A fresh browser holds no graph. The map says so and points at
 [/transfer.html](web/transfer.html), where **Seed a demo graph** gives you something to walk
-around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
+around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 
 ## Commands
 
 | Command | Does |
 |---|---|
-| `npm run web` | The dev server, on `:5173` — both pages |
-| `npm run build` | Bundle both pages to `dist/web/` |
+| `npm run web` | The dev server, on `:5173` — all three pages |
+| `npm run build` | Bundle all three pages to `dist/web/` |
 | `npm run typecheck` | `tsc --noEmit` over `web/src/` and `test/` |
 | `npm test` | `typecheck` + `test:unit` + `adr` + `docs` |
 | `npm run test:unit` | Run the suite in `test/` — `npx vitest` for watch mode |
@@ -62,7 +62,9 @@ around. Driving both pages is [docs/using-the-demo.md](docs/using-the-demo.md).
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
 | `npm run drive:drag-join` | Drive the shift-drag that joins two nodes, and check what it wrote |
 | `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
+| `npm run drive:nodes` | Drive the node list: the controls, the walk into a neighbour, and back |
 | `npm run drive:globe` | Drive the globe renderer at `/?globe`, and photograph what it draws |
+| `npm run preinstall` | Runs on every install. Refuses one from an npm that would rewrite the lock |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
 ## Where the graph lives
@@ -86,7 +88,9 @@ writes, so the second one drifts until you reload it.
 web/
   index.html    the map
   transfer.html a graph out as a file, a file in as a graph, and the whole-graph acts
-  app.css       the chrome around both
+  nodes.html    the node list: search, dates, order, paging, and the walk into a neighbour
+  app.css       the chrome around all three
+  nodes.css     the rows, the sublist and the stack of cards
 web/src/
   placement.ts  seating geometry + spatial index — pure, no renderer
   projection.ts the surface the map draws on — a screen offset in, a screen offset out
@@ -104,6 +108,8 @@ web/src/
   drag-join.ts  the drag that joins two nodes, and the arrow it draws
   islands.ts    the panel down the left: every component, as somewhere to go
   main.ts       wiring, the centre, the panels around it
+  node-list.ts  what the controls select, and where a click leaves the page — pure
+  nodes.ts      the node list page: the elements, the reads and the drawing
   transfer.ts   the file page, and everything that changes a whole graph
 web/src/store/
   db.ts         the schema: two object stores, three indexes, one connection
@@ -129,6 +135,8 @@ test/
   generate.test.ts       the demo graph generator
   write.test.ts          every write, against a real IndexedDB
   read.test.ts           every read, and the island paging
+  node-list.test.ts      what the controls select, and where a click leaves the page
+  npm-guard.test.ts      the install guard, and the one case it lets past
   load.test.ts           a text file against the store
   transfer.test.ts       export, import, check and recount
   combobox.dom.test.ts   the box that returns nodes — needs a document
@@ -144,9 +152,13 @@ scripts/
   drive-globe.mjs      drives the globe renderer, and photographs what it draws
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
+  drive-nodes.mjs      drives the node list, its controls and its walk
+  npm-guard.mjs        refuses an install that would rewrite the lock under another npm
   drive-part-edge.mjs  drives the right-click that parts a pair, and checks it
   drive-rename.mjs     drives the rename, and checks what the store kept
   hooks/pre-commit     runs both gates on the staged tree
+.github/
+  dependabot.yml       opens the pull request when an action version goes stale
 .github/workflows/
   ci.yml               the same gates, where they cannot be skipped
 ```
@@ -181,9 +193,9 @@ The full argument — why the name is the key, why `degree` stays denormalised, 
 
 ## The graph demo
 
-Two pages: a map you pan around, and a page a graph arrives at as a file and leaves as one.
-Seeding one, driving both, and every gesture that changes a graph are in
-**[docs/using-the-demo.md](docs/using-the-demo.md)**.
+Three pages: a map you pan around, a list of every node, and a page a graph arrives at as a
+file and leaves as one. Seeding one, driving all three, and every gesture that changes a graph
+are in **[docs/using-the-demo.md](docs/using-the-demo.md)**.
 
 ## Docs
 

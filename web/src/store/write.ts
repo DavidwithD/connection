@@ -184,6 +184,7 @@ export async function createNode(label: string): Promise<NodeMeta> {
     // written here in the record the transaction is already writing. Every other component
     // update happens after the write. This is the only place the answer is known first.
     islandSize: 1,
+    created: Date.now(),
   }
 
   let taken = false
