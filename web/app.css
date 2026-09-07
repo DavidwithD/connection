@@ -795,6 +795,8 @@ kbd {
 #drop span { color: var(--ink-muted); font-size: 11px; }
 #drop code {
   display: block;
+  /* The example is two lines and the second one is indented. Keep both. */
+  white-space: pre;
   margin-top: 10px;
   color: var(--ink-muted);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
