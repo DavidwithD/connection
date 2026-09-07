@@ -49,6 +49,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0043](0043-off-screen-becomes-an-angle.md) | Off screen becomes an angle | 🔵 Proposed |
 | [0044](0044-the-node-record-carries-a-date.md) | The node record carries a date | 🔵 Proposed |
 | [0045](0045-a-runner-for-the-browser-code.md) | A runner for the browser code | 🔵 Proposed |
+| [0046](0046-a-line-that-hangs-from-the-line-above.md) | A line that hangs from the line above | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

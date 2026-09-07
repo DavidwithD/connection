@@ -107,6 +107,147 @@ describe("parse", () => {
   })
 })
 
+describe("parse, indented", () => {
+  /** Every pair the reading holds, sorted, so two files can be compared by their edges. */
+  const edges = (text: string): string[] =>
+    parse(text)
+      .pairs.map(([a, b]) => key(a, b))
+      .sort()
+
+  it("joins an indented line's first name to the line it hangs from", () => {
+    const reading = parse("Kavara | Miselin\n    Sarn | Veyle")
+    expect(reading.pairs).toEqual([
+      ["Kavara", "Miselin"],
+      ["Kavara", "Sarn"],
+      ["Sarn", "Veyle"],
+    ])
+    expect(reading.faults).toEqual([])
+  })
+
+  it("hangs a child from the first name above it, never the last", () => {
+    expect(edges("Kavara | Miselin\n    Sarn")).toEqual([key("Kavara", "Miselin"), key("Kavara", "Sarn")])
+  })
+
+  it("stops a join at the parent, so a grandchild does not reach the grandparent", () => {
+    const reading = parse("Kavara\n    Miselin\n        Sarn")
+    expect(reading.pairs).toEqual([
+      ["Kavara", "Miselin"],
+      ["Miselin", "Sarn"],
+    ])
+    expect(reading.faults).toEqual([])
+  })
+
+  it("nests to any depth", () => {
+    const deep = ["A", " B", "  C", "   D", "    E"].join("\n")
+    expect(edges(deep)).toEqual(
+      [key("A", "B"), key("B", "C"), key("C", "D"), key("D", "E")].sort(),
+    )
+  })
+
+  it("counts an indented line, the same as any line that said something", () => {
+    expect(parse("Kavara\n    Miselin").lines).toBe(2)
+  })
+
+  it("reads the same graph the flat file does", () => {
+    const nested = [
+      "Verb | Aspect",
+      "    Tense",
+      "        Past | Simple past | Past perfect",
+      "        Present | Simple present",
+      "    Voice | Active | Passive",
+    ].join("\n")
+    const flat = [
+      "Verb | Aspect | Tense | Voice",
+      "Tense | Past | Present",
+      "Past | Simple past | Past perfect",
+      "Present | Simple present",
+      "Voice | Active | Passive",
+    ].join("\n")
+    expect(edges(nested)).toEqual(edges(flat))
+    expect(edges(nested)).toHaveLength(10)
+    expect(parse(nested).names).toHaveLength(11)
+    expect(parse(nested).faults).toEqual([])
+  })
+
+  it("does not care what the indent step is", () => {
+    expect(edges("A\n  B\n    C")).toEqual(edges("A\n        B\n                C"))
+  })
+
+  it("reads a tab-indented file", () => {
+    expect(parse("Kavara\n\tMiselin").pairs).toEqual([["Kavara", "Miselin"]])
+  })
+
+  it("hangs a ragged line on the nearest line above it with a smaller indent", () => {
+    const reading = parse("Kavara\n        Miselin | Sarn\n    Thorne")
+    expect(reading.pairs).toEqual([
+      ["Kavara", "Miselin"],
+      ["Miselin", "Sarn"],
+      ["Kavara", "Thorne"],
+    ])
+    expect(reading.faults).toEqual([])
+  })
+
+  it("does not let a blank line close a block", () => {
+    expect(parse("Kavara\n    Miselin\n\n    Sarn").pairs).toEqual([
+      ["Kavara", "Miselin"],
+      ["Kavara", "Sarn"],
+    ])
+  })
+
+  it("does not let a comment close a block, at any indent", () => {
+    expect(parse("Kavara\n    Miselin\n# a note\n    Sarn").pairs).toEqual([
+      ["Kavara", "Miselin"],
+      ["Kavara", "Sarn"],
+    ])
+  })
+
+  it("reads an unindented file exactly as it did before", () => {
+    const reading = parse("Kavara | Miselin | Vessarin\nThorne")
+    expect(reading.pairs).toEqual([
+      ["Kavara", "Miselin"],
+      ["Kavara", "Vessarin"],
+    ])
+    expect(reading.names).toEqual(["Kavara", "Miselin", "Vessarin", "Thorne"])
+    expect(reading.faults).toEqual([])
+  })
+
+  it("reports a first line that is indented under nothing", () => {
+    const reading = parse("    Kavara | Miselin")
+    expect(reading.faults).toHaveLength(1)
+    expect(reading.faults[0]).toContain("line 1")
+    expect(reading.faults[0]).toContain("indented under nothing")
+  })
+
+  it("reports a child whose first name is the line it hangs from", () => {
+    const reading = parse("Kavara | Miselin\n    kavara | Sarn")
+    expect(reading.faults).toHaveLength(1)
+    expect(reading.faults[0]).toContain("line 2")
+    expect(reading.faults[0]).toContain("joined to itself")
+    expect(reading.pairs).toEqual([
+      ["Kavara", "Miselin"],
+      ["Kavara", "Sarn"],
+    ])
+  })
+
+  it("reports a file that indents with tabs on one line and spaces on another", () => {
+    const reading = parse("Kavara\n    Miselin\n\tSarn")
+    expect(reading.faults).toHaveLength(1)
+    expect(reading.faults[0]).toContain("line 3")
+    expect(reading.faults[0]).toContain("indents with tabs")
+    expect(reading.faults[0]).toContain("line 2 indents with spaces")
+  })
+
+  it("reports the mixed indent once, however many lines carry it", () => {
+    expect(parse("A\n    B\n\tC\n\tD\n\tE").faults).toHaveLength(1)
+  })
+
+  it("reports one line that indents with a tab and a space at once", () => {
+    const reading = parse("Kavara\n \tMiselin")
+    expect(reading.faults).toHaveLength(1)
+    expect(reading.faults[0]).toContain("a tab and a space at once")
+  })
+})
+
 describe("spelledPair", () => {
   it("gives one key for two spellings of one pair", () => {
     expect(key("Kavara", "miselin")).toBe(key("MISELIN", "kavara"))

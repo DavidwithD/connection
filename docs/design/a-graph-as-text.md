@@ -28,6 +28,36 @@ line per step.
 Neither reading is visible in the file, which is why every preview prints the pairs it read
 rather than leaving them to be assumed.
 
+## Indenting a line
+
+```
+Kavara | Miselin              # Kavara joins Miselin
+    Vessarin | Sarn           # Kavara joins Vessarin, and Vessarin joins Sarn
+        Sarn | Veyle          # Sarn joins Veyle
+```
+
+An indented line hangs from the nearest line above it with a smaller indent. Its first name
+joins that line's first name. The rest of the line is an ordinary star. Depth is not limited.
+
+The join stops at the parent. `Sarn | Veyle` above gives Sarn–Veyle. It does not give
+Kavara–Veyle.
+
+This exists so a name is typed once. Flat, every node that has both a parent and children is
+spelled twice. It appears in its parent's list, and again as its own first name. Nothing here
+matches a name against a near miss. So a typo in that second spelling makes a second node.
+
+**The reader indents. The writer never does.** `format` writes a flat star per anchor. A file
+typed with indentation comes back out flat.
+
+| Rule | Why |
+|---|---|
+| Any indent step reads | Only *more* and *less* are compared, never a fixed width |
+| A ragged column hangs from the next line out | A typed file does not hold its columns, and the preview lists every pair |
+| One file uses tabs or spaces, not both | Two styles have no shared column to compare. A fault |
+| A blank line and a comment close no block | Both are dropped before the indent is measured |
+| An indented first line is a fault | There is no line above it to hang from |
+| A child whose first name is its parent is a fault | The store has no self-edges |
+
 ## The pieces
 
 | Name | What it is | In the code |
@@ -179,6 +209,9 @@ drifts, and a writer that stopped matching its reader would produce files that l
 **A load only ever adds.** No line removes anything. This is what lets it run without asking
 first, where the other two ways in have to.
 
+**The writer never indents.** A graph holds no tree, so `format` has no indentation to pick.
+Any rule it invented would re-indent unchanged nodes whenever an edge moved a degree.
+
 **Every text load goes through the ordinary writes.** Never a bulk path — that exists only
 behind importing a whole graph, which is the one thing a patch must not be.
 
@@ -212,6 +245,7 @@ faults are listed before the rest become a count, and what the seed button build
 | Record | What it settled |
 |---|---|
 | [0021](../decisions/0021-a-graph-in-a-text-file.md) | The format, the star reading, and that a file is a patch |
+| [0046](../decisions/0046-a-line-that-hangs-from-the-line-above.md) | Indentation on the reader, the forgiving column rule, and that the writer stays flat |
 | [0022](../decisions/0022-a-graph-written-back-out.md) | The writer, the ordering that makes a round trip checkable, and the open question about the separator and the comment character |
 | [0023](../decisions/0023-the-graph-moves-through-the-page.md) | A second page rather than a panel, and two calls for the way in |
 | [0030](../decisions/0030-the-graph-moves-into-the-browser.md) | That every way a graph moves is now a button, and the export is the only backup |
