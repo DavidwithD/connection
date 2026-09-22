@@ -146,10 +146,10 @@ function refilter(): void {
 /**
  * Read the neighbours of `node` and show them.
  *
- * The sublist is drawn twice, and both drawings are the same height. The first holds one
- * placeholder per neighbour, counted from the node's stored degree. The second holds the
- * names. So the sublist opens at the height it will keep, and nothing below it moves when the
- * read lands.
+ * The sublist is drawn twice. The first drawing holds one placeholder per neighbour, counted
+ * from the node's stored degree. The second holds the names. A placeholder reserves one line,
+ * so a sublist of one-line names opens at the height it will keep. A name that wraps takes
+ * more, and the rows below it move down by the difference when the read lands.
  *
  * The second drawing replaces the sublist alone. A full render would rebuild every row around
  * it for one list that changed.

@@ -111,6 +111,18 @@ const datedPair = ([early, late]) =>
     }
   })
 
+/**
+ * A pair of names, joined, one of them far wider than the list.
+ *
+ * Every seeded name fits on one line, so a seeded graph never shows a row growing. These two
+ * are loaded through the transfer page, which writes them the way the app writes any node.
+ * The edge between them is the point: it is what puts the long name on a card.
+ */
+const SHORT = "drive short"
+const LONG =
+  "drive long a name that runs on well past the width of the list and has to wrap onto a " +
+  "second line before any of it can be read"
+
 async function main() {
   mkdirSync(SHOTS, { recursive: true })
 
@@ -129,6 +141,28 @@ async function main() {
   const cards = () =>
     page.$$eval("#list-view .stack .card .name", (all) => all.map((one) => one.textContent))
   const status = () => page.textContent("#list-status")
+
+  /**
+   * Put one line of names through the transfer page's loader, and come back to the list.
+   *
+   * The nodes and the edges between them are then written the way the app writes any of them.
+   * The list reads every node once at boot, so the new ones need the fresh load at the end.
+   */
+  const load = async (name, line) => {
+    await page.goto(`${WEB}/transfer.html`, { waitUntil: "domcontentloaded" })
+    await page.setInputFiles("#file", {
+      name,
+      mimeType: "text/plain",
+      buffer: Buffer.from(`${line}\n`),
+    })
+    await page.waitForSelector("#apply:not([hidden])")
+    await page.click("#apply")
+    await page.waitForFunction(() =>
+      /^Added/.test(document.querySelector("#said")?.textContent ?? ""),
+    )
+    await page.goto(`${WEB}/nodes.html`, { waitUntil: "domcontentloaded" })
+    await page.waitForSelector("#list-view .rows > li")
+  }
 
   /** A neighbour in the open sublist that is on none of the rows or cards on screen. */
   const pickAway = async () => {
@@ -218,6 +252,18 @@ async function main() {
   await page.waitForSelector(".subrows .row, .subrows .empty")
   console.log(`3 stack: ${(await cards()).join(" > ")}`)
   check((await cards()).length === 2, "two cards")
+  // The top card is the only one in normal flow, and a button is as wide as its own text. So
+  // measure it: it has to reach the right edge of the bar, and the bar has to be its height.
+  const bar = await page.$eval("#list-view .stack", (box) => {
+    const rect = box.getBoundingClientRect()
+    return { right: rect.right, height: rect.height }
+  })
+  const onTop = await page.$eval("#list-view .stack .card.top", (box) => {
+    const rect = box.getBoundingClientRect()
+    return { right: rect.right, height: rect.height }
+  })
+  check(Math.abs(bar.right - onTop.right) < 1, "the top card reaches the right edge of the bar")
+  check(Math.abs(bar.height - onTop.height) < 1, "the bar is as tall as the top card")
   await shot("3-stack")
 
   const deeper = await pickAway()
@@ -350,10 +396,11 @@ async function main() {
     await shot("11-in-place")
   }
 
-  // ------------------------------------------------- the sublist does not jump
+  // ------------------------------------------------- the sublist does not shrink
 
   // Open a closed row, and measure the sublist while it is still placeholders, then once the
-  // names are in. The two have to be the same height, or the page moves under the reader.
+  // names are in. A placeholder reserves one line per neighbour. A name that wraps takes more.
+  // So the sublist may grow, and it must never shrink: the page below it would jump up.
   const closed = await page.$("#list-view .rows > li:not(:has(.subrows)) > .row")
   await closed.click()
   await page.waitForSelector(".subrows[aria-busy]")
@@ -361,8 +408,44 @@ async function main() {
   await page.waitForSelector(".subrows .row, .subrows .empty")
   const read = await page.$eval(".subrows", (box) => box.getBoundingClientRect().height)
   console.log(`12 height: ${reading.toFixed(1)}px reading, ${read.toFixed(1)}px read`)
-  check(Math.abs(reading - read) < 1, "the sublist keeps its height when the names land")
+  check(read >= reading - 1, "the sublist keeps at least its height when the names land")
   await shot("12-no-jump")
+
+  // ------------------------------------------------- a name that does not fit on a line
+
+  await load("drive-long.txt", `${SHORT} | ${LONG}`)
+  await page.fill("#list-search", LONG.slice(0, 12))
+  await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length === 1)
+  const grown = await page.$eval("#list-view .rows > li > .row", (box) =>
+    box.getBoundingClientRect().height,
+  )
+  await shot("13-long-name")
+  await page.fill("#list-search", "")
+  await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length > 1)
+  const plain = await page.$$eval("#list-view .rows > li > .row", (all) =>
+    Math.min(...all.map((one) => one.getBoundingClientRect().height)),
+  )
+  console.log(`13 long name: ${grown.toFixed(1)}px against ${plain.toFixed(1)}px`)
+  check(grown > plain, "a name too wide for the list grows its row")
+
+  // --------------------------------------------------- the same name, on a card
+
+  // Search for the short one. The long one is its only neighbour, and it is off the page, so
+  // clicking it puts that name on top of a stack.
+  await page.fill("#list-search", SHORT)
+  await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length === 1)
+  await page.click("#list-view .rows > li:nth-child(1) > .row")
+  await page.waitForSelector(".subrows .row")
+  await page.click(".subrows > li:nth-child(1) > .row")
+  await page.waitForSelector("#list-view .stack .card.top")
+  const tall = await page.$eval("#list-view .stack", (box) => box.getBoundingClientRect().height)
+  console.log(`14 long card: the bar is ${tall.toFixed(1)}px`)
+  check(tall > plain, "a name too wide for the card grows the bar")
+  check((await cards()).slice(-1)[0] === LONG, "the long name is the card on top")
+  await shot("14-long-card")
+  // Clearing the search box leaves the stack standing. The clear button is what drops it.
+  await page.click("#list-clear")
+  await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length > 1)
 
   await browser.close()
   console.log(bad ? `\n✗ ${String(bad)} failed` : "\n✓ all checks passed")

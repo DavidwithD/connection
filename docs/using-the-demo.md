@@ -241,6 +241,8 @@ the card. Walking on stacks another card, and each card is a different colour.
 **Click a strip** to go back to that node. The first card goes back to the list, on whatever
 page holds it.
 
+**A long name wraps.** The row grows to hold it, and so does the card on top of a stack.
+
 **The dates come from the record**, and every node stored before
 [ADR 0044](decisions/0044-the-node-record-carries-a-date.md) carries the date of that upgrade.
 So a graph seeded or loaded before then reads as one day, and the date order is only useful
