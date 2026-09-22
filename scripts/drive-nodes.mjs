@@ -123,6 +123,18 @@ const LONG =
   "drive long a name that runs on well past the width of the list and has to wrap onto a " +
   "second line before any of it can be read"
 
+/**
+ * One hub joined to forty leaves. The first name joins each of the rest, so this is one line.
+ *
+ * A walk in place needs a neighbour far down the same page, and a seeded graph puts nobody
+ * anywhere in particular. Searching these leaves every one of them on one page. The hub sorts
+ * last, so a walk from the first row lands well below the window.
+ */
+const STAR = [
+  "drive walk hub",
+  ...Array.from({ length: 40 }, (_, at) => `drive walk ${String(at + 1).padStart(2, "0")}`),
+]
+
 async function main() {
   mkdirSync(SHOTS, { recursive: true })
 
@@ -355,6 +367,11 @@ async function main() {
   // Read the first row before the click. Read after it, and the wait compares page two
   // against itself.
   const wasFirst = (await names())[0]
+  // A new page starts at the top, so turn one from the foot of this page.
+  await page.evaluate(() => {
+    window.scrollTo(0, document.body.scrollHeight)
+  })
+  const wasDown = await page.evaluate(() => window.scrollY)
   await page.click("#list-next")
   await page.waitForFunction(
     (was) => document.querySelector("#list-view .rows > li > .row .name")?.textContent !== was,
@@ -363,6 +380,8 @@ async function main() {
   console.log(`10 paging: ${firstPage} → ${await page.textContent("#list-page")}`)
   check((await page.textContent("#list-page")).startsWith("page 2 of "), "next turns the page")
   check(!(await page.isDisabled("#list-prev")), "previous is on now")
+  check(wasDown > 0, `a page of 25 is longer than the window (${String(wasDown)}px of scroll)`)
+  check((await page.evaluate(() => window.scrollY)) === 0, "turning the page goes to the top")
   await shot("10-page-2")
 
   // ----------------------------------------------- a neighbour on the same page
@@ -446,6 +465,82 @@ async function main() {
   // Clearing the search box leaves the stack standing. The clear button is what drops it.
   await page.click("#list-clear")
   await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length > 1)
+
+  // --------------------------------------------- the list comes back where it left
+
+  await page.selectOption("#list-size", "100")
+  await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length === 100)
+
+  // Open a row far enough down the page that reaching it scrolls the list. Keep going until
+  // one of them has a neighbour to walk off to.
+  let off = null
+  for (let at = 30; at <= 60 && !off; at++) {
+    await page.click(`#list-view .rows > li:nth-child(${String(at)}) > .row`)
+    await page.waitForSelector(".subrows .row, .subrows .empty")
+    off = await pickAway()
+  }
+  check(Boolean(off), "a row down the page has a neighbour off the page")
+  if (off) {
+    // Scroll it into view here rather than inside the click, so this is the offset the list
+    // is on at the moment it leaves.
+    await off.scrollIntoViewIfNeeded()
+    const left = await page.evaluate(() => window.scrollY)
+    await off.click()
+    await page.waitForSelector("#list-view .stack .card")
+    await page.waitForSelector(".subrows .row, .subrows .empty")
+    const stacked = await page.evaluate(() => window.scrollY)
+    await page.click("#list-view .stack .card", { position: { x: 8, y: 18 } })
+    await page.waitForSelector("#list-view .rows > li")
+    await page.waitForSelector(".subrows .row, .subrows .empty")
+    const back = await page.evaluate(() => window.scrollY)
+    console.log(`15 scroll: left at ${String(left)}px, ${String(stacked)}px in the stack, ` +
+      `back at ${String(back)}px`)
+    check(left > 0, "reaching that row scrolled the list")
+    check(Math.abs(back - left) <= 2, "the list comes back at the offset it left on")
+    await shot("15-back-where-it-left")
+  }
+
+  // ------------------------------------- a walk in place brings the row into view
+
+  await load("drive-star.txt", STAR.join(" | "))
+  await page.fill("#list-search", "drive walk")
+  await page.waitForFunction(
+    (rows) => document.querySelectorAll("#list-view .rows > li").length === rows,
+    STAR.length,
+  )
+  check(
+    (await page.$eval("#list-view .rows > li:last-child .name", (el) => el.textContent)) ===
+      STAR[0],
+    `the hub is the last of the ${String(STAR.length)} rows`,
+  )
+  // How far below the window the hub's row starts. The walk has to close that.
+  const below = await page.$eval(
+    "#list-view .rows > li:last-child > .row",
+    (box) => box.getBoundingClientRect().top - window.innerHeight,
+  )
+  check(below > 0, `the hub's row starts ${below.toFixed(0)}px below the window`)
+
+  // The first row's only neighbour is the hub, and the hub is on this page. So this walks in
+  // place, from the top of the list to the foot of it.
+  await page.click("#list-view .rows > li:nth-child(1) > .row")
+  await page.waitForSelector(".subrows .row")
+  await page.click(".subrows > li:nth-child(1) > .row")
+  await page.waitForFunction(
+    () => document.querySelector("#list-view .rows > li:last-child .subrows .row") !== null,
+  )
+  const landed = await page.$eval("#list-view .rows > li:last-child > .row", (box) => {
+    const rect = box.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom, window: window.innerHeight }
+  })
+  console.log(
+    `16 in view: the hub's row was ${below.toFixed(0)}px below the window, ` +
+      `now ${landed.top.toFixed(0)}px from its top`,
+  )
+  check(
+    landed.top >= -1 && landed.bottom <= landed.window + 1,
+    "the walk brought the row it opened into view",
+  )
+  await shot("16-walk-in-view")
 
   await browser.close()
   console.log(bad ? `\n✗ ${String(bad)} failed` : "\n✓ all checks passed")

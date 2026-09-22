@@ -137,8 +137,44 @@ function dropOpen(): void {
 function refilter(): void {
   cache = null
   state.page = 0
+  owed = 0
   dropOpen()
   render()
+}
+
+// ------------------------------------------------------------------- the scroll
+
+/**
+ * Where the list was when the stack took the view over.
+ *
+ * The page scrolls the document, and the stack is one line tall. The browser clamps the
+ * scroll when the list leaves, so the offset is gone before the list comes back. This holds
+ * it.
+ *
+ * The page number is held with it. `reveal` can come back on another page, and an offset
+ * from one page means nothing on another.
+ */
+let parked: { page: number; y: number } | null = null
+
+/**
+ * A scroll the next render owes the reader. Nothing else here moves the page.
+ *
+ * An offset is where the list left off. `"open"` is a row to bring into view, and the render
+ * finds it. A row the reader opened may be anywhere on the page, including off the screen.
+ */
+let owed: number | "open" | null = null
+
+/** The open row's item, as the last render drew it. What `"open"` brings into view. */
+let openItem: HTMLElement | null = null
+
+function park(): void {
+  parked = { page: state.page, y: window.scrollY }
+}
+
+/** Ask the next render for the offset the list left on, or the top if the page moved. */
+function resume(): void {
+  owed = parked && parked.page === state.page ? parked.y : 0
+  parked = null
 }
 
 // ------------------------------------------------------------------ reading one
@@ -193,12 +229,19 @@ async function toggle(node: NodeRow): Promise<void> {
     return
   }
   state.open = node.id
+  owed = "open"
   await expand(node)
 }
 
 /** Click a neighbour. `walkTo` decides where that leaves the page. */
 async function step(node: NodeMeta): Promise<void> {
+  const wasList = state.trail.length === 0
   Object.assign(state, walkTo(state, node, shown()))
+  // The list is about to leave the view. Hold the place the reader had in it.
+  if (wasList && state.trail.length) park()
+  // The walk stayed in the list. The row it opened can be a screen or two below the one it
+  // came from. A walk the reader cannot see reads as a click that did nothing.
+  else owed = "open"
   await expand(node)
 }
 
@@ -208,15 +251,19 @@ async function backTo(depth: number): Promise<void> {
   const next = backFrom(state, depth)
   if (!card || next === state) return
   state.trail = next.trail
-  if (!next.trail.length) reveal(card)
+  if (!next.trail.length) {
+    reveal(card)
+    resume()
+  }
   await expand(card)
 }
 
-/** Previous page, or next. */
+/** Previous page, or next. A new page starts at the top. */
 function turn(by: number): void {
   const at = state.page + by
   if (at < 0 || at >= pageCount()) return
   state.page = at
+  owed = 0
   dropOpen()
   render()
 }
@@ -237,12 +284,20 @@ function render(): void {
   prev.disabled = state.page === 0
   next.disabled = state.page + 1 >= pageCount()
   shuffle.disabled = state.order !== "random"
+
+  // Last, with the new list in the page. The browser has the height it needs to scroll to.
+  // `nearest` leaves a row that already fits on the screen where it is, so a walk to the row
+  // below moves nothing. It is the item rather than the row, so the neighbours come with it.
+  if (owed === "open") openItem?.scrollIntoView({ block: "nearest" })
+  else if (owed !== null) window.scrollTo(0, owed)
+  owed = null
 }
 
 /** The list. The open row carries its sublist underneath it. */
 function rows(): HTMLElement {
   const list = document.createElement("ul")
   list.className = "rows"
+  openItem = null
 
   const page = shown()
   if (!page.length) {
@@ -260,7 +315,10 @@ function rows(): HTMLElement {
     // The date is not drawn. It is here so a drive script can check the date order.
     line.dataset["created"] = new Date(node.created).toISOString().slice(0, 10)
     item.append(line)
-    if (open) item.append(mount())
+    if (open) {
+      item.append(mount())
+      openItem = item
+    }
     list.append(item)
   }
   return list
@@ -276,6 +334,8 @@ function stack(): DocumentFragment {
   const frame = document.createDocumentFragment()
   const bar = document.createElement("div")
   bar.className = "stack"
+  // No rows here, so there is nothing to bring into view.
+  openItem = null
 
   state.trail.forEach((node, depth) => {
     const top = depth === state.trail.length - 1

@@ -228,18 +228,21 @@ the graph at all".
 | **made … to …** | Keeps a row written in that range of days. Either end can be left empty |
 | **per page** | 25, 50 or 100 rows |
 | **clear** | Back to every node, by name, on the first page |
+| **previous**, **next** | Turns the page. A new page starts at the top of the list |
 
 **Click a row** to open its neighbours under it. Click it again to close them. One row is open
 at a time.
 
 **Click a neighbour** and one of two things happens. A neighbour that is one of the rows on
-this page opens in place: the row you were in closes, and that node's row opens. A neighbour
-that is not on this page opens as a card over the row you came from, offset to the right, so
-the row you came from still shows as a strip at the left edge. Its neighbours are listed under
-the card. Walking on stacks another card, and each card is a different colour.
+this page opens in place: the row you were in closes, and that node's row opens. The list
+scrolls to that row if it is off the screen. A neighbour that is not on this page opens as a
+card over the row you came from, offset to the right, so the row you came from still shows as
+a strip at the left edge. Its neighbours are listed under the card. Walking on stacks another
+card, and each card is a different colour.
 
 **Click a strip** to go back to that node. The first card goes back to the list, on whatever
-page holds it.
+page holds it. The list comes back at the offset you left it on. It comes back at the top if
+the page has changed under it.
 
 **A long name wraps.** The row grows to hold it, and so does the card on top of a stack.
 
