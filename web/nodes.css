@@ -66,7 +66,7 @@
 
 .row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   width: 100%;
   padding: 8px 10px;
@@ -79,8 +79,10 @@
   cursor: pointer;
 }
 .row:hover { border-color: var(--accent); }
-.row .mark { width: 10px; color: var(--ink-muted); }
-.row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .mark { flex: none; width: 10px; color: var(--ink-muted); }
+/* A long name wraps, and the row grows to hold it. `anywhere` breaks a word that is wider
+   than the row on its own, which a pasted line with no spaces in it can be. */
+.row .name { min-width: 0; overflow-wrap: anywhere; }
 
 .subrows {
   margin: 4px 0 10px 18px;
@@ -90,8 +92,9 @@
 .subrows > li { margin-bottom: 4px; }
 .subrows .row { background: transparent; }
 
-/* A placeholder row while the neighbours are read. The same box as a real row, so the
-   sublist opens at the height it will keep and the page below it does not move. */
+/* A placeholder row while the neighbours are read. The same box as a one-line row. So a
+   sublist of short names opens at the height it will keep, and the page below it does not
+   move. A name that wraps takes more, and the page below it moves down by the difference. */
 .subrows .skel {
   display: flex;
   align-items: center;
@@ -110,9 +113,12 @@
 
    One line of cards. Each card starts further right than the one under it and covers the
    width to its right, so the cards below show as a strip on the left. That strip is the way
-   back, and its width is what `--depth` sets. */
+   back, and its width is what `--depth` sets.
 
-.stack { position: relative; height: 36px; }
+   The top card sets the height of the bar. It is the only one in normal flow. The cards
+   under it stretch to the height it sets, so their strips reach the top and the bottom. */
+
+.stack { position: relative; display: flex; }
 .card {
   position: absolute;
   top: 0;
@@ -124,7 +130,7 @@
   align-items: center;
   overflow: hidden;
   white-space: nowrap;
-  padding: 0 10px;
+  padding: 8px 10px;
   color: #0b0b0b;
   background: hsl(var(--hue) 62% 88%);
   border: 1px solid hsl(var(--hue) 40% 72%);
@@ -133,7 +139,20 @@
   text-align: left;
   cursor: pointer;
 }
-.card.top { cursor: default; font-weight: 600; }
+/* `flex: 1` rather than a width: a button is as wide as its own text, and the top card has
+   to reach the right edge whatever its name is. The margin leaves the strips their room. */
+.card.top {
+  position: relative;
+  left: auto;
+  flex: 1;
+  min-width: 0;
+  margin-left: calc(var(--depth) * 22px);
+  min-height: 36px;
+  white-space: normal;
+  cursor: default;
+  font-weight: 600;
+}
+.card.top .name { overflow-wrap: anywhere; }
 
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) .card {
