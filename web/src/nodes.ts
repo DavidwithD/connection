@@ -7,17 +7,24 @@
  * cards stack, so the way back stays on screen. The map travels instead: it moves the camera,
  * and where you were leaves the screen.
  *
- * The page only reads. Every write to the graph happens on the map or the transfer page.
+ * Each row can rename, delete or join its node too. Search, order and paging still only
+ * read. ADR 0047 is why this page took writes it used to leave to the map.
  */
 import {
   MAX_LIST_NODES,
   Missing,
+  deleteNodeWithEdges,
   fetchNeighbourhood,
+  joinNodes,
   persist,
   readAllNodes,
+  renameNode,
   whenEvicted,
 } from "./store/index.js"
 import type { NodeMeta, NodeRow } from "./store/index.js"
+import { priced, deleted } from "./labels.js"
+import { RenameBox } from "./rename-box.js"
+import { normaliseLabel } from "./store/keys.js"
 import { MAX_EDGES_PER_NODE } from "./store/read.js"
 import {
   backTo as backFrom,
@@ -49,6 +56,8 @@ interface State extends Controls, Walk {
   subOf: string | null
   reading: boolean
   note: string
+  /** The row showing an inline edit or join box, or null when no row is. */
+  action: { id: string; kind: "edit" | "join" } | null
 }
 
 const state: State = {
@@ -66,6 +75,7 @@ const state: State = {
   subOf: null,
   reading: false,
   note: "",
+  action: null,
 }
 
 const el = <T extends HTMLElement>(id: string): T => {
@@ -258,6 +268,89 @@ async function backTo(depth: number): Promise<void> {
   await expand(card)
 }
 
+// ------------------------------------------------------------------ what a write does
+
+/**
+ * Rename a row from its inline edit box.
+ *
+ * A rename can change the node's id. Every place that holds the old id — `state.all`,
+ * `state.sub`, `state.trail`, `state.subOf` — is patched to the new one.
+ */
+async function rename(node: NodeMeta, next: string): Promise<void> {
+  try {
+    const renamed = await renameNode(node.id, next)
+    state.all = state.all.map((row) => (row.id === node.id ? { ...row, ...renamed } : row))
+    state.sub = state.sub.map((n) => (n.id === node.id ? { ...n, ...renamed } : n))
+    state.trail = state.trail.map((n) => (n.id === node.id ? { ...n, ...renamed } : n))
+    if (state.subOf === node.id) state.subOf = renamed.id
+    state.action = null
+    cache = null
+    // `reveal` only moves the page and the open row when the row renamed is the open one.
+    // A closed row's rename leaves paging alone, even if the new label moves it off screen.
+    state.note = `renamed ${node.label} to ${renamed.label}`
+    if (state.open === node.id) reveal(renamed)
+    render()
+  } catch (err) {
+    // A full render would rebuild the box and lose whatever is still typed in it.
+    status.textContent = err instanceof Error ? err.message : String(err)
+  }
+}
+
+/**
+ * Delete a row from its armed delete icon.
+ *
+ * Every place that could hold this id is cleared: the open row, the card trail, the
+ * current sublist, and the list itself.
+ */
+async function remove(node: NodeMeta): Promise<void> {
+  const prune = (): void => {
+    state.all = state.all.filter((row) => row.id !== node.id)
+    state.sub = state.sub.filter((n) => n.id !== node.id)
+    if (state.open === node.id) {
+      state.open = null
+      state.sub = []
+    }
+    const at = state.trail.findIndex((n) => n.id === node.id)
+    if (at >= 0) {
+      state.trail = state.trail.slice(0, at)
+      if (!state.trail.length) state.open = null
+    }
+    if (state.action?.id === node.id) state.action = null
+    cache = null
+  }
+
+  try {
+    const { parted } = await deleteNodeWithEdges(node.id)
+    const lost = new Set(parted)
+    state.all = state.all.map((row) => (lost.has(row.id) ? { ...row, degree: row.degree - 1 } : row))
+    prune()
+    state.note = deleted(node)
+  } catch (err) {
+    if (!(err instanceof Missing)) {
+      status.textContent = err instanceof Error ? err.message : String(err)
+      return
+    }
+    prune()
+    state.note = `${node.label} is not in the graph any more`
+  }
+  render()
+}
+
+/** Join a row to a node picked from its inline name box. */
+async function join(node: NodeMeta, target: NodeMeta): Promise<void> {
+  try {
+    await joinNodes(node.id, target.id)
+    const gained = new Set([node.id, target.id])
+    state.all = state.all.map((row) => (gained.has(row.id) ? { ...row, degree: row.degree + 1 } : row))
+    state.action = null
+    state.note = `joined ${node.label} and ${target.label}`
+    render()
+  } catch (err) {
+    // A full render would rebuild the box and lose whatever is still typed in it.
+    status.textContent = err instanceof Error ? err.message : String(err)
+  }
+}
+
 /** Previous page, or next. A new page starts at the top. */
 function turn(by: number): void {
   const at = state.page + by
@@ -291,6 +384,14 @@ function render(): void {
   if (owed === "open") openItem?.scrollIntoView({ block: "nearest" })
   else if (owed !== null) window.scrollTo(0, owed)
   owed = null
+
+  // An inline box is built detached, so its own focus call lands on nothing. Once it is
+  // in the page, this is what actually puts the caret in it.
+  if (state.action) {
+    const input = view.querySelector<HTMLInputElement>(".row-inline input")
+    input?.focus()
+    input?.select()
+  }
 }
 
 /** The list. The open row carries its sublist underneath it. */
@@ -314,7 +415,8 @@ function rows(): HTMLElement {
     const line = row(node, open ? "▾" : "▸", () => void toggle(node))
     // The date is not drawn. It is here so a drive script can check the date order.
     line.dataset["created"] = new Date(node.created).toISOString().slice(0, 10)
-    item.append(line)
+    item.append(line, actions(node))
+    if (state.action?.id === node.id) item.append(inline(node))
     if (open) {
       item.append(mount())
       openItem = item
@@ -406,7 +508,8 @@ function sublist(): HTMLElement {
 
   for (const node of state.sub) {
     const item = document.createElement("li")
-    item.append(row(node, "·", () => void step(node)))
+    item.append(row(node, "·", () => void step(node)), actions(node))
+    if (state.action?.id === node.id) item.append(inline(node))
     list.append(item)
   }
   return list
@@ -419,6 +522,171 @@ function row(node: NodeMeta, mark: string, onClick: () => void): HTMLElement {
   button.append(text("mark", mark), text("name", node.label))
   button.addEventListener("click", onClick)
   return button
+}
+
+/**
+ * Edit, join and delete, for one row. Hidden until the row is hovered or focused
+ * (`nodes.css`), so a row at rest shows only its name.
+ */
+function actions(node: NodeMeta): HTMLElement {
+  const box = document.createElement("div")
+  box.className = "row-actions"
+  box.append(
+    iconButton("✎", `edit ${node.label}`, () => {
+      state.action = { id: node.id, kind: "edit" }
+      render()
+    }),
+    iconButton("🔗", `join ${node.label} to…`, () => {
+      state.action = { id: node.id, kind: "join" }
+      render()
+    }),
+    deleteButton(node),
+  )
+  return box
+}
+
+function iconButton(glyph: string, label: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement("button")
+  button.type = "button"
+  button.className = "icon"
+  button.textContent = glyph
+  button.title = label
+  button.setAttribute("aria-label", label)
+  button.addEventListener("click", onClick)
+  return button
+}
+
+/**
+ * The delete icon. The first click arms it. Its own text becomes the cost `priced` would
+ * put in a menu row — this icon has no menu to open first. The second click, within a few
+ * seconds, fires the delete. Losing focus cancels the arm.
+ *
+ * No modal, no undo. This is the single extra click ADR 0024 and ADR 0036 ask for in place
+ * of either.
+ */
+function deleteButton(node: NodeMeta): HTMLButtonElement {
+  const ARM_MS = 4000
+  const button = document.createElement("button")
+  button.type = "button"
+  button.className = "icon delete"
+  button.textContent = "×"
+  button.title = `delete ${node.label}`
+  button.setAttribute("aria-label", `delete ${node.label}`)
+
+  let armed = false
+  let timer = 0
+
+  const disarm = (): void => {
+    armed = false
+    window.clearTimeout(timer)
+    button.textContent = "×"
+    button.title = `delete ${node.label}`
+    delete button.dataset["armed"]
+  }
+
+  button.addEventListener("click", () => {
+    if (!armed) {
+      armed = true
+      button.textContent = priced(node)
+      button.title = "click again to delete"
+      button.dataset["armed"] = "true"
+      timer = window.setTimeout(disarm, ARM_MS)
+      return
+    }
+    window.clearTimeout(timer)
+    void remove(node).finally(disarm)
+  })
+  button.addEventListener("blur", disarm)
+  return button
+}
+
+/** The inline box a row's edit or join icon opens. */
+function inline(node: NodeMeta): HTMLElement {
+  return state.action?.kind === "edit" ? editBox(node) : joinBox(node)
+}
+
+/** The rename box. `RenameBox` (`rename-box.ts`) owns the verdict; this just wires it up. */
+function editBox(node: NodeMeta): HTMLElement {
+  const wrap = document.createElement("div")
+  wrap.className = "row-inline"
+
+  const input = document.createElement("input")
+  input.type = "text"
+  input.autocomplete = "off"
+  input.spellcheck = false
+  input.setAttribute("aria-label", `a new name for ${node.label}`)
+
+  const verdict = document.createElement("button")
+  verdict.type = "button"
+  verdict.className = "verdict"
+
+  const box = new RenameBox(input, verdict, {
+    onRename: (next) => void rename(node, next),
+    onError: (message) => {
+      status.textContent = message
+    },
+  })
+  box.open(node)
+
+  wrap.append(input, verdict)
+  return wrap
+}
+
+/**
+ * The join box: a name typed against the nodes already read at boot, not a store query.
+ * `state.all` already holds every node. Matching by prefix in memory is enough here. It
+ * does not reuse `Combobox` (`combobox.ts`), which exists for a search that can resolve
+ * late.
+ */
+function joinBox(node: NodeMeta): HTMLElement {
+  const wrap = document.createElement("div")
+  wrap.className = "row-inline"
+
+  const input = document.createElement("input")
+  input.type = "text"
+  input.autocomplete = "off"
+  input.spellcheck = false
+  input.placeholder = "join to…"
+  input.setAttribute("aria-label", `join ${node.label} to`)
+
+  const list = document.createElement("ul")
+  list.className = "suggestions"
+
+  let matches: NodeRow[] = []
+
+  const paint = (): void => {
+    const needle = normaliseLabel(input.value)
+    list.replaceChildren()
+    matches = needle
+      ? state.all.filter((row) => row.id !== node.id && row.id.startsWith(needle)).slice(0, 6)
+      : []
+    for (const match of matches) {
+      const item = document.createElement("li")
+      const pick = document.createElement("button")
+      pick.type = "button"
+      pick.textContent = match.label
+      pick.addEventListener("click", () => void join(node, match))
+      item.append(pick)
+      list.append(item)
+    }
+  }
+
+  input.addEventListener("input", paint)
+  input.addEventListener("keydown", (event) => {
+    if (event.isComposing) return
+    if (event.key === "Escape") {
+      event.preventDefault()
+      state.action = null
+      render()
+    } else if (event.key === "Enter" && matches.length === 1) {
+      event.preventDefault()
+      const [only] = matches
+      if (only) void join(node, only)
+    }
+  })
+
+  wrap.append(input, list)
+  return wrap
 }
 
 function text(cls: string, body: string): HTMLElement {

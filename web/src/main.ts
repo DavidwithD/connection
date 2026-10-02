@@ -25,6 +25,7 @@ import { Explorer, debounce, perFrame } from "./explore.js"
 import { GlobeView } from "./globe-view.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
+import { priced } from "./labels.js"
 import { ghostTarget, type MapSurface } from "./map.js"
 import { MapView } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
@@ -464,13 +465,6 @@ editRow.addEventListener("click", () => {
   editBox.hidden = false
   rename.open(editing)
 })
-
-/** The button label, with the edge count when the node has edges. */
-function priced(node: NodeMeta): string {
-  if (!node.degree) return `delete ${node.label}`
-  const edges = node.degree === 1 ? "1 edge" : `${String(node.degree)} edges`
-  return `delete ${node.label} and its ${edges}`
-}
 
 /**
  * The node at one end of a drawn line, or null if that end is not one.
