@@ -62,7 +62,7 @@ around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
 | `npm run drive:drag-join` | Drive the shift-drag that joins two nodes, and check what it wrote |
 | `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
-| `npm run drive:nodes` | Drive the node list: the controls, the walk into a neighbour, and back |
+| `npm run drive:nodes` | Drive the node list: the controls, the walk, and a row's edit, join and delete |
 | `npm run drive:globe` | Drive the globe renderer at `/?globe`, and photograph what it draws |
 | `npm run preinstall` | Runs on every install. Refuses one from an npm that would rewrite the lock |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
@@ -101,6 +101,7 @@ web/src/
   explore.ts    what the centre reads once the camera settles
   palette.ts    validated colour tokens, light and dark
   settings.ts   what the reader has asked the page to do, kept in the browser
+  labels.ts     button labels built from a node's own data, shared by two pages
   combobox.ts   a text box that hands back nodes, not text
   rename-box.ts a name, and one row saying whether the graph has it already
   writes.ts     the line every write stands in, and the receipts it leaves
