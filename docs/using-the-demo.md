@@ -294,6 +294,20 @@ path through `b` — so a hub is one line, and a line of one name is a node with
 name is the identity, so nothing carries an id. The format's rules, both directions, are
 [a-graph-as-text.md](design/a-graph-as-text.md).
 
+An indented line hangs from the line above it. Its first name joins that line's first name.
+Here is the same graph, with `Miselin` typed once:
+
+```
+# The towns, and a lighthouse nobody can reach
+Kavara | Vessarin | Thorne
+    Miselin | Ashanlin
+Lighthouse
+```
+
+Depth is not limited, and any indent step reads. One file uses tabs or spaces, not both. The
+download never indents, so a file typed this way comes back flat
+([ADR 0046](decisions/0046-a-line-that-hangs-from-the-line-above.md)).
+
 Choosing a file does not write it. It is surveyed against the graph and the reading is shown
 back: three numbers, and under them every new name and every pair it read. Those pairs are the
 point — nothing in the file says whether a line was meant as a star or a chain. **Add to the

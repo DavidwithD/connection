@@ -5,7 +5,12 @@
  *   Thorne                        # a node with no edges
  *   Kavara | Miselin | Vessarin   # Kavara joins Miselin, and Kavara joins Vessarin
  *
- * Reading and writing are in one file because they are one format.
+ *   Kavara                        # an indented line hangs from the line above
+ *       Miselin | Sarn            # Kavara joins Miselin, and Miselin joins Sarn
+ *           Sarn | Veyle          # Sarn joins Veyle. Any depth
+ *
+ * Reading and writing are in one file because they are one format. Only the reader indents.
+ * The writer never does — see `format`.
  */
 import type { StoredNode } from "./db.js"
 import { components } from "./islands.js"
@@ -35,6 +40,15 @@ export interface Reading {
   lines: number
 }
 
+/** The leading whitespace of a line. A name is trimmed, so this can never be part of one. */
+const indentOf = (raw: string): string => /^[ \t]*/.exec(raw)?.[0] ?? ""
+
+/** What an indent is built from: "tabs", "spaces", or "both" for a line holding each. */
+const styleOf = (indent: string): "tabs" | "spaces" | "both" => {
+  const tab = indent.includes("\t")
+  return tab && indent.includes(" ") ? "both" : tab ? "tabs" : "spaces"
+}
+
 /**
  * Parse the file into names and pairs. A pure function: it reads nothing from the store.
  *
@@ -46,6 +60,14 @@ export interface Reading {
  * first. That is the spelling `createNode` will store, and the one every later line has to
  * match. `normaliseLabel` in keys.ts folds case and runs of whitespace and nothing else, so
  * `Kavara` and `kavara` are one node while `Zoë` and `Zoe` are two.
+ *
+ * An indented line hangs from the line above it. Its **first** name joins that line's first
+ * name. The rest of the line reads as an ordinary star. So `Sarn | Veyle` under
+ * `Kavara | Miselin` gives Kavara–Sarn and Sarn–Veyle. It does not give Kavara–Veyle. Depth
+ * is not limited.
+ *
+ * This is why a name is typed once. Flat, every node with both a parent and children is
+ * spelled twice. The second spelling is another chance to make a twin node by typo.
  */
 export function parse(text: string): Reading {
   const faults: string[] = []
@@ -53,12 +75,60 @@ export function parse(text: string): Reading {
   const pairs = new Map<string, [string, string]>()
   let lines = 0
 
+  // The lines an indented line can hang from, outermost first. Each holds the column it
+  // starts at and the name a child of it joins.
+  const open: { column: number; anchor: string }[] = []
+
+  // The first line that indented, and what it indented with. Columns can only be compared
+  // inside one style, so the file has to pick one.
+  let style: { at: number; used: "tabs" | "spaces" } | null = null
+  let mixed = false
+
+  const join = (anchor: string, other: string, at: number): void => {
+    // Both are first spellings, so two equal strings are the same node. The store has no
+    // self-edges, so report it as a fault in the file rather than letting the write fail.
+    if (other === anchor) {
+      faults.push(`line ${String(at)}: "${anchor}" is joined to itself`)
+      return
+    }
+    const key = spelledPair(anchor, other)
+    if (!pairs.has(key)) pairs.set(key, [anchor, other])
+  }
+
   text.split(/\r?\n/).forEach((raw, index) => {
     const at = index + 1
     const hash = raw.indexOf(COMMENT)
     const line = (hash < 0 ? raw : raw.slice(0, hash)).trim()
+    // A blank line and a comment leave `open` alone, so neither closes a block.
     if (!line) return
     lines++
+
+    const indent = indentOf(raw)
+    if (indent && !mixed) {
+      const used = styleOf(indent)
+      if (used === "both") {
+        mixed = true
+        faults.push(`line ${String(at)}: "${line}" indents with a tab and a space at once`)
+      } else if (style === null) style = { at, used }
+      else if (style.used !== used) {
+        mixed = true
+        faults.push(
+          `line ${String(at)}: "${line}" indents with ${used}, but line ` +
+            `${String(style.at)} indents with ${style.used}`,
+        )
+      }
+    }
+
+    // The line this one hangs from is the nearest line above it with a smaller indent.
+    //
+    // A column that no line above sits at hangs from the next one out. A typed file does not
+    // hold its columns exactly, and the preview lists every pair it read.
+    const column = indent.length
+    while ((open.at(-1)?.column ?? -1) >= column) open.pop()
+    const under = open.at(-1)?.anchor
+    if (column > 0 && under === undefined) {
+      faults.push(`line ${String(at)}: "${line}" is indented under nothing`)
+    }
 
     const named: string[] = []
     for (const field of line.split(SEPARATOR)) {
@@ -77,16 +147,10 @@ export function parse(text: string): Reading {
     const [anchor, ...rest] = named
     if (anchor === undefined) return
 
-    for (const other of rest) {
-      // Both are first spellings, so two equal strings are the same node. The store has no
-      // self-edges, so report it as a fault in the file rather than letting the write fail.
-      if (other === anchor) {
-        faults.push(`line ${String(at)}: "${anchor}" is joined to itself`)
-        continue
-      }
-      const key = spelledPair(anchor, other)
-      if (!pairs.has(key)) pairs.set(key, [anchor, other])
-    }
+    if (under !== undefined) join(under, anchor, at)
+    for (const other of rest) join(anchor, other, at)
+
+    open.push({ column, anchor })
   })
 
   return { names: [...names.values()], pairs: [...pairs.values()], faults, lines }
