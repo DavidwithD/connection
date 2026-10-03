@@ -48,11 +48,16 @@ Only the centre and its ring are named, so only they are pills. Everything else 
 disc: a field node is seen rather than read, and nothing about it has to be legible for the
 map to work.
 
-Until it is pointed at. A disc under the pointer draws as its name, in the ring's pill at the
-ring's size. It goes back to a disc when the pointer leaves, so reading a field node costs no
+Until it is pointed at. A disc under the pointer draws as its name, in the ring's type and
+opened to every line. It goes back to a disc when the pointer leaves, so reading a field node costs no
 click. The ink is the page's own rather than the ring's, because this node is not a neighbour of
 the centre. The pill is wider than the disc it replaces, and it takes the taps inside it. A
 neighbour whose seat falls under it has to be approached from outside.
+
+A long name is cut to fit ([0048](../decisions/0048-a-long-name-is-cut-to-fit.md)). A ring
+name and a ghost's name wrap to two lines of at most 150 px and end in `…` if more is left.
+The name under the pointer opens to 260 px with every line. The centre is cut like a ring name
+at rest, in its own larger type. The pointer opens it to 300 px with every line. A slot is as wide as the widest cut name, so one long name no longer widens the ring.
 
 Eight kinds of thing, and one of them is not a node.
 
@@ -226,6 +231,7 @@ reads it.
 | [0012](../decisions/0012-the-name-is-the-node.md) | The pill, and which nodes get one rather than a disc |
 | [0025](../decisions/0025-when-a-ghost-stands.md) | The camera rather than the seat as what raises a ghost |
 | [0027](../decisions/0027-a-ring-holds-what-it-holds.md) | How many doorways a ring offers, and that the number is measured |
+| [0048](../decisions/0048-a-long-name-is-cut-to-fit.md) | How a long name is cut, and what opens it |
 | [0043](../decisions/0043-off-screen-becomes-an-angle.md) | Off screen as an angle from the middle, once the map draws on a sphere |
 | [0006](../decisions/0006-only-the-centre-reads.md) | That drawing is the centre's neighbourhood, and reading runs a hop past it |
 | [0032](../decisions/0032-the-centre-is-named.md) | What moves the mark, and what it costs to let the camera move it |

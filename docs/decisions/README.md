@@ -51,6 +51,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0045](0045-a-runner-for-the-browser-code.md) | A runner for the browser code | 🔵 Proposed |
 | [0046](0046-a-line-that-hangs-from-the-line-above.md) | A line that hangs from the line above | 🔵 Proposed |
 | [0047](0047-the-list-page-writes-too.md) | The list page writes too | 🔵 Proposed |
+| [0048](0048-a-long-name-is-cut-to-fit.md) | A long name is cut to fit | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 
