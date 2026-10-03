@@ -179,6 +179,32 @@ export const RING_TEXT: TextStyle = { size: 12, weight: 500 }
 /** The centre's name, which is the loudest mark on screen. */
 export const CENTRE_TEXT: TextStyle = { size: 15, weight: 700 }
 
+/** How a name is cut to fit a pill: the widest the pill may be, and the most lines it may hold. */
+export interface NameShape {
+  /** The pill's outer width in world units, padding included. */
+  width: number
+  lines: number
+}
+
+/**
+ * A neighbour's and a ghost's name. Two lines, then an ellipsis.
+ *
+ * Without a cap, one long name widens every ring slot and runs under its neighbours.
+ */
+export const RING_NAME: NameShape = { width: 150, lines: 2 }
+
+/** The name under the pointer: wider, and every line. Opens over its neighbours. */
+export const HOVER_NAME: NameShape = { width: 260, lines: Infinity }
+
+/**
+ * The centre's name under the pointer: wider again, and every line. It is the name the reader
+ * came to read. At rest the centre uses `RING_NAME`, in its own larger type.
+ */
+export const CENTRE_NAME: NameShape = { width: 300, lines: Infinity }
+
+/** The distance between two lines of a name, as a multiple of the type size. */
+export const LINE_STEP = 1.25
+
 /**
  * A ghost's id holds the centre that raised it and the node it stands in for.
  *

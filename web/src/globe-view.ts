@@ -13,15 +13,19 @@
  * What the page may call is `MapSurface` in map.ts. Nothing outside that reaches the canvas.
  */
 import {
+  CENTRE_NAME,
   CENTRE_TEXT,
   DISSOLVE_MS,
   FLIGHT_MAX,
   FLIGHT_MIN,
   FLIGHT_SPEED,
   GHOST_MARGIN,
+  HOVER_NAME,
+  LINE_STEP,
   PILL_FONT,
   PILL_HALO,
   PILL_PAD,
+  RING_NAME,
   RING_TEXT,
   SLOT_GAP,
   STUB_REACH,
@@ -29,9 +33,11 @@ import {
   ghostTarget,
   type MapEvents,
   type MapSurface,
+  type NameShape,
   type TextStyle,
 } from "./map.js"
 import { LONG_EDGE, NODE_SIZE, type Point, type Slot } from "./placement.js"
+import { wrapName } from "./name-lines.js"
 import { currentPalette, type Palette } from "./palette.js"
 import {
   CURVATURE,
@@ -341,12 +347,20 @@ interface Border {
 /** What a pill is made of. */
 interface PillStyle {
   text: TextStyle
+  /** How the name is cut to fit. */
+  shape: NameShape
   /** The fill, or null for a ghost, which is drawn hollow. */
   fill: string | null
   /** How opaque that fill is. Two ring pills overlap, and the loser stays partly visible. */
   opacity: number
   ink: string
   border: Border | null
+}
+
+/** A name cut into lines, and the box that holds them. */
+interface PillLayout {
+  lines: string[]
+  box: Slot
 }
 
 /**
@@ -409,6 +423,8 @@ export class GlobeView implements MapSurface {
   private aimed: string | null = null
   /** The element the pointer was last reported over, so a crossing can be told from a move. */
   private entered: string | null = null
+  /** Where the mouse last was on the canvas, or null when it is off the canvas. */
+  private pointer: Point | null = null
   /** The ghosts the current centre raised, and the node each one stands in for. */
   private ghosts: Ghost[] = []
   /** Ghost positions for the current centre. Built on the first pass, then only extended. */
@@ -437,13 +453,13 @@ export class GlobeView implements MapSurface {
   private pinch = 0
 
   /**
-   * Measured name widths, keyed by the size and the name.
+   * Each name's lines and box, keyed by its style, its shape and the name.
    *
-   * The size identifies the whole style, because this file sets exactly two: a neighbour's
-   * name and the centre's. Measured on the canvas the pill is later drawn on, so the width a
-   * slot is reserved at is the width the name takes.
+   * Breaking a name measures it many times. `boxOf` runs for every element on each hit test,
+   * so the result is kept. It is measured on the canvas the pill is later drawn on, so the
+   * width a slot is reserved at is the width the name takes.
    */
-  private readonly widths = new Map<string, number>()
+  private readonly layouts = new Map<string, PillLayout>()
 
   constructor(
     container: HTMLElement,
@@ -615,6 +631,7 @@ export class GlobeView implements MapSurface {
     })
 
     canvas.addEventListener("pointerleave", () => {
+      this.pointer = null
       if (this.entered === null) return
       this.entered = null
       for (const hear of this.each("nodeLeave")) hear()
@@ -644,6 +661,7 @@ export class GlobeView implements MapSurface {
 
   /** What the pointer has just crossed onto, or off, during a press and outside one. */
   private crossed(event: PointerEvent): void {
+    if (event.pointerType === "mouse") this.pointer = { x: event.offsetX, y: event.offsetY }
     const hit = this.pick(event.offsetX, event.offsetY)
     const press = this.press
     if (press && hit !== press.over) {
@@ -866,30 +884,43 @@ export class GlobeView implements MapSurface {
   /** The footprint an element draws, in world units. */
   private boxOf(element: Drawn): Slot {
     if (element.kind === "stub") return { w: STUB_SIZE, h: STUB_SIZE }
-    if (element.kind === "ghost") return this.pillBox(element.label, RING_TEXT)
-    if (element.tier === 0) return this.pillBox(element.label, CENTRE_TEXT)
-    // A disc under the pointer draws as its name, so the name is what a click lands on. The
-    // pill covers the disc, so entering by the disc and leaving by the pill cannot flicker.
-    if (element.tier === 1 || element.id === this.hovered) {
-      return this.pillBox(element.label, RING_TEXT)
+    if (element.kind === "ghost") return this.pillLayout(element.label, RING_TEXT, RING_NAME).box
+    if (element.tier === 0) {
+      const shape = element.id === this.hovered ? CENTRE_NAME : RING_NAME
+      return this.pillLayout(element.label, CENTRE_TEXT, shape).box
     }
+    // The node under the pointer draws as its full name, so the name is what a click lands on.
+    // The opened pill covers the ring pill or the disc it replaces, so entering by one and
+    // leaving by the other cannot flicker.
+    if (element.id === this.hovered) {
+      return this.pillLayout(element.label, RING_TEXT, HOVER_NAME).box
+    }
+    if (element.tier === 1) return this.pillLayout(element.label, RING_TEXT, RING_NAME).box
     return { w: NODE_SIZE.resting, h: NODE_SIZE.resting }
   }
 
-  private pillBox(label: string, text: TextStyle): Slot {
-    return { w: this.nameWidth(label, text) + 2 * PILL_PAD, h: text.size + 2 * PILL_PAD }
-  }
-
-  /** How wide a name draws, in world units. */
-  private nameWidth(label: string, text: TextStyle): number {
-    const key = `${String(text.size)}${NUL}${label}`
-    let width = this.widths.get(key)
-    if (width === undefined) {
+  /**
+   * A name cut to a shape, and the box around it.
+   *
+   * A one-line name gets the box it always had: its own width and the type size, plus the
+   * padding. Each further line adds `LINE_STEP` times the type size.
+   */
+  private pillLayout(label: string, text: TextStyle, shape: NameShape): PillLayout {
+    const key = [text.size, text.weight, shape.width, shape.lines, label].join(NUL)
+    let layout = this.layouts.get(key)
+    if (!layout) {
       this.ctx.font = fontOf(text, text.size)
-      width = this.ctx.measureText(label).width
-      this.widths.set(key, width)
+      const { lines, width } = wrapName(
+        label,
+        (line) => this.ctx.measureText(line).width,
+        shape.width - 2 * PILL_PAD,
+        shape.lines,
+      )
+      const rest = (lines.length - 1) * text.size * LINE_STEP
+      layout = { lines, box: { w: width + 2 * PILL_PAD, h: text.size + rest + 2 * PILL_PAD } }
+      this.layouts.set(key, layout)
     }
-    return width
+    return layout
   }
 
   /* ---------------------------------------------------------------- the elements */
@@ -1173,13 +1204,23 @@ export class GlobeView implements MapSurface {
     if (previous) this.setTiers(previous, false)
     this.setTiers(id, true)
 
-    // A hovered node promoted to the centre or its ring has left the hover pill's scope. The
-    // flag draws nothing at those two tiers, so dropping it here costs no mark. It stops the
-    // node drawing as a hovered pill when it demotes again with the pointer elsewhere.
-    const hovered = this.hovered ? this.elements.get(this.hovered) : undefined
-    if (hovered && hovered.tier < 2) this.hover(null)
+    this.settleHover()
     this.paint()
     return true
+  }
+
+  /**
+   * Name whatever is under the pointer now.
+   *
+   * A click moves no camera, so the node clicked is still under the pointer when it becomes the
+   * centre. No pointer event follows, so nothing else would open its name. The same goes for a
+   * node the centre leaves: the pointer may no longer be over it, and the flag would keep it
+   * drawn as a hovered pill. Both are the same question asked again, and `pick` answers it.
+   */
+  private settleHover(): void {
+    const hit = this.pointer ? this.pick(this.pointer.x, this.pointer.y) : null
+    this.entered = hit
+    this.hover(hit)
   }
 
   /* ---------------------------------------------------------------- ghosts */
@@ -1266,17 +1307,21 @@ export class GlobeView implements MapSurface {
    * One size for the whole plan, not one per neighbour, because any neighbour may take any
    * slot. The ranking decides who gets which, and it changes as reads land.
    *
-   * The height comes from the font size, not from a measurement. A pill is one line, so its
-   * height is the font size plus the padding.
+   * Each name is cut to the ring's shape first, so one long name widens a slot to the cap
+   * and no further. The height is the tallest cut name: one line when every name fits on one.
    */
   private slotBox(ids: readonly string[]): Slot {
     let widest = 0
+    let tallest = RING_TEXT.size
     for (const id of ids) {
       const label = this.world.get(id)?.label
-      if (label) widest = Math.max(widest, this.nameWidth(label, RING_TEXT))
+      if (!label) continue
+      const { box } = this.pillLayout(label, RING_TEXT, RING_NAME)
+      widest = Math.max(widest, box.w - 2 * PILL_PAD)
+      tallest = Math.max(tallest, box.h - 2 * PILL_PAD)
     }
     const around = 2 * PILL_PAD + 2 * PILL_HALO + SLOT_GAP
-    return { w: widest + around, h: RING_TEXT.size + around }
+    return { w: widest + around, h: tallest + around }
   }
 
   /**
@@ -1787,8 +1832,8 @@ export class GlobeView implements MapSurface {
       }
       if (node.kind !== "node") continue
       if (node.tier === 0) centre = entry
-      else if (node.tier === 1) ring.push(entry)
       else if (node.id === this.hovered) hovered = entry
+      else if (node.tier === 1) ring.push(entry)
     }
 
     ring.sort((a, b) => byPaint(a.node, b.node))
@@ -1797,6 +1842,7 @@ export class GlobeView implements MapSurface {
     for (const entry of ring) {
       this.drawPill(entry, {
         text: RING_TEXT,
+        shape: RING_NAME,
         fill: palette.surface,
         // Nearly opaque, so where two pills overlap the front one is readable.
         opacity: RING_OPACITY,
@@ -1805,15 +1851,17 @@ export class GlobeView implements MapSurface {
       })
     }
 
-    // The page's own ink, not `hop[0]`. The ring's ink says "a neighbour of the centre", and
-    // this node is not one. Opaque, unlike a ring pill: there is only ever one of these, and
-    // legibility is its whole job.
+    // A disc takes the page's own ink, not `hop[0]`. The ring's ink says "a neighbour of the
+    // centre", and a disc is not one. A ring name keeps its ink as it opens. Opaque, unlike a
+    // ring pill: there is only ever one of these, and legibility is its whole job.
     if (hovered) {
+      const inRing = hovered.node.kind === "node" && hovered.node.tier === 1
       this.drawPill(hovered, {
         text: RING_TEXT,
+        shape: HOVER_NAME,
         fill: palette.surface,
         opacity: 1,
-        ink: palette.textPrimary,
+        ink: inRing ? palette.hop[0]! : palette.textPrimary,
         border: null,
       })
     }
@@ -1823,6 +1871,7 @@ export class GlobeView implements MapSurface {
     for (const entry of ghosts) {
       this.drawPill(entry, {
         text: RING_TEXT,
+        shape: RING_NAME,
         fill: null,
         opacity: 1,
         ink: palette.textSecondary,
@@ -1833,6 +1882,7 @@ export class GlobeView implements MapSurface {
     if (centre) {
       this.drawPill(centre, {
         text: CENTRE_TEXT,
+        shape: centre.node.id === this.hovered ? CENTRE_NAME : RING_NAME,
         fill: palette.accent,
         opacity: 1,
         ink: palette.inkOnAccent,
@@ -1872,7 +1922,7 @@ export class GlobeView implements MapSurface {
   private drawPill(shown: Shown, style: PillStyle): void {
     const ctx = this.ctx
     const { node, at } = shown
-    const box = this.pillBox(node.label, style.text)
+    const { lines, box } = this.pillLayout(node.label, style.text, style.shape)
     const scale = this.cam.zoom * at.k
     const width = box.w * scale
     const height = box.h * scale
@@ -1910,7 +1960,10 @@ export class GlobeView implements MapSurface {
       ctx.font = fontOf(style.text, size)
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      ctx.fillText(node.label, at.x, at.y)
+      const top = at.y - height / 2 + (PILL_PAD + style.text.size / 2) * scale
+      lines.forEach((line, i) => {
+        ctx.fillText(line, at.x, top + i * style.text.size * LINE_STEP * scale)
+      })
     }
     ctx.globalAlpha = 1
   }
