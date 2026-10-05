@@ -58,8 +58,6 @@ const drawn = async (page) => {
   if (!seen) return null
   const it = read(seen)
   const chrome = await page.evaluate(() => ({
-    totals: document.querySelector("#stat-total")?.textContent ?? "",
-    degree: document.querySelector("#stat-degree")?.textContent ?? "",
     status: document.querySelector("#status")?.textContent ?? "",
     undos: document.querySelectorAll("#receipts .undo").length,
     menuOpen: !document.querySelector("#map-menu")?.hidden,
@@ -179,8 +177,6 @@ async function main() {
   ok(after.centre === "qethran hollow", "and is keyed by it", String(after.centre))
   ok(!after.menuOpen, "the menu closed")
   ok(after.realEdges === before.realEdges, "every edge survived", `${before.realEdges} → ${after.realEdges}`)
-  ok(after.degree === before.degree, "its own degree is unchanged", `${before.degree} → ${after.degree}`)
-  ok(after.totals === before.totals, "the totals did not move", `${before.totals} → ${after.totals}`)
   ok(/renamed /.test(after.status), "the status says so", after.status)
   ok(after.undos === 1, "the receipt carries an undo", `${after.undos} undo button(s)`)
 
@@ -198,7 +194,6 @@ async function main() {
   ok(undone.centreLabel === before.centreLabel, "the old name is back", undone.centreLabel)
   ok(undone.centre === before.centre, "under its old key", String(undone.centre))
   ok(undone.realEdges === before.realEdges, "with every edge", `${before.realEdges} → ${undone.realEdges}`)
-  ok(undone.degree === before.degree, "and its degree", `${before.degree} → ${undone.degree}`)
   ok(/undid renaming/.test(undone.status), "the status says so", undone.status)
 
   // ---- a camera move closes an edit in progress ---------------------------------------

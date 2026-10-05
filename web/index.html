@@ -125,9 +125,8 @@
          because an error in a shut panel cannot be read. -->
     <p class="panel" id="status" data-tone="idle">starting…</p>
 
-    <!-- The numbers, the legend and the keys. Each is read once or glanced at, so all three
-         sit behind one button instead of over the map. The button takes the status tone as
-         well, because the numbers behind a failed read are inside it.
+    <!-- The settings, the legend and the keys. Each is read once or glanced at, so all three
+         sit behind one button instead of over the map.
 
          A native popover. Escape, the click outside and the top layer come from the browser,
          and nothing here listens for any of them. `?` opens it too, in main.ts, because the
@@ -140,20 +139,6 @@
            main.ts writes copy. -->
       <p class="sub when-pinned">one map, panned freely — the centre is the node you clicked</p>
       <p class="sub when-walking">one map, walked by panning — the centre is what you stop on</p>
-      <dl>
-        <dt>at centre</dt>
-        <dd id="stat-centre">—</dd>
-        <dt>its degree</dt>
-        <dd id="stat-degree">0</dd>
-        <dt>nodes placed</dt>
-        <dd id="stat-nodes">0</dd>
-        <dt>edges drawn</dt>
-        <dd id="stat-edges">0</dd>
-        <dt>loading</dt>
-        <dd id="stat-pending">0</dd>
-        <dt>in store</dt>
-        <dd id="stat-total">—</dd>
-      </dl>
       <!-- Off by default: panning is looking, and the centre is whatever was named. Ticked,
            the node nearest the middle takes it as the camera moves — and keeps whatever
            that placed on the way. The box's own checkedness is the state; a checkbox has

@@ -4,7 +4,7 @@
  * Each one is a key lookup, a key range, or an index range. `readAllNodes` is the only read
  * here that scans the store, and it says why.
  */
-import { counts, open, type StoredNode } from "./db.js"
+import { open, type StoredNode } from "./db.js"
 import { normaliseLabel } from "./keys.js"
 import { Missing } from "./refused.js"
 import type {
@@ -80,15 +80,9 @@ const metaOf = (node: StoredNode): NodeMeta => ({
  * overtaken. That happens on a merge or a split, not on an ordinary join.
  */
 export async function readOpening(): Promise<Opening> {
-  const [totals, page, islandCount] = await Promise.all([
-    counts(),
-    readIslandPage(),
-    readIslandCount(),
-  ])
+  const [page, islandCount] = await Promise.all([readIslandPage(), readIslandCount()])
 
   return {
-    nodeCount: totals.nodes,
-    edgeCount: totals.edges,
     islands: page.islands,
     islandCursor: page.cursor,
     islandCount,

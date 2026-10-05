@@ -9,7 +9,7 @@
  * Nothing here awaits a promise that is not an IndexedDB request. A transaction commits as
  * soon as the microtask queue drains with nothing pending. See db.ts.
  */
-import { counted, open, unavailable, type StoredNode } from "./db.js"
+import { open, unavailable, type StoredNode } from "./db.js"
 import { edgeEnds, naming } from "./keys.js"
 import { find, recount, reparent, settle, type Island } from "./islands.js"
 import { MAX_EDGES_PER_NODE } from "./read.js"
@@ -202,7 +202,6 @@ export async function createNode(label: string): Promise<NodeMeta> {
   }
 
   if (taken) throw new Refused(NAME_TAKEN)
-  counted(1, 0)
   return meta(made)
 }
 
@@ -249,7 +248,6 @@ export async function addEdge(aId: string, bId: string): Promise<void> {
   }
 
   if (refusal) throw new Refused(refusal)
-  counted(0, 1)
 }
 
 /**
@@ -294,7 +292,6 @@ export async function removeEdge(aId: string, bId: string): Promise<void> {
   }
 
   if (refusal) throw new Refused(refusal)
-  counted(0, -1)
   // The edge is gone. Whether it was the only path between its two ends can only be answered
   // by walking the graph, so walk it here, after the write and never inside it.
   await reindex(() => recount([aId, bId], was))
@@ -328,7 +325,6 @@ export async function deleteNode(id: string): Promise<void> {
 
   if (gone) throw new Missing(`no such node: ${id}`)
   if (refusal) throw new Refused(refusal)
-  counted(-1, 0)
 }
 
 /**
@@ -352,8 +348,6 @@ export async function deleteNodeWithEdges(id: string): Promise<{ id: string; par
   const parted: string[] = []
   let was: Island | null = null
   let found = false
-  let dropped = 0
-  let removed = false
 
   try {
     const db = await open()
@@ -394,21 +388,17 @@ export async function deleteNodeWithEdges(id: string): Promise<{ id: string; par
       if (last) await nodes.delete(id)
       else await nodes.put({ ...node, degree: Math.max(0, node.degree - mine.length) })
 
-      // Count only after the round has committed, so a failed transaction does not leave the
-      // cached totals describing edges the store still holds.
+      // Push only after the round has committed, so a failed transaction does not leave
+      // `parted` naming edges the store still holds.
       await tx.done
       parted.push(...round)
-      dropped += round.length
-      removed ||= last
       if (last) break
     }
   } catch (err) {
-    counted(removed ? -1 : 0, -dropped)
     throw unavailable(err) ?? err
   }
 
   if (!found) throw new Missing(`no such node: ${id}`)
-  counted(removed ? -1 : 0, -dropped)
 
   // Not a resettle: the node is gone, so there is no second end to walk from. The question is
   // which components its former neighbours are in now, which `recount` answers from k seeds.

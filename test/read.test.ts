@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
 import { emptyGraph, seed } from "./graph.js"
+import { open } from "../web/src/store/db.js"
 import { Missing } from "../web/src/store/refused.js"
 import {
   decodeCursor,
@@ -34,23 +35,43 @@ beforeEach(async () => {
   await emptyGraph()
 })
 
+/**
+ * Take `islandSize` off every node, which is what a failed repair can leave behind.
+ *
+ * A record without it stays out of `byIsland` (see db.ts), so the index goes empty while both
+ * object stores still hold the graph.
+ */
+async function unstampEveryRoot(): Promise<void> {
+  const db = await open()
+  const tx = db.transaction("nodes", "readwrite")
+  for (const node of await tx.store.getAll()) {
+    const { islandSize: _gone, ...rest } = node
+    await tx.store.put(rest)
+  }
+  await tx.done
+}
+
 describe("readOpening", () => {
   it("describes an empty graph as having nowhere to start", async () => {
     expect(await readOpening()).toEqual({
-      nodeCount: 0,
-      edgeCount: 0,
       islands: [],
       islandCursor: null,
       islandCount: 0,
     })
   })
 
-  it("counts the nodes and edges the graph holds", async () => {
+  it("counts every component the graph holds", async () => {
     await seed(FIVE_ISLANDS)
-    const opening = await readOpening()
-    expect(opening.nodeCount).toBe(15)
-    expect(opening.edgeCount).toBe(10)
-    expect(opening.islandCount).toBe(5)
+    expect((await readOpening()).islandCount).toBe(5)
+  })
+
+  // The map raises its empty panel on this answer, so a graph with no stamped root is the
+  // panel's one false positive. ADR 0047 weighed it against a scan of the nodes.
+  it("reports nowhere to start when every root lost its stamp", async () => {
+    await seed(FIVE_ISLANDS)
+    await unstampEveryRoot()
+    expect((await readOpening()).islands).toEqual([])
+    expect((await readAllNodes()).length).toBe(15)
   })
 
   it("opens on the largest component", async () => {

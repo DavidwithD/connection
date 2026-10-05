@@ -75,14 +75,6 @@ export class World {
   /** Neighbours read from the store that found no room. Never discarded. */
   private readonly pending = new Map<string, NodeMeta[]>()
 
-  get size(): number {
-    return this.nodes.size
-  }
-
-  get edgeCount(): number {
-    return this.pairs.size
-  }
-
   get(id: string): WorldNode | undefined {
     return this.nodes.get(id)
   }

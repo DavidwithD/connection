@@ -144,9 +144,8 @@ drift would leave the reckoning permanently dirty and worth nothing — so a com
 members already resolve to one root that is one of them keeps it, and only a wrong grouping, a
 wrong size, or an `islandSize` on a node that is not a root is a change.
 
-It has no totals item to maintain any more, and no root to repair: the counts are memoised and
-the boot node is the first entry of the island index. What is left to reckon is the union-find
-fields on node records, and nothing else.
+It has no root to repair: the boot node is the first entry of the island index. What is left to
+reckon is the union-find fields on node records, and nothing else.
 
 ## The list on the page
 

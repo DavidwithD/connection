@@ -218,13 +218,11 @@ async function connect(): Promise<IDBPDatabase<GraphDB>> {
       // its own that the store is gone.
       const held = connection
       connection = null
-      forget()
       void held?.then((db) => db.close()).catch(() => undefined)
       onEvicted("another tab is changing how the graph is stored — reload this one")
     },
     terminated() {
       connection = null
-      forget()
       onEvicted("the browser closed the graph — reload this page")
     },
   })
@@ -256,36 +254,4 @@ export async function persist(): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-/**
- * The node and edge totals, cached in memory.
- *
- * `count()` with no key range is a scan, not a maintained number. Measured at about 19ms over
- * 30,000 records, so 50 to 90ms at the size this store is built for. A write should not pay
- * that to update two numbers in the HUD. So the totals are read once when the database opens
- * and adjusted by each write. The cache needs no schema and does not survive a reload, so it
- * cannot go stale between sessions.
- */
-let totals: { nodes: number; edges: number } | null = null
-
-export async function counts(): Promise<{ nodes: number; edges: number }> {
-  if (totals) return { ...totals }
-  const db = await open()
-  const [nodes, edges] = await Promise.all([db.count("nodes"), db.count("edges")])
-  totals = { nodes, edges }
-  return { ...totals }
-}
-
-/** Adjust the cached totals by what a write changed. Does nothing if nothing is cached. */
-export function counted(nodes: number, edges: number): void {
-  if (!totals) return
-  totals.nodes = Math.max(0, totals.nodes + nodes)
-  totals.edges = Math.max(0, totals.edges + edges)
-}
-
-/** Discard the cached totals. For a write that replaces the whole graph, where no delta
- *  can be computed. */
-export function forget(): void {
-  totals = null
 }

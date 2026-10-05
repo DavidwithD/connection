@@ -19,7 +19,7 @@
  */
 import { mkdirSync } from "node:fs"
 
-import { MAP, frame, read } from "./probe.mjs"
+import { MAP, frame, read, still } from "./probe.mjs"
 
 const { chromium } = await import("playwright").catch(() => {
   console.error("✗ needs playwright: npm i -D playwright --no-save")
@@ -202,9 +202,7 @@ async function main() {
   )
   await page.waitForTimeout(600)
 
-  // The centre is named and a pan is looking. Both readouts, because handing the mark over was
-  // never only a label change — every node the middle crossed had its ring read and seated for
-  // good, and a seat is permanent.
+  // Pan a full screen off the centre, which is what raises the doorways read below.
   //
   // By key rather than by drag, for the reason the nudge check above gives: a press cannot land
   // on a node and glide the map somewhere on its own. A press is `NUDGE` in main.ts, so enough
@@ -212,23 +210,11 @@ async function main() {
   // provoke, so the run costs the one revision at the end of it rather than one per press.
   {
     const presses = Math.ceil(1440 / 120) + 2
-    const hud = async () => ({
-      centre: await page.locator("#stat-centre").textContent(),
-      nodes: await page.locator("#stat-nodes").textContent(),
-    })
-    const before = await hud()
     for (let i = 0; i < presses; i++) {
       await page.keyboard.press("ArrowRight")
       await page.waitForTimeout(80)
     }
     await page.waitForTimeout(500)
-    const after = await hud()
-    const held = before.centre === after.centre && before.nodes === after.nodes
-    console.log(
-      `  panned a screen: centre ${before.centre} → ${after.centre}` +
-        ` · ${before.nodes} nodes placed → ${after.nodes}` +
-        (held ? " · held" : " · ⚠ the pan named a centre or seated a neighbourhood"),
-    )
     const away = report("panned away", await drawn(page))
     await shot(page, "4-panned")
 
@@ -337,17 +323,12 @@ async function main() {
     // and stays seated. Anything already on the map is only the camera moving.
     const target = offMap[0]
     if (target) {
-      const seated = async () => Number(await page.locator("#stat-nodes").textContent())
-      const before = await seated()
       await page.locator("#islands .island.off-map").first().click()
 
-      // The flight is a camera animation, so the centre changes a beat after the click.
-      await page.waitForFunction(
-        (want) => document.querySelector("#stat-centre")?.textContent === want,
-        target,
-        { timeout: 10000 },
-      )
-      console.log(`  crossed to ${target}: ${before} nodes placed → ${await seated()}`)
+      // The flight is a camera animation, so read after the camera has stopped rather than a
+      // beat after the click.
+      await still(page)
+      console.log(`  crossed to ${target}`)
       await shot(page, "5-crossed")
 
       // The row is the point: it stays, it is the marked one now, and it is no longer dim.
@@ -358,26 +339,16 @@ async function main() {
           ` dim=${(await row.getAttribute("class"))?.includes("off-map")}`,
       )
 
-      // And back, which is the whole reason the row stayed. The node count still moves —
-      // arriving anywhere draws the ring around it — so what is checked instead is that the
-      // row was not dim going in, which is what says no island was set down to get there.
-      //
-      // The wait is on the centre *changing* rather than on a name: a row goes to the node it
-      // is named after only where that node is on the map, and the island the page opened in
-      // is held by whichever node the map started on.
+      // And back, which is the whole reason the row stayed. A click on any row draws the ring
+      // around what it lands on. So the check is that the row was not dim before the click,
+      // which says no island was set down to get there.
       if (here) {
         const back = page.locator("#islands .island", { hasText: here }).first()
         const dim = (await back.getAttribute("class"))?.includes("off-map")
-        const wasSeated = await seated()
         await back.click()
-        await page.waitForFunction(
-          (was) => document.querySelector("#stat-centre")?.textContent !== was,
-          target,
-          { timeout: 10000 },
-        )
+        await still(page)
         console.log(
-          `  back to ${here}: centre is ${await page.locator("#stat-centre").textContent()}, ` +
-            `${wasSeated} nodes placed → ${await seated()}` +
+          `  back to ${here}` +
             (dim ? " — ⚠ its row was dim, so that click seated an island" : " — already on the map"),
         )
       }
@@ -432,9 +403,9 @@ async function main() {
     await page.waitForTimeout(250)
   }
 
-  // The three reading aids sit behind one button now. What matters is that all three are in
-  // there, and that the browser's own dismissal works, since nothing in the page listens for
-  // Escape on this panel.
+  // The settings, the legend and the keys sit behind one button. What matters is that all
+  // three are in there, and that the browser's own dismissal works, since nothing in the page
+  // listens for Escape on this panel.
   {
     const guide = page.locator("#guide")
     const before = await guide.isVisible()
@@ -443,7 +414,6 @@ async function main() {
     const inside = await page.evaluate(() => {
       const has = (selector) => Boolean(document.querySelector(`#guide ${selector}`))
       return {
-        stats: has("#stat-centre"),
         walk: has("#walk-by-pan"),
         legend: has("#legend .row"),
         keys: has("#keys kbd"),

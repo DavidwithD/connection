@@ -53,9 +53,8 @@ property rather than two things. `edges` uses an array key path, which is Indexe
 composite key. Nothing else about a record is validated: key uniqueness and a unique index are
 the only constraints the engine enforces, so the interfaces in `db.ts` carry the rest.
 
-There is no third store for the graph's totals. The counts are memoised in the module and
-seeded by one scan when the database opens; the boot node is the first row of the island page,
-which boot already reads. Both used to live on a singleton item that every write contended on.
+There is no third store for the boot node. It is the first row of the island page, which boot
+already reads. It used to live on a singleton item that every write contended on.
 
 ## The reads
 
@@ -195,7 +194,7 @@ want to know what it beat, or what nobody knew at the time.
 
 | File | Described in | Records |
 |---|---|---|
-| [store/db.ts](../../web/src/store/db.ts) | this page, [storing-a-graph.md](../requirements/storing-a-graph.md) | [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
+| [store/db.ts](../../web/src/store/db.ts) | this page, [storing-a-graph.md](../requirements/storing-a-graph.md) | [0030](../decisions/0030-the-graph-moves-into-the-browser.md), [0047](../decisions/0047-the-numbers-come-off-the-guide.md) |
 | [store/shapes.ts](../../web/src/store/shapes.ts) | this page | [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
 | [store/keys.ts](../../web/src/store/keys.ts) | [finding-a-node.md](finding-a-node.md) | [0008](../decisions/0008-finding-a-node-by-name.md), [0012](../decisions/0012-the-name-is-the-node.md), [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
 | [store/read.ts](../../web/src/store/read.ts) | this page, [the-centre.md](the-centre.md), [the-islands.md](the-islands.md), [finding-a-node.md](finding-a-node.md) | [0006](../decisions/0006-only-the-centre-reads.md), [0019](../decisions/0019-every-island-has-an-address.md), [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
@@ -223,7 +222,7 @@ want to know what it beat, or what nobody knew at the time.
 | [writes.ts](../../web/src/writes.ts) | [writing-to-the-graph.md](writing-to-the-graph.md) | [0011](../decisions/0011-taking-a-write-back.md), [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) |
 | [web/src/islands.ts](../../web/src/islands.ts) | [the-islands.md](the-islands.md) | [0019](../decisions/0019-every-island-has-an-address.md), [0020](../decisions/0020-the-islands-list-is-an-index.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md) |
 | [transfer.ts](../../web/src/transfer.ts) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0021](../decisions/0021-a-graph-in-a-text-file.md), [0023](../decisions/0023-the-graph-moves-through-the-page.md) |
-| [index.html](../../web/index.html) | [finding-a-node.md](finding-a-node.md), [the-islands.md](the-islands.md), [writing-to-the-graph.md](writing-to-the-graph.md) | [0013](../decisions/0013-one-box-that-grows-into-an-edge.md), [0020](../decisions/0020-the-islands-list-is-an-index.md), [0024](../decisions/0024-taking-a-node-out-with-its-edges.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md) |
+| [index.html](../../web/index.html) | [finding-a-node.md](finding-a-node.md), [the-islands.md](the-islands.md), [writing-to-the-graph.md](writing-to-the-graph.md) | [0013](../decisions/0013-one-box-that-grows-into-an-edge.md), [0020](../decisions/0020-the-islands-list-is-an-index.md), [0024](../decisions/0024-taking-a-node-out-with-its-edges.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md), [0047](../decisions/0047-the-numbers-come-off-the-guide.md) |
 | [transfer.html](../../web/transfer.html) | [a-graph-as-text.md](a-graph-as-text.md) | [0023](../decisions/0023-the-graph-moves-through-the-page.md), [0030](../decisions/0030-the-graph-moves-into-the-browser.md) |
 | [app.css](../../web/app.css) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0041](../decisions/0041-the-chrome-comes-off-the-map.md) |
 | [vite.config.ts](../../vite.config.ts) | [a-graph-as-text.md](a-graph-as-text.md) | [0017](../decisions/0017-the-second-view-goes.md), [0023](../decisions/0023-the-graph-moves-through-the-page.md) |

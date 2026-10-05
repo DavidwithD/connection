@@ -84,12 +84,6 @@ const el = <T extends Element>(id: string): T => {
 }
 
 const stage = el<HTMLDivElement>("stage")
-const statCentre = el<HTMLSpanElement>("stat-centre")
-const statDegree = el<HTMLSpanElement>("stat-degree")
-const statNodes = el<HTMLSpanElement>("stat-nodes")
-const statEdges = el<HTMLSpanElement>("stat-edges")
-const statPending = el<HTMLSpanElement>("stat-pending")
-const statTotal = el<HTMLSpanElement>("stat-total")
 const status = el<HTMLParagraphElement>("status")
 const railTab = el<HTMLButtonElement>("rail-tab")
 const guide = el<HTMLDivElement>("guide")
@@ -97,7 +91,7 @@ const guideToggle = el<HTMLButtonElement>("guide-toggle")
 const walkToggle = el<HTMLInputElement>("walk-by-pan")
 const curveRow = el<HTMLLabelElement>("curvature-row")
 const curveSlider = el<HTMLInputElement>("curvature")
-/** Shown only when the store holds no graph at all. Raised and lowered by `showTotals`. */
+/** Shown only when the store holds no graph at all. Raised and lowered by `showEmptyPanel`. */
 const empty = el<HTMLDivElement>("empty")
 
 const world = new World()
@@ -193,19 +187,13 @@ const explorer = new Explorer(world, view, {
 })
 
 /**
- * Repaint the HUD numbers and the island rows.
+ * Repaint the island rows and the status line.
  *
  * The last thing it does is write the idle hint over the status line, unless that line
  * already holds an error. So a caller with something to say calls this first and
  * `setStatus` after.
  */
 function render(): void {
-  const accent = view.accent ? world.get(view.accent) : null
-  statCentre.textContent = accent?.label ?? "—"
-  statDegree.textContent = accent ? String(accent.degree) : "0"
-  statNodes.textContent = String(world.size)
-  statEdges.textContent = String(world.edgeCount)
-  statPending.textContent = String(explorer.pending)
   // Which islands are on the map changes without the store changing: walking across an edge
   // places one. So repaint the rows here, not only after a write.
   islands.paint()
@@ -558,7 +546,7 @@ function renameNode(node: NodeMeta, next: string): void {
       receipt.offerUndo("put the old name back", () => {
         writes.run(receipt, () => renameBack(receipt, renamed, node.label))
       })
-      void refreshTotals()
+      void refreshIslands()
       // Set the status after `render`, never before. `render` writes the idle hint over
       // whatever the status line holds.
       render()
@@ -576,7 +564,7 @@ async function renameBack(receipt: Receipt, node: NodeMeta, was: string): Promis
   try {
     const back = await applyRename(node, was)
     receipt.settle("undone", `${back.label} has its old name back`)
-    void refreshTotals()
+    void refreshIslands()
     render()
     setStatus(`undid renaming ${node.label}`, "idle")
   } catch (err) {
@@ -663,15 +651,15 @@ function removeNode(id: string): void {
       const gone = world.forget(id) ? [id] : []
       view.drop(gone, dropped)
       // `drop` clears an accent that has gone and leaves the caller to re-pick. This is the
-      // only thing that will: the camera no longer hands the mark around, so without the
-      // claim the map would sit with no centre and the HUD would name a gap.
+      // only thing that will: the camera no longer hands the mark around. Without the claim
+      // the map sits with no centre, drawing no ring and raising no doorways.
       claimCentre()
       // An input in the panel may be holding this name. This write does not go through the
       // panel, so tell it. A name that no longer exists must not stay in an input.
       panel.forget(node)
 
       receipt.settle("ok", `removed ${node.label}`)
-      void refreshTotals()
+      void refreshIslands()
       render()
       setStatus(`removed ${node.label}`, "idle")
     } catch (err) {
@@ -703,7 +691,7 @@ function partEdge(aId: string, bId: string): void {
       receipt.offerUndo("join them again", () => {
         writes.run(receipt, () => rejoin(receipt, a, b))
       })
-      void refreshTotals()
+      void refreshIslands()
       render()
       setStatus(`parted ${a.label} and ${b.label}`, "idle")
     } catch (err) {
@@ -747,7 +735,7 @@ async function rejoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void>
     joinOnMap(a.id, b.id)
 
     receipt.settle("undone", `joined ${a.label} and ${b.label} again`)
-    void refreshTotals()
+    void refreshIslands()
     render()
     setStatus(`undid parting ${a.label} and ${b.label}`, "idle")
   } catch (err) {
@@ -776,7 +764,7 @@ function joinPair(a: WorldNode, b: WorldNode): void {
       receipt.offerUndo("part them again", () => {
         writes.run(receipt, () => unjoin(receipt, a, b))
       })
-      void refreshTotals()
+      void refreshIslands()
       render()
       setStatus(`joined ${a.label} and ${b.label}`, "idle")
     } catch (err) {
@@ -794,7 +782,7 @@ async function unjoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void>
     partOnMap(a.id, b.id)
 
     receipt.settle("undone", `parted ${a.label} and ${b.label} again`)
-    void refreshTotals()
+    void refreshIslands()
     render()
     setStatus(`undid joining ${a.label} and ${b.label}`, "idle")
   } catch (err) {
@@ -865,9 +853,9 @@ const panel = new JoinPanel(
     // Setting the anchor is the page's other way of arriving at a node.
     onArm: goTo,
     onNode: (node) => {
-      // Update the totals here, not only after the edge. A create that lands before a
-      // refused join is still a node in the store, and the HUD should say so.
-      void refreshTotals()
+      // Re-read the islands here, not only after the edge. A create that lands before a
+      // refused join is still a node in the store, and the list and the panel say so.
+      void refreshIslands()
       if (world.has(node.id)) return
       view.add([world.place(node, world.landing(view.centre(), node.id))], [])
       render()
@@ -880,8 +868,8 @@ const panel = new JoinPanel(
       world.bumpDegree(b.id)
       const drawn = world.linkExisting(a.id, b.id)
       if (drawn) view.add([], [[a.id, b.id]])
-      // The HUD totals came from one read at boot and are now one write out of date.
-      void refreshTotals()
+      // The island rows came from one read at boot and are now one write out of date.
+      void refreshIslands()
       render()
     },
     onUndone: (a, b, removed) => {
@@ -893,9 +881,9 @@ const panel = new JoinPanel(
       const gone = removed && world.forget(removed.id) ? [removed.id] : []
       view.drop(gone, [[a.id, b.id]])
       // A removed node may have been the centre, and nothing else will ask. Without this the
-      // HUD would go on naming something that is gone.
+      // accent would go on marking a node that is gone.
       if (gone.length) claimCentre()
-      void refreshTotals()
+      void refreshIslands()
       render()
     },
   },
@@ -908,7 +896,7 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeMenu()
 
   // The arrow keys below pan the camera. Inside an input they belong to the text — but a
-  // checkbox holds no text, and the one in the HUD keeps the focus after it is ticked, so
+  // checkbox holds no text, and the one in the guide keeps the focus after it is ticked, so
   // catching every input here would cost the keyboard the map for the rest of the session.
   if (event.target instanceof HTMLInputElement && event.target.type !== "checkbox") return
 
@@ -987,8 +975,8 @@ walkToggle.addEventListener("change", () => {
   // earlier centre comes back — nothing recorded one.
   if (!walkToggle.checked) return
 
-  // Applied now rather than on the next pan. The box says the middle names the centre, and a
-  // HUD still naming the node that was clicked would be the control appearing to do nothing.
+  // Applied now rather than on the next pan. The box says the middle names the centre. An
+  // accent still marking the node clicked would be the control appearing to do nothing.
   // `claimCentre` rather than the tracker: one application has no flicker to bias against.
   claimCentre()
 })
@@ -1053,38 +1041,39 @@ window.addEventListener("resize", () => {
 })()
 
 /**
- * The HUD's store totals, and the panel shown when there is no graph at all.
+ * Raise or lower the panel shown when there is no graph at all.
  *
- * Both come off the same read, so this owns both. The panel is not a boot state: naming the
- * first node on an empty graph is one of the two ways out that the panel itself offers, and
- * deleting the last one puts the reader back where they started.
+ * The panel is not a boot state: naming the first node on an empty graph is one of the two
+ * ways out that the panel itself offers, and deleting the last one puts the reader back where
+ * they started.
  *
- * Keyed on the store's count, never on `world.size`. Deleting the only node on screen empties
- * the map while the store still holds every island nobody has walked to.
+ * Keyed on the store's island index, never on what the map has drawn. Deleting the only node
+ * on screen empties the map while the store still holds every island nobody has walked to.
+ * A graph that lost every root stamp shows this panel with nodes still in the store.
+ * **Recount the islands** on the transfer page is the repair.
  */
-function showTotals(opening: Opening): void {
-  statTotal.textContent = `${String(opening.nodeCount)} nodes · ${String(opening.edgeCount)} edges`
-  empty.hidden = opening.nodeCount > 0
+function showEmptyPanel(opening: Opening): void {
+  empty.hidden = opening.islands.length > 0
 }
 
 /**
- * Re-read the graph size and the list of components.
+ * Re-read the list of components.
  *
- * These two only. Everything else on the map is what someone walked to, and re-reading that
- * would place nodes nobody visited. A write is the only thing that can make either wrong
- * without the camera moving, because a join can merge two islands into one. Most writes
- * leave the components unchanged, and `setFirstPage` detects that and keeps its rows.
+ * That list only. Everything else on the map is what someone walked to, and re-reading that
+ * would place nodes nobody visited. A write is the only thing that can make the list wrong
+ * without the camera moving, because a join can merge two islands into one. Most writes leave
+ * the components unchanged, and `setFirstPage` detects that and keeps its rows.
  */
-async function refreshTotals(): Promise<void> {
+async function refreshIslands(): Promise<void> {
   try {
     const opening = await fetchOpening()
-    showTotals(opening)
+    showEmptyPanel(opening)
     islands.setFirstPage(
       { islands: opening.islands, cursor: opening.islandCursor },
       opening.islandCount,
     )
   } catch {
-    // A stale count does not deserve an error state. The next write reads again.
+    // A stale list does not deserve an error state. The next write reads again.
   }
 }
 
@@ -1111,7 +1100,7 @@ async function boot(): Promise<void> {
   void persist()
 
   const opening = await fetchOpening()
-  showTotals(opening)
+  showEmptyPanel(opening)
   islands.setFirstPage(
     { islands: opening.islands, cursor: opening.islandCursor },
     opening.islandCount,
@@ -1135,7 +1124,7 @@ async function boot(): Promise<void> {
 
   if (!root) {
     // Nothing to draw. The way in is the transfer page, which can seed a graph. Naming a
-    // node in the box above works from here too. `showTotals` above has already raised the
+    // node in the box above works from here too. `showEmptyPanel` above has already raised the
     // panel that says so.
     setStatus("no graph here yet — seed one, or name a node above to start", "idle")
     return

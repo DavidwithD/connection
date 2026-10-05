@@ -50,6 +50,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0044](0044-the-node-record-carries-a-date.md) | The node record carries a date | 🔵 Proposed |
 | [0045](0045-a-runner-for-the-browser-code.md) | A runner for the browser code | 🔵 Proposed |
 | [0046](0046-a-line-that-hangs-from-the-line-above.md) | A line that hangs from the line above | 🔵 Proposed |
+| [0047](0047-the-numbers-come-off-the-guide.md) | The numbers come off the guide | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

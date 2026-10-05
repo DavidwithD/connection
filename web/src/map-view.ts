@@ -624,7 +624,7 @@ export class MapView implements MapSurface {
       }
       // Cytoscape removes a node's edges with it, so anything still attached goes now.
       for (const id of nodeIds) this.cy.$id(id).remove()
-      // An accent pointing at a deleted node would keep the HUD naming it until the camera
+      // An accent pointing at a deleted node would keep the map marking it until the camera
       // moved. Clear it here. The caller picks a new one.
       if (this.accentId && nodeIds.includes(this.accentId)) this.accentId = null
 
