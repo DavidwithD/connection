@@ -39,7 +39,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0033](0033-a-click-takes-no-camera.md) | A click takes no camera | 🔵 Proposed |
 | [0034](0034-what-reading-cannot-check.md) | What reading cannot check | 🔵 Proposed |
 | [0035](0035-a-rule-for-new-sentences.md) | A rule for new sentences | 🔵 Proposed |
-| [0036](0036-a-click-that-writes-nothing.md) | A click that writes nothing | 🔵 Proposed |
+| [0036](0036-a-click-that-writes-nothing.md) | A click that writes nothing | ♻️ Superseded |
 | [0037](0037-the-centres-name-on-the-clipboard.md) | The centre's name on the clipboard | ♻️ Superseded |
 | [0038](0038-a-drag-that-joins-two-nodes.md) | A drag that joins two nodes | 🔵 Proposed |
 | [0039](0039-any-nodes-name-on-the-clipboard.md) | Any node's name on the clipboard | 🔵 Proposed |
@@ -52,6 +52,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0046](0046-a-line-that-hangs-from-the-line-above.md) | A line that hangs from the line above | 🔵 Proposed |
 | [0047](0047-the-list-page-writes-too.md) | The list page writes too | 🔵 Proposed |
 | [0048](0048-a-long-name-is-cut-to-fit.md) | A long name is cut to fit | 🔵 Proposed |
+| [0049](0049-a-click-leaves-the-panel-alone.md) | A click leaves the panel alone | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

@@ -140,29 +140,6 @@ export class JoinPanel {
   }
 
   /**
-   * Take a name from outside the panel. The map calls this when the centre node is clicked.
-   * See web/src/main.ts.
-   *
-   * The name lands in the near input as the anchor, over whatever that input held. The far
-   * input is emptied, so a click leaves one name in the panel however it found it. Nothing
-   * is written.
-   *
-   * The camera does not move. The reader clicked a node already on screen. A name picked in
-   * the box still travels, because that name may be anywhere in the graph.
-   *
-   * The caret goes to the far input, since the next step is naming what this joins to.
-   */
-  take(node: NodeMeta): void {
-    this.far.box.clear()
-    this.far.anchor = null
-    this.near.anchor = { label: node.label, node }
-    // Set here rather than in `paint`, which does not touch an input being typed in.
-    this.near.ui.input.value = node.label
-    this.paint()
-    this.far.ui.input.focus()
-  }
-
-  /**
    * Empty both inputs and shrink the panel back to one.
    *
    * Both, because the two inputs are one widget and this is how the reader leaves it.

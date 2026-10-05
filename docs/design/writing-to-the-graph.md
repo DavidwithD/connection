@@ -199,6 +199,6 @@ copy.
 | [0019](../decisions/0019-every-island-has-an-address.md) | That the island index is derived, and so may lag behind a part |
 | [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) | Edge by edge rather than one transaction, and what a stopped run leaves |
 | [0028](../decisions/0028-where-a-chained-name-lands.md) | Which end a chained name lands in, and what moving the anchor spends |
-| [0036](../decisions/0036-a-click-that-writes-nothing.md) | That the map's click fires no join, and a key is what does |
 | [0038](../decisions/0038-a-drag-that-joins-two-nodes.md) | That a drag on the map fires one, and where its arrow is drawn |
 | [0040](../decisions/0040-a-node-under-a-new-name.md) | That a rename is one transaction, needs no walk, and gets its own box |
+| [0049](../decisions/0049-a-click-leaves-the-panel-alone.md) | That a click on the map fills no end of the panel |

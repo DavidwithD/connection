@@ -365,13 +365,9 @@ view.on("nodeTap", (id) => {
   // not move for it.
   void copyLabel(node.label)
 
-  // The centre's click reaches the panel as well, and no other click does. `take` in
-  // web/src/join.ts puts the caret in the far input. A walk that called it at every step would
-  // keep taking the arrow keys off the map.
-  if (id === view.accent) {
-    panel.take(node)
-    return
-  }
+  // A click on the centre copies its name and does nothing else. No click on the map fills the panel.
+  // See docs/decisions/0049-a-click-leaves-the-panel-alone.md.
+  if (id === view.accent) return
 
   // Named where it stands. This handler was the last place the page moved the camera on its
   // own: a click drew the node to the middle whether or not anyone wanted to be moved. The
