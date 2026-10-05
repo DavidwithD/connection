@@ -113,8 +113,9 @@ async function main() {
   console.log(`→ ${WEB}/transfer.html — seeding`)
   await page.goto(`${WEB}/transfer.html`, { waitUntil: "domcontentloaded" })
   await page.locator("#seed").click()
-  const confirm = page.locator("#ask-yes")
-  if (await confirm.isVisible().catch(() => false)) await confirm.click()
+  // Unconditionally, because `confirmThen` reads the store before it shows the box. A
+  // visibility test runs before that read lands and skips the click. See transfer.ts.
+  await page.locator("#ask-yes").click()
   await page.waitForFunction(
     () => /seed|added|nodes/i.test(document.querySelector("#told")?.textContent ?? ""),
     { timeout: 30000 },
