@@ -22,6 +22,10 @@ A click on a node fills no input in the panel.
 | A name in the panel | Typed, or `/` then typed | A pair comes from keys the reader pressed. |
 | A join by mouse | Shift-drag | [0038](0038-a-drag-that-joins-two-nodes.md) covers it. |
 
+This changes two rows of 0036: where the name lands, and where the caret goes. The rest of
+0036 holds. A click on the map writes no edge. An edge comes from a key, or from the drag in
+0038.
+
 `JoinPanel.take` in [join.ts](../../web/src/join.ts) is deleted. It had no other caller.
 
 ## Alternatives considered

@@ -41,7 +41,8 @@ name is on the clipboard when nothing was written.
 A ghost's click does two jobs. It copies and then flies, and the copy is silent while the
 camera is moving.
 
-The centre keeps a job no other node has. Its click still names it in the panel above.
+The centre's click no longer fills the panel. [0049](0049-a-click-leaves-the-panel-alone.md)
+removed that job. The centre's click now only copies the name.
 
 ## Assumptions and unknowns
 - **Assumed a click on a node asks for its name.** A reader clicking to walk loses whatever

@@ -1,6 +1,6 @@
 # 0036 — A click that writes nothing
 
-**Status:** ♻️ Superseded by [0049](0049-a-click-leaves-the-panel-alone.md)
+**Status:** 🔵 Proposed — two rows amended by [0049](0049-a-click-leaves-the-panel-alone.md)
 **Date:** 2026-08-18
 **Deciders:** David HL
 

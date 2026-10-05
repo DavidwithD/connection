@@ -151,9 +151,6 @@ alone, since Control-click is the other mouse button on a Mac.
 A path is then one name per node. `Kavara` `↵` arms the near end, `Tab` crosses to the far one,
 and the rest — `Corwen` `⌘↵`, `Thessa` `⌘↵` — runs without the caret moving again.
 
-A click on a node never fills an end. It copies the name, so `⌘V` puts it in the box
-([ADR 0049](decisions/0049-a-click-leaves-the-panel-alone.md)).
-
 `Esc` collapses the whole widget, not just the end you are in — both names go, the far end with
 them, and the focus is handed back to the map. It is the way out, and `/` is the way back in.
 
