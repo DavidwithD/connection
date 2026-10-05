@@ -13,9 +13,10 @@
  * Uses the Chrome already on the machine (`channel: "chrome"`) rather than downloading a
  * browser, so this costs nothing to run the first time.
  *
- * Playwright is deliberately *not* a dependency of this project — it is a hundred megabytes
- * to make screenshots of a demo, which everything else here runs without. Install it where
- * you want it and point NODE_PATH at it, or `npm i -D playwright --no-save` for one session.
+ * Playwright is deliberately *not* a dependency of this project, to make screenshots of a demo
+ * that everything else here runs without. `npm i -D playwright --no-save` installs it for one
+ * session, and the next `npm install` prunes it. A copy in a `node_modules` above this repo
+ * survives that, because ESM resolution walks up into it.
  */
 import { mkdirSync } from "node:fs"
 

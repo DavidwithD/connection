@@ -11,8 +11,9 @@
  * not on the page, and come back down the stack of cards. The row actions: edit, join and
  * delete a node from its own row.
  *
- * Playwright is deliberately not a dependency of this project. Install it where you want it
- * and point NODE_PATH at it, or `npm i -D playwright --no-save` for one session.
+ * Playwright is deliberately not a dependency of this project. `npm i -D playwright --no-save`
+ * installs it for one session, and the next `npm install` prunes it. A copy in a `node_modules`
+ * above this repo survives that, because ESM resolution walks up into it.
  */
 import { mkdirSync } from "node:fs"
 
