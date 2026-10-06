@@ -6,7 +6,7 @@ Four kinds of document, split by the question each answers and by how each one a
 |---|---|---|
 | [requirements/](requirements/) | What are we building, and for whom? | Living — edited in place |
 | [design/](design/) | How is it put together, and what must hold? | Living — edited in place |
-| [decisions/](decisions/) | Why this way, and what did we not know? | Append-only — never rewritten |
+| [decisions/](decisions/) | Why this way, and what did we not know? | Append-only — facts never change; wording follows the glossary |
 | [using-the-demo.md](using-the-demo.md) | How do I drive it? | Living — edited in place |
 
 The split is the point. A living document describes the present, so it gets edited until it
@@ -82,23 +82,35 @@ the design page it sits under.
 
 ## How it is written
 
-Plain sentences. One point per sentence, a concrete subject — a file, a function, a person, a
-capability — and a full stop before 25 words. A metaphor, an inverted clause or a chain of
-relative clauses costs the reader above a second pass to work out what the subject was.
+Plain sentences. One point per sentence, a concrete subject, and a full stop before 25 words.
+The subject is a file, a function, a person or a capability. Every page here is in scope,
+including record titles, record bodies and code comments.
 
-Every page here is in scope, records included. Record titles are not. A title is also the
-filename, so rewording a landed record breaks the links into it, and a new title matches its
-neighbours. Prose already committed is left where it is. A record is append-only, and
-rewriting a living page for its voice alone would bury the next real change in a diff nobody
-can review.
+[glossary.md](glossary.md) defines each term once. Use the term from the glossary. Do not
+invent a second name for the same thing.
 
-[prose-lint.py](../scripts/prose-lint.py) counts the words in a newly written sentence and
-matches a few patterns, on every write. It cannot see a metaphor: "A doorway loses its click"
-is five words of clean grammar. So this section is kept by whoever is writing, and the linter
-settles only the part arithmetic can. Neither gate in *What is enforced* reads a sentence at
-all ([checks.md](checks.md), [ADR 0014](decisions/0014-binding-the-docs-to-the-code.md)).
-Why the linter advises rather than blocks, and why prose already committed stays as it is,
-is [ADR 0035](decisions/0035-a-rule-for-new-sentences.md).
+Four patterns are banned. Each example below is a sentence this repo once held.
+
+| Pattern | Before | After |
+|---|---|---|
+| A gesture or a part of the page as the actor | `A click leaves the panel alone.` | The click handler in `main.ts` copies the name and returns. |
+| A sentence that only says what does not happen | `A click on the map fills no input in the panel.` | The click handler copies the selected node's name to the clipboard. |
+| A figurative noun for a concept | `A doorway loses its click.` | The renderer ignores a click on that off-screen marker. |
+| An aphorism, or "X is not a Y" | `Asking to go is asking to be taken.` | `goTo` in `main.ts` moves the camera to the node a search found. |
+
+A negative sentence is fine when the negative is the fact. "The rename keeps the key" is
+better than "the rename does not change the key". "Nothing reads this value" is a fact
+with no positive form.
+
+[prose-lint.py](../scripts/prose-lint.py) checks every write. It reports two findings with
+certainty: `L001`, a sentence over 25 words, and `L006`, a term from the block list in
+[plain-terms.txt](../scripts/plain-terms.txt). The docs gate fails on both, in every
+markdown file and every code comment. The linter also reports guesses: `L002`–`L005` for
+abstract subjects and aphorisms, `L007` for a page part as the actor, and `L008` for a term
+that may be figurative. A guess never blocks. No script can see a metaphor, so the writer
+applies this section. [ADR 0051](decisions/0051-the-plain-prose-rule-covers-committed-text.md)
+records why the rule covers committed text. [ADR 0035](decisions/0035-a-rule-for-new-sentences.md)
+records the first version of the rule.
 
 ## What is enforced
 

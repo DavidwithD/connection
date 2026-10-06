@@ -54,6 +54,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0048](0048-a-long-name-is-cut-to-fit.md) | A long name is cut to fit | 🔵 Proposed |
 | [0049](0049-a-click-leaves-the-panel-alone.md) | A click leaves the panel alone | 🔵 Proposed |
 | [0050](0050-the-numbers-come-off-the-guide.md) | The numbers come off the guide | 🔵 Proposed |
+| [0051](0051-the-plain-prose-rule-covers-committed-text.md) | The plain-prose rule covers committed text | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

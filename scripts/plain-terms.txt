@@ -1,0 +1,60 @@
+# Old figurative terms, and the literal term that replaced each one.
+#
+# scripts/prose-lint.py reads this file. docs/glossary.md defines every literal term.
+# ADR 0051 records why the old terms went.
+#
+# Format: one line per term group. The old forms come first, separated by commas.
+# The text after the colon is the literal term to use instead.
+#
+# [block] holds terms with no literal use in this repo. L006 reports them. The docs
+# gate fails on them.
+#
+# [check] holds terms that also have a literal sense, such as "lead" the verb or a
+# form "field". L008 reports them as a guess. The docs gate ignores them.
+#
+# [keep] holds exact-case words that look like a blocked term and are not one.
+
+[block]
+ghost, ghosts, ghosted: off-screen marker
+doorway, doorways: off-screen marker
+island, islands: component
+pill, pills: label box
+halo, halos, haloes: label outline
+limb: visible limit
+horizon, horizons: visible limit
+receipt, receipts: write log entry
+glide, glides, glided, gliding: camera move
+flier, fliers: the moving marker
+drift, drifts, drifted, drifting: walk by pan, or a change over time
+rail: side panel
+drawer, drawers: side panel
+seat, seats, seated, seating, unseated: place, placed, free spot
+berth, berths: free spot
+tether, tethers, tethered: connector line
+backdrop, backdrops: dimmed nodes
+reckoning: full recount
+chrome: controls
+globe, globes: sphere view
+recentre, recentred, recentring: go to selected
+
+[check]
+ring, rings: neighbours, circle, or outline
+centre, centres, centred, centring: selected node, or the middle of the screen
+accent, accented: selected node; the colour token stays
+anchor, anchors, anchored: start name, or first name on the line
+flight, flights, fly, flies, flying, flew, flown: camera move
+lead, leads: connector line
+frontier: node with unread edges; the BFS frontier stays
+field, fields: other nodes
+arrival, arrivals: new neighbour
+settle, settles, settled, settling: merge, or idle
+stamp, stamps, stamped, stamping: set, or write
+strip, strips: covered-card edge
+trail, trails: card stack
+aim, aims, aimed, aiming: drop target
+lift, lifts, lifted: z-rank
+band, bands: range, or hysteresis margin
+landing, landings: nearest free spot
+
+[keep]
+Chrome

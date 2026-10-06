@@ -162,12 +162,14 @@ section's established pattern — an inline formula where the section uses code 
 outputs mixed into a list of inputs, an item wedged between two paragraphs that belong
 together · `W031` a claim about a schema, column, API shape, config value, or enum meaning
 asserted with no primary source. Verify it, or mark it unverified. A guess written in the
-body will be read later as a fact · `W033` a sentence written for its sound: a metaphor, an
-abstract noun standing in for the file or function the sentence is really about, an inverted
-or aphoristic clause, or a run past 25 words. `docs/README.md` holds the rule and its one
-exemption. It applies to `docs/**` including records, to comments under `web/src/`, and to
-§4's message. Read each added sentence once and ask what its subject is. If finding the
-subject takes a second pass, rewrite the sentence.
+body will be read later as a fact · `W033` a sentence that breaks the rule in
+`docs/README.md` § *How it is written*. The four banned patterns are a gesture or page part as
+the actor, a sentence that states only what does not happen, a figurative noun where
+`docs/glossary.md` has a literal term, and an aphorism. It applies to `docs/**` including record
+titles, to comments under `web/src/`, `scripts/` and `test/`, and to §4's message. Run
+`npm run prose -- <file>` on each changed file. Read each added sentence once and ask what its
+subject is and what that subject does. If the answer is a click, a box or a panel, name the
+code instead.
 
 ### Notes
 
