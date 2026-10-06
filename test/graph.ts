@@ -10,18 +10,16 @@
  */
 import "fake-indexeddb/auto"
 
-import { forget, open } from "../web/src/store/db.js"
+import { open } from "../web/src/store/db.js"
 import { loadGraphText } from "../web/src/store/index.js"
 
-/** Clear both object stores and drop the cached totals. Call this before each test. */
+/** Clear both object stores. Call this before each test. */
 export async function emptyGraph(): Promise<void> {
   const db = await open()
   const tx = db.transaction(["nodes", "edges"], "readwrite")
   await tx.objectStore("nodes").clear()
   await tx.objectStore("edges").clear()
   await tx.done
-  // The totals are cached in memory and survive the clear. See db.ts.
-  forget()
 }
 
 /**

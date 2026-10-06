@@ -1046,7 +1046,7 @@ export class GlobeView implements MapSurface {
       }
     }
     for (const id of nodeIds) this.removeElement(id)
-    // An accent pointing at a deleted node would keep the HUD naming it until the camera
+    // An accent pointing at a deleted node would keep the map marking it until the camera
     // moved. Clear it here. The caller picks a new one.
     if (this.accentId && nodeIds.includes(this.accentId)) this.accentId = null
 

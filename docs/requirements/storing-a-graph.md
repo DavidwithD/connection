@@ -40,7 +40,6 @@ builds six hundred nodes, which is a sample rather than a specification.
 ## The requests
 
 - *Given a graph at the ceiling, draw any node's neighbourhood* without the page pausing.
-- *Given a write, tell me how big the graph is* without re-counting the whole of it.
 - *Given a join, list the islands correctly straight away* — a merge may not lag.
 - *Given a part, let the island list catch up late* rather than freezing the page.
 - *Given a lagging island list, let me reckon it back* from the nodes and edges themselves.
@@ -53,8 +52,6 @@ builds six hundred nodes, which is a sample rather than a specification.
 - Seed fifty thousand nodes. The map still draws, the search box still answers as you type,
   and the island drawer still scrolls.
 - A hub at the read ceiling draws as fast as a node with three edges.
-- The totals in the guide update after a write without the write getting slower as the graph
-  grows.
 - Join two islands: the list loses a row immediately. Part the bridge: the row comes back,
   and if it does not, **Recount the islands** brings it back.
 - No single operation holds the map still for longer than about a third of a second, except
@@ -65,8 +62,6 @@ builds six hundred nodes, which is a sample rather than a specification.
 
 Named rather than left to be discovered. Past the ceiling, in this order:
 
-- **The counts.** They are memoised from one scan when the database opens, and that scan is
-  linear in the graph.
 - **The export and the import.** One file, one string, one transaction — several tens of
   megabytes at the ceiling, and each is a single allocation.
 - **The reckoning.** Linear in the graph, and it rewrites every record it changes.

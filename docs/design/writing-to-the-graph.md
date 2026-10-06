@@ -16,7 +16,6 @@ Reads are the other half and live in [the-centre.md](the-centre.md).
 |---|---|---|
 | node record | The node itself: `label`, `degree`, `parent`, `islandSize` if it is a root | `nodes` |
 | edge record | One undirected edge, stored once and keyed on the pair | `edges` |
-| totals | Two numbers, memoised in the module and adjusted per write | `counts`, `counted` |
 | refusal | The graph declining a write, as distinct from the write failing | [`Refused`](../../web/src/store/refused.ts) |
 | unavailability | The store unable to answer at all, which is neither of those | [`Unavailable`](../../web/src/store/db.ts) |
 | receipt | One write on screen, carrying its undo while it stands | [`Receipt`](../../web/src/writes.ts) |

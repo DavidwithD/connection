@@ -61,7 +61,7 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | shift-drag between two nodes | Join them. A ghost counts as the node it names |
 | click the **islands** tab | Pull the island list out from the left edge, or push it back |
 | click a row in it | Cross to a component, or go back to one you crossed to before |
-| click **guide** | Open the numbers, the legend and the keys, in one panel at the bottom right |
+| click **guide** | Open the settings, the legend and the keys, in one panel at the bottom right |
 | `↑↓←→` | Nudge the view |
 | **Recentre** | Go back to the centre, wherever the panning left it |
 | **walk by pan** | In the guide. Tick it, and panning hands the centre to whatever it passes |
@@ -90,7 +90,7 @@ for, before it flies. Nothing is said when it works, because the name you clicke
 you get. The first refusal reads *could not copy …* on the status line, and every refusal after
 it is silent ([ADR 0039](decisions/0039-any-nodes-name-on-the-clipboard.md)).
 
-**walk by pan** is the box under the numbers, and it hands the centre back to the camera. Tick
+**walk by pan** is the first box in the guide, and it hands the centre back to the camera. Tick
 it and the node nearest the middle takes the centre as you drag. A sweep across a region then
 fills it in without your choosing a route. Every node the middle crosses is placed for good.
 Unticking the box does not take them off again — the map keeps what the panning drew. The box is

@@ -53,6 +53,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0047](0047-the-list-page-writes-too.md) | The list page writes too | 🔵 Proposed |
 | [0048](0048-a-long-name-is-cut-to-fit.md) | A long name is cut to fit | 🔵 Proposed |
 | [0049](0049-a-click-leaves-the-panel-alone.md) | A click leaves the panel alone | 🔵 Proposed |
+| [0050](0050-the-numbers-come-off-the-guide.md) | The numbers come off the guide | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

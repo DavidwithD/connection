@@ -64,8 +64,6 @@ export interface IslandPage {
  * which is the only case with nowhere to start.
  */
 export interface Opening {
-  nodeCount: number
-  edgeCount: number
   /** The first page of components, largest first. The map opens on the first one. */
   islands: IslandMeta[]
   /** Where to continue from, or null when `islands` holds all of them. */

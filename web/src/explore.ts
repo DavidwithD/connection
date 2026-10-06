@@ -27,7 +27,7 @@ export class Explorer {
     private readonly hooks: ExploreHooks,
   ) {}
 
-  /** How many reads are in flight. The HUD shows this. */
+  /** How many reads are in flight. The status line reports it, in `render` in main.ts. */
   get pending(): number {
     return this.reading.size
   }

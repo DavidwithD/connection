@@ -115,8 +115,8 @@ body.joining #stage { cursor: none; }
 
 /* The island drawer, at the left edge, and the tab that pulls it out.
 
-   Three panels used to share a column here. Two of them and the HUD are in #guide now, and
-   what is left is the list the map is navigated with.
+   Three panels used to share a column here. Two of them are in #guide now, and what is left
+   is the list the map is navigated with.
 
    The panel is as tall as its rows and no taller than the window. Ten islands make a short
    box; three hundred fill the screen and the list scrolls inside it. It shifts itself off the
@@ -190,11 +190,7 @@ body:has(#islands[hidden]) #rail-tab { display: none; }
 
 #guide .sub { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; }
 
-dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
-dt { color: var(--ink-2); font-size: 11px; }
-dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
-
-/* The reader's own settings, under the numbers. Sized like a caption rather than a control:
+/* The reader's own settings, under the sub line. Sized like a caption rather than a control:
    the panel is mostly there to be glanced at, and a setting is left alone once it is set. */
 .setting {
   display: flex;
@@ -323,7 +319,7 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 .island[aria-current]::before { background: var(--accent); }
 .island[aria-current] { font-weight: 500; }
 /* The three groups inside #guide, ruled off from each other. The same hairline #status used to
-   carry when it sat under the numbers. */
+   carry when it sat inside the panel. */
 #guide #legend,
 #guide #keys {
   margin-top: 10px;
@@ -371,9 +367,9 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
   background: var(--ink-muted);
 }
 
-/* The two name inputs, top centre between the HUD and the controls. The width is fixed: the
-   box grows downward as receipts are added, never sideways. The media query at the end of
-   this file drops the fixed width on a narrow window. */
+/* The two name inputs, top centre, left of the controls. The width is fixed: the box grows
+   downward as receipts are added, never sideways. The media query at the end of this file
+   drops the fixed width on a narrow window. */
 #ends {
   top: 16px;
   left: 50%;

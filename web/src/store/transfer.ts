@@ -4,7 +4,7 @@
  * Each one loads the whole store into memory. That is acceptable for a button someone presses
  * and waits on. Do not call any of these from anything automatic.
  */
-import { counts, forget, open, unavailable, type StoredEdge, type StoredNode } from "./db.js"
+import { open, unavailable, type StoredEdge, type StoredNode } from "./db.js"
 import { generate, type GenerateOptions } from "./generate.js"
 import { components, stampIslands, writeStamped } from "./islands.js"
 import { edgeEnds, edgeKey, naming, normaliseLabel } from "./keys.js"
@@ -25,10 +25,10 @@ export interface GraphExport {
 }
 
 /**
- * Count the stored records with a scan, rather than reading the cached totals in `counts()`.
+ * Count the stored records with a scan.
  *
- * The scan is slow enough that db.ts caches it for the HUD. Call it on a click, where the
- * reader is already waiting and the number has to be current.
+ * `count()` with no key range reads every record, measured at about 19ms over 30,000 of them.
+ * Call this on a click, where the reader is already waiting and the number has to be current.
  */
 export async function readCounts(): Promise<{ nodes: number; edges: number }> {
   const db = await open()
@@ -223,13 +223,8 @@ export async function replaceGraph(nodes: StoredNode[], edges: StoredEdge[]): Pr
 
     await tx.done
   } catch (err) {
-    // Discard the cached totals either way. The transaction either landed whole, or landed
-    // not at all and the clear was rolled back with it.
-    forget()
     throw unavailable(err) ?? err
   }
-  forget()
-  await counts()
 }
 
 /** Build a whole graph's records from names and pairs, with the components stamped. */
