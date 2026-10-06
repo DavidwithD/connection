@@ -365,8 +365,8 @@ view.on("nodeTap", (id) => {
   // not move for it.
   void copyLabel(node.label)
 
-  // A click on the centre copies its name and does nothing else. No click on the map fills the panel.
-  // See docs/decisions/0049-a-click-leaves-the-panel-alone.md.
+  // On a click on the centre, this handler stops after the copy. The join panel's inputs
+  // keep their values. See docs/decisions/0049-a-click-leaves-the-panel-alone.md.
   if (id === view.accent) return
 
   // Named where it stands. This handler was the last place the page moved the camera on its

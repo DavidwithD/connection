@@ -71,8 +71,6 @@ export interface PanelHooks {
    * Called on becoming the anchor only, never on completing a pair. The anchor is what the
    * reader is working from and should be in view. Following every name in a fast run would
    * drag the camera after each one.
-   *
-   * `take` is the one exception. It sets the anchor without calling this, and says why.
    */
   onArm: (node: NodeMeta) => void
   onStatus: (text: string, tone: "idle" | "busy" | "error") => void

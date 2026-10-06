@@ -1,6 +1,6 @@
 # 0039 — Any node's name on the clipboard
 
-**Status:** 🔵 Proposed
+**Status:** 🔵 Proposed — one row amended by [0049](0049-a-click-leaves-the-panel-alone.md)
 **Date:** 2026-08-19
 **Deciders:** David HL
 
@@ -19,7 +19,7 @@ Clicking any node copies its name.
 |--------|--------|-----------|
 | Which click | Any node the map draws | A name under the pointer is a name in hand. |
 | A ghost | Copies, then flies | Its name is on screen long before its node is. |
-| The panel | The centre's click alone | That click takes the caret off the map — [0036](0036-a-click-that-writes-nothing.md). [0049](0049-a-click-leaves-the-panel-alone.md) removed it. |
+| The panel | The centre's click alone | That click takes the caret off the map — [0036](0036-a-click-that-writes-nothing.md). [0049](0049-a-click-leaves-the-panel-alone.md) removed the panel fill. |
 | On success | Silence | The reader is looking at the name they clicked. |
 | On refusal | The first one says so, and no other | A browser that turns one copy down turns them all down. |
 

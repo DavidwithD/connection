@@ -1,6 +1,6 @@
 # 0036 — A click that writes nothing
 
-**Status:** 🔵 Proposed — two rows amended by [0049](0049-a-click-leaves-the-panel-alone.md)
+**Status:** 🔵 Proposed — panel and caret amended by [0049](0049-a-click-leaves-the-panel-alone.md)
 **Date:** 2026-08-18
 **Deciders:** David HL
 
@@ -14,6 +14,9 @@ back before `↵` fires it.
 
 ## Decision
 Clicking the centre puts its name in the near end of the panel. Nothing reaches the graph.
+
+[0049](0049-a-click-leaves-the-panel-alone.md) amends this. The click no longer fills the
+panel, and the caret stays on the map.
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
@@ -39,7 +42,8 @@ click only moves the anchor. That lands on whoever built pairs by clicking.
 Clicking the centre no longer recentres it. The arming click used to move the camera, and
 **Recentre** is what does it now.
 
-The caret still leaves the map on the click, so the arrows stop panning until `Esc`.
+The caret still leaves the map on the click, so the arrows stop panning until `Esc`. 0049
+keeps the caret on the map.
 
 Two clicks on the centre are harmless now, so the self-join refusal cannot be reached from the
 map.
