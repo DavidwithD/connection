@@ -9,8 +9,9 @@
  * A canvas holds no element per node, so this asks `globe-view.ts` for its frame through the
  * probe on `#stage`. probe.mjs is that seam, and every drive script in this directory uses it.
  *
- * Playwright is deliberately not a dependency of this project. Install it where you want it
- * and point NODE_PATH at it, or `npm i -D playwright --no-save` for one session.
+ * Playwright is deliberately not a dependency of this project. `npm i -D playwright --no-save`
+ * installs it for one session, and the next `npm install` prunes it. A copy in a `node_modules`
+ * above this repo survives that, because ESM resolution walks up into it.
  */
 import { mkdirSync } from "node:fs"
 

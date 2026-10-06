@@ -30,12 +30,13 @@ const { same, other } = pinned()
 
 /** Run the guard as npm would, with the environment npm sets. */
 function guard(env: Record<string, string>): { code: number; said: string } {
-  // vitest may itself have been started by npm, and those variables would answer for it.
-  const clean = { ...process.env }
-  delete clean["npm_command"]
-  delete clean["npm_config_user_agent"]
-  delete clean["npm_config_save"]
-  delete clean["npm_config_package_lock"]
+  // Vitest may itself have been started by npm, and those variables would answer for it. Every
+  // `npm_` key goes rather than four by name, and the match ignores case. Windows returns the
+  // names uppercased, so naming them deletes nothing and both spellings reach the child. It
+  // then resolves the `NPM_COMMAND` npm set over the `npm_command` this staged.
+  const clean = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !/^npm_/i.test(name)),
+  )
 
   const run = spawnSync(process.execPath, [GUARD], { env: { ...clean, ...env }, encoding: "utf8" })
   return { code: run.status ?? -1, said: run.stderr }
