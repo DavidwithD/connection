@@ -50,7 +50,10 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0044](0044-the-node-record-carries-a-date.md) | The node record carries a date | 🔵 Proposed |
 | [0045](0045-a-runner-for-the-browser-code.md) | A runner for the browser code | 🔵 Proposed |
 | [0046](0046-a-line-that-hangs-from-the-line-above.md) | A line that hangs from the line above | 🔵 Proposed |
-| [0047](0047-the-numbers-come-off-the-guide.md) | The numbers come off the guide | 🔵 Proposed |
+| [0047](0047-the-list-page-writes-too.md) | The list page writes too | 🔵 Proposed |
+| [0048](0048-a-long-name-is-cut-to-fit.md) | A long name is cut to fit | 🔵 Proposed |
+| [0049](0049-a-click-leaves-the-panel-alone.md) | A click leaves the panel alone | 🔵 Proposed |
+| [0050](0050-the-numbers-come-off-the-guide.md) | The numbers come off the guide | 🔵 Proposed |
 
 **Status legend:** 🔵 Proposed · ✅ Accepted · ❌ Rejected · ♻️ Superseded
 

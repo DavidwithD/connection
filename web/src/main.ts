@@ -25,6 +25,7 @@ import { Explorer, debounce, perFrame } from "./explore.js"
 import { GlobeView } from "./globe-view.js"
 import { IslandsPanel } from "./islands.js"
 import { JoinPanel } from "./join.js"
+import { priced } from "./labels.js"
 import { ghostTarget, type MapSurface } from "./map.js"
 import { MapView } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
@@ -352,13 +353,9 @@ view.on("nodeTap", (id) => {
   // not move for it.
   void copyLabel(node.label)
 
-  // The centre's click reaches the panel as well, and no other click does. `take` in
-  // web/src/join.ts puts the caret in the far input. A walk that called it at every step would
-  // keep taking the arrow keys off the map.
-  if (id === view.accent) {
-    panel.take(node)
-    return
-  }
+  // On a click on the centre, this handler stops after the copy. The join panel's inputs
+  // keep their values. See docs/decisions/0049-a-click-leaves-the-panel-alone.md.
+  if (id === view.accent) return
 
   // Named where it stands. This handler was the last place the page moved the camera on its
   // own: a click drew the node to the middle whether or not anyone wanted to be moved. The
@@ -452,13 +449,6 @@ editRow.addEventListener("click", () => {
   editBox.hidden = false
   rename.open(editing)
 })
-
-/** The button label, with the edge count when the node has edges. */
-function priced(node: NodeMeta): string {
-  if (!node.degree) return `delete ${node.label}`
-  const edges = node.degree === 1 ? "1 edge" : `${String(node.degree)} edges`
-  return `delete ${node.label} and its ${edges}`
-}
 
 /**
  * The node at one end of a drawn line, or null if that end is not one.

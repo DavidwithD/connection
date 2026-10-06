@@ -201,3 +201,4 @@ copy.
 | [0036](../decisions/0036-a-click-that-writes-nothing.md) | That the map's click fires no join, and a key is what does |
 | [0038](../decisions/0038-a-drag-that-joins-two-nodes.md) | That a drag on the map fires one, and where its arrow is drawn |
 | [0040](../decisions/0040-a-node-under-a-new-name.md) | That a rename is one transaction, needs no walk, and gets its own box |
+| [0049](../decisions/0049-a-click-leaves-the-panel-alone.md) | That a click on the map fills no end of the panel |

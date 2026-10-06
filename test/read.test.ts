@@ -66,7 +66,7 @@ describe("readOpening", () => {
   })
 
   // The map raises its empty panel on this answer, so a graph with no stamped root is the
-  // panel's one false positive. ADR 0047 weighed it against a scan of the nodes.
+  // panel's one false positive. ADR 0050 weighed it against a scan of the nodes.
   it("reports nowhere to start when every root lost its stamp", async () => {
     await seed(FIVE_ISLANDS)
     await unstampEveryRoot()

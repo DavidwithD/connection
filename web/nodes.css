@@ -61,8 +61,8 @@
 /* ------------------------------------------------------------------- the rows */
 
 .rows, .subrows { list-style: none; margin: 0; padding: 0; }
-.rows > li { margin-bottom: 4px; }
-.rows > li.empty, .subrows > li.empty { color: var(--ink-muted); padding: 8px 2px; }
+.rows > li, .subrows > li { position: relative; margin-bottom: 4px; }
+.rows > li.empty, .subrows > li.empty { position: static; color: var(--ink-muted); padding: 8px 2px; }
 
 .row {
   display: flex;
@@ -84,12 +84,98 @@
    than the row on its own, which a pasted line with no spaces in it can be. */
 .row .name { min-width: 0; overflow-wrap: anywhere; }
 
+/* Edit, join and delete. Hidden at rest, so a row shows only its name until the reader
+   hovers or tabs to it. `:focus-within` is what reaches a reader with no pointer at all;
+   that is the known gap in this pattern, not something a visual tweak can close. */
+.row-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+.rows > li:hover .row-actions,
+.rows > li:focus-within .row-actions,
+.subrows > li:hover .row-actions,
+.subrows > li:focus-within .row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.row-actions .icon {
+  padding: 3px 6px;
+  background: var(--panel);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.row-actions .icon:hover { color: var(--ink); border-color: var(--accent); }
+/* Armed, the delete icon carries the cost `priced` wrote into it, so it needs the room a
+   glyph does not. The text still clips rather than pushing the icons beside it around. */
+.row-actions .delete[data-armed="true"] {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+/* The inline edit/join box a row's icon opens, under the row and its actions. */
+.row-inline {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.row-inline input {
+  font: inherit;
+  width: 100%;
+  color: var(--ink);
+  background: var(--plane);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.row-inline input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* The rename verdict. `armed`/`taken` match the data `rename-box.ts` writes on the row. */
+.row-inline .verdict {
+  align-self: flex-start;
+  padding: 4px 8px;
+  background: var(--plane);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+.row-inline .verdict[data-state="armed"] { color: var(--accent); }
+.row-inline .verdict[data-state="taken"] { color: var(--ink-muted); cursor: default; }
+.row-inline .verdict[disabled]:hover { color: var(--ink-muted); border-color: transparent; }
+
+/* The join box's suggestions. Empty until a prefix matches something in `state.all`. */
+.row-inline .suggestions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.row-inline .suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 8px;
+  background: var(--plane);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+.row-inline .suggestions button:hover { color: var(--accent); border-color: var(--accent); }
+
 .subrows {
   margin: 4px 0 10px 18px;
   padding-left: 10px;
   border-left: 1px solid var(--hairline);
 }
-.subrows > li { margin-bottom: 4px; }
 .subrows .row { background: transparent; }
 
 /* A placeholder row while the neighbours are read. The same box as a one-line row. So a

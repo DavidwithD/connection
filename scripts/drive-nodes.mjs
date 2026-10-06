@@ -6,9 +6,10 @@
  *   node scripts/drive-nodes.mjs       # shots land in .shots/
  *   node scripts/drive-nodes.mjs --head  # watch it happen
  *
- * The page has two halves and this drives both. The controls: search, the date filter, the
- * three orders, the pager. The walk: open a row's neighbours, click one that is not on the
- * page, and come back down the stack of cards.
+ * The page has three parts and this drives all three. The controls: search, the date
+ * filter, the three orders, the pager. The walk: open a row's neighbours, click one that is
+ * not on the page, and come back down the stack of cards. The row actions: edit, join and
+ * delete a node from its own row.
  *
  * Playwright is deliberately not a dependency of this project. Install it where you want it
  * and point NODE_PATH at it, or `npm i -D playwright --no-save` for one session.
@@ -541,6 +542,92 @@ async function main() {
     "the walk brought the row it opened into view",
   )
   await shot("16-walk-in-view")
+
+  // -------------------------------------------------------------- edit, join, delete
+
+  // `:has(> .row .name …)` reaches only the li's own row, not a neighbour of the same name
+  // sitting in an open sublist underneath it.
+  const rowByName = (name) => page.locator(`#list-view .rows > li:has(> .row .name:text-is("${name}"))`)
+
+  // A fresh load, not the controls cleared by hand. The walk above left a row open, and
+  // that row's id can collide with whichever one these checks open next.
+  await page.goto(`${WEB}/nodes.html`, { waitUntil: "domcontentloaded" })
+  await page.waitForSelector("#list-view .rows > li")
+  await page.selectOption("#list-size", "50")
+  await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length <= 50)
+
+  const onPage = await names()
+  const editTarget = onPage[0]
+  const editedName = `${editTarget} edited`
+
+  let row = rowByName(editTarget)
+  await row.hover()
+  await row.locator(".row-actions .icon").nth(0).click()
+  await page.waitForSelector(".row-inline input")
+  await page.fill(".row-inline input", editedName)
+  await page.click(".row-inline .verdict")
+  await page.waitForFunction(
+    (want) => document.querySelector("#list-status")?.textContent?.includes(want),
+    `renamed ${editTarget} to ${editedName}`,
+  )
+  console.log(`17 edit: ${await status()}`)
+  // Renaming the first row by name can sort it anywhere, including off this page. Search
+  // finds it wherever it landed, so this proves the store kept the new name, not just the
+  // screen in front of the click.
+  await page.fill("#list-search", editedName)
+  // The count, not just a name match. The renamed node already sorted first before the
+  // filter landed, so a name match alone proves nothing.
+  await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length === 1)
+  check((await names())[0] === editedName, "searching the new name finds exactly the renamed row")
+  await shot("17-edit")
+  await page.fill("#list-search", "")
+  await page.waitForFunction(() => document.querySelectorAll("#list-view .rows > li").length > 1)
+
+  const afterEdit = await names()
+  const joinA = afterEdit.find((name) => name !== editedName)
+  const joinB = afterEdit.find((name) => name !== editedName && name !== joinA)
+  row = rowByName(joinA)
+  await row.hover()
+  await row.locator(".row-actions .icon").nth(1).click()
+  await page.waitForSelector(".row-inline input")
+  await page.fill(".row-inline input", joinB.slice(0, 4))
+  await page.waitForSelector(".row-inline .suggestions button")
+  await page.locator(".row-inline .suggestions button", { hasText: joinB }).click()
+  await page.waitForFunction(
+    (want) => document.querySelector("#list-status")?.textContent?.includes(want),
+    `joined ${joinA} and ${joinB}`,
+  )
+  console.log(`18 join: ${await status()}`)
+  await shot("18-join")
+
+  // The status line reports success either way. Opening the row checks the store, not
+  // just the message.
+  await rowByName(joinA).locator(".row").first().click()
+  await page.waitForSelector(".subrows .row, .subrows .empty")
+  const neighbours = await page.$$eval(".subrows .row .name", (all) => all.map((one) => one.textContent))
+  check(neighbours.includes(joinB), "the joined row now lists its new neighbour")
+  await rowByName(joinA).locator(".row").first().click()
+
+  row = rowByName(joinA)
+  await row.hover()
+  const del = row.locator(".row-actions .delete")
+  await del.click()
+  await page.waitForFunction(() => document.querySelector(".row-actions .delete[data-armed]") !== null)
+  console.log(`19 delete armed: ${await del.textContent()}`)
+  await del.click()
+  await page.waitForFunction(
+    (gone) =>
+      ![...document.querySelectorAll("#list-view .rows > li .name")].some((el) => el.textContent === gone),
+    joinA,
+  )
+  console.log(`20 delete: ${await status()}`)
+  await page.fill("#list-search", joinA)
+  // Not the status line: a note from the delete sticks there until something else writes
+  // over it, the same way a `reveal` note does. The empty row is what the search landed.
+  await page.waitForSelector("#list-view .rows > li.empty")
+  check((await names()).length === 0, "searching the deleted name finds nothing")
+  await shot("20-delete")
+  await page.fill("#list-search", "")
 
   await browser.close()
   console.log(bad ? `\n✗ ${String(bad)} failed` : "\n✓ all checks passed")

@@ -24,7 +24,7 @@
  */
 import { mkdirSync } from "node:fs"
 
-import { MAP } from "./probe.mjs"
+import { MAP, clickOn, frame, reachable, read, still } from "./probe.mjs"
 
 const { chromium } = await import("playwright").catch(() => {
   console.error("✗ needs playwright: npm i -D playwright --no-save")
@@ -246,6 +246,43 @@ async function main() {
     far: "lambda",
     receipts: was,
   })
+
+  // ADR 0049 keeps the receipt's name button as a way into the panel. The reader clicks it
+  // inside the panel, so the name and the caret move where the reader is looking.
+  console.log(`\n9. a receipt's name button, on an empty panel`)
+  console.log(`   expected: the name lands in the near input, and the caret waits in the far one`)
+  await reset(page)
+  const button = page.locator("#receipts button.pick").first()
+  const named = (await button.textContent()).trim()
+  await button.click()
+  await page.waitForTimeout(300)
+  check("the receipt fills the panel", await state(page), {
+    near: named,
+    far: "",
+    grown: true,
+    focus: "far",
+  })
+
+  // ADR 0049: a click on the centre copies its name and leaves the panel alone. The caret
+  // stays off the inputs, so the arrow keys still reach the map.
+  console.log(`\n10. a click on the centre`)
+  console.log(`   expected: both inputs stay empty, and the caret is in neither`)
+  await reset(page)
+  await still(page)
+  const centre = await reachable(page, [read(await frame(page)).centre].filter(Boolean))
+  if (centre) {
+    await clickOn(page, centre.at)
+    await page.waitForTimeout(300)
+    const seen = await state(page)
+    check("the centre's click leaves the panel alone", seen, { near: "", far: "", grown: false })
+    if (seen.focus === "near" || seen.focus === "far") {
+      failures++
+      console.log(`      ✗ the caret went into the ${seen.focus} input`)
+    }
+  } else {
+    failures++
+    console.log(`  ✗ no centre the pointer can reach`)
+  }
 
   await browser.close()
 

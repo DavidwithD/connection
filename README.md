@@ -62,8 +62,9 @@ around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.
 | `npm run drive:part-edge` | Drive the right-click that parts a pair, and check what the page did |
 | `npm run drive:drag-join` | Drive the shift-drag that joins two nodes, and check what it wrote |
 | `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
-| `npm run drive:nodes` | Drive the node list: the controls, the walk into a neighbour, and back |
+| `npm run drive:nodes` | Drive the node list: the controls, the walk, and a row's edit, join and delete |
 | `npm run drive:globe` | Drive the globe renderer at `/?globe`, and photograph what it draws |
+| `npm run drive:long-names` | Drive names longer than a pill on the globe, and check how they are cut |
 | `npm run preinstall` | Runs on every install. Refuses one from an npm that would rewrite the lock |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
@@ -92,6 +93,7 @@ web/
   app.css       the chrome around all three
   nodes.css     the rows, the sublist and the stack of cards
 web/src/
+  name-lines.ts a name broken into lines that fit a width — pure, no canvas
   placement.ts  seating geometry + spatial index — pure, no renderer
   projection.ts the surface the map draws on — a screen offset in, a screen offset out
   world.ts      the store: frozen positions, adjacency, degrees
@@ -101,6 +103,7 @@ web/src/
   explore.ts    what the centre reads once the camera settles
   palette.ts    validated colour tokens, light and dark
   settings.ts   what the reader has asked the page to do, kept in the browser
+  labels.ts     button labels built from a node's own data, shared by two pages
   combobox.ts   a text box that hands back nodes, not text
   rename-box.ts a name, and one row saying whether the graph has it already
   writes.ts     the line every write stands in, and the receipts it leaves
@@ -129,6 +132,7 @@ test/
   widgets.ts             the elements the keyboard widgets are built on
   projection.test.ts     the surface the map draws on
   placement.test.ts      seating geometry and the spatial index
+  name-lines.test.ts     a name broken into lines that fit a width
   keys.test.ts           the normalised name, and the pair key
   text.test.ts           the text format, read and written
   islands.test.ts        components, derived from a whole graph
@@ -150,6 +154,7 @@ scripts/
   probe.mjs            how a drive script asks the map what it drew, and where
   drive-drag-join.mjs  drives the shift-drag that joins two nodes, and checks it
   drive-globe.mjs      drives the globe renderer, and photographs what it draws
+  drive-long-names.mjs drives names longer than a pill, and checks how they are cut
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
   drive-nodes.mjs      drives the node list, its controls and its walk
