@@ -1,6 +1,6 @@
 # 0039 — Any node's name on the clipboard
 
-**Status:** 🔵 Proposed
+**Status:** 🔵 Proposed — one row amended by [0049](0049-a-click-leaves-the-panel-alone.md)
 **Date:** 2026-08-19
 **Deciders:** David HL
 
@@ -19,7 +19,7 @@ Clicking any node copies its name.
 |--------|--------|-----------|
 | Which click | Any node the map draws | A name under the pointer is a name in hand. |
 | A ghost | Copies, then flies | Its name is on screen long before its node is. |
-| The panel | The centre's click alone | That click takes the caret off the map — [0036](0036-a-click-that-writes-nothing.md). |
+| The panel | The centre's click alone | That click takes the caret off the map — [0036](0036-a-click-that-writes-nothing.md). [0049](0049-a-click-leaves-the-panel-alone.md) removed the panel fill. |
 | On success | Silence | The reader is looking at the name they clicked. |
 | On refusal | The first one says so, and no other | A browser that turns one copy down turns them all down. |
 
@@ -41,7 +41,8 @@ name is on the clipboard when nothing was written.
 A ghost's click does two jobs. It copies and then flies, and the copy is silent while the
 camera is moving.
 
-The centre keeps a job no other node has. Its click still names it in the panel above.
+The centre's click no longer fills the panel. [0049](0049-a-click-leaves-the-panel-alone.md)
+removed that job. The centre's click now only copies the name.
 
 ## Assumptions and unknowns
 - **Assumed a click on a node asks for its name.** A reader clicking to walk loses whatever

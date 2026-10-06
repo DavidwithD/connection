@@ -55,7 +55,6 @@ Pan around an undirected cyclic graph like a map. Whatever you click is what loa
 | wheel | Zoom toward the cursor |
 | hover a node | Show its name, until you point at something else |
 | click a node | Make it the centre, where it stands, and copy its name. Nothing moves |
-| click the centre | Put its name in the box at the top |
 | click a ghost | Copy the name it stands for, and fly to that node |
 | right-click the centre | Rename it, or take it off the map with everything joined to it |
 | right-click a line into the centre | Part the two nodes it joins. A ghost's dashed line counts |
@@ -151,14 +150,6 @@ alone, since Control-click is the other mouse button on a Mac.
 
 A path is then one name per node. `Kavara` `↵` arms the near end, `Tab` crosses to the far one,
 and the rest — `Corwen` `⌘↵`, `Thessa` `⌘↵` — runs without the caret moving again.
-
-The map is the other way to fill an end. Click the centre and its name lands in the near end,
-over whatever that end held. The far end is emptied, so the panel holds one name after a click.
-The click writes nothing to the graph, and the map does not move. An edge still comes from the
-far end: type a name into it and press `↵`.
-
-The caret goes into the far end, so the arrows stop panning until `Esc` returns the focus to
-the map ([ADR 0036](decisions/0036-a-click-that-writes-nothing.md)).
 
 `Esc` collapses the whole widget, not just the end you are in — both names go, the far end with
 them, and the focus is handed back to the map. It is the way out, and `/` is the way back in.
