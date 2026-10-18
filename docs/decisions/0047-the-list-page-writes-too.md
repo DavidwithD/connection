@@ -22,7 +22,7 @@ calls.
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
-| Reveal | Hover/focus-within icons | Three actions on a dense list, no new page chrome |
+| Reveal | Hover/focus-within icons | Three actions on a dense list, no new page controls |
 | Join's target | An inline name box, matched locally | `state.all` already holds every node read at boot |
 | Delete | Arms on the first click, fires on the second | No modal exists anywhere in this app |
 | Undo | None, for any of the three | Delete already has none; one story beats two |
@@ -34,9 +34,9 @@ calls.
   more directly.
 - **A two-click pair for join** — click one row, then a second to complete it. Needs a
   visible "armed" row that survives paging and search, with nothing to compare it to.
-- **A shared join panel**, like the map's. A second piece of page chrome for something a
+- **A shared join panel**, like the map's. A second set of page controls for something a
   row can already name itself.
-- **The map's undo strip (`writes.ts`) on this page too.** Rename and join would gain
+- **The map's write log (`writes.ts`) on this page too.** Rename and join would gain
   undo while delete still would not. The page would then tell two different stories
   about whether a write here can be taken back.
 

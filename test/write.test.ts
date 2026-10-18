@@ -5,14 +5,14 @@
  * a browser. That is what these tests need. A stub that recorded calls would agree with
  * whatever write.ts did with them.
  *
- * The component index is checked after each write. A wrong `islandSize` is the one fault a
- * reader cannot see. The island panel lists a component that does not exist. Nothing else on
+ * The component index is checked after each write. A wrong `componentSize` is the one fault a
+ * reader cannot see. The component panel lists a component that does not exist. Nothing else on
  * the page looks wrong.
  */
 import { beforeEach, describe, expect, it } from "vitest"
 
 import { emptyGraph } from "./graph.js"
-import { readAllNodes, readIslandCount, readNeighbourhood, readNode } from "../web/src/store/read.js"
+import { readAllNodes, readComponentCount, readNeighbourhood, readNode } from "../web/src/store/read.js"
 import {
   ALREADY_JOINED,
   Missing,
@@ -68,7 +68,7 @@ describe("createNode", () => {
   it("makes a component of one", async () => {
     await createNode("Kavara")
     await createNode("Miselin")
-    expect(await readIslandCount()).toBe(2)
+    expect(await readComponentCount()).toBe(2)
   })
 })
 
@@ -130,9 +130,9 @@ describe("addEdge", () => {
   })
 
   it("merges the two components into one", async () => {
-    expect(await readIslandCount()).toBe(2)
+    expect(await readComponentCount()).toBe(2)
     await addEdge("kavara", "miselin")
-    expect(await readIslandCount()).toBe(1)
+    expect(await readComponentCount()).toBe(1)
   })
 })
 
@@ -155,19 +155,19 @@ describe("removeEdge", () => {
   })
 
   it("splits the component back into two", async () => {
-    expect(await readIslandCount()).toBe(1)
+    expect(await readComponentCount()).toBe(1)
     await removeEdge("kavara", "miselin")
-    expect(await readIslandCount()).toBe(2)
+    expect(await readComponentCount()).toBe(2)
   })
 
   it("leaves a component whole when the edge it removed was not the only path", async () => {
     await createNode("Vessarin")
     await addEdge("miselin", "vessarin")
     await addEdge("vessarin", "kavara")
-    expect(await readIslandCount()).toBe(1)
+    expect(await readComponentCount()).toBe(1)
 
     await removeEdge("kavara", "miselin")
-    expect(await readIslandCount()).toBe(1)
+    expect(await readComponentCount()).toBe(1)
     expect((await checkGraph()).faults).toEqual([])
   })
 })
@@ -214,14 +214,14 @@ describe("deleteNodeWithEdges", () => {
 
   it("leaves the two former neighbours as components of their own", async () => {
     await deleteNodeWithEdges("kavara")
-    expect(await readIslandCount()).toBe(2)
+    expect(await readComponentCount()).toBe(2)
     expect((await checkGraph()).faults).toEqual([])
   })
 
   it("keeps a component whole when the deleted node was not its only path", async () => {
     await addEdge("miselin", "vessarin")
     await deleteNodeWithEdges("kavara")
-    expect(await readIslandCount()).toBe(1)
+    expect(await readComponentCount()).toBe(1)
     expect((await checkGraph()).faults).toEqual([])
   })
 
@@ -259,7 +259,7 @@ describe("renameNode", () => {
 
   it("leaves the graph consistent, index included", async () => {
     await renameNode("kavara", "Ashanlin")
-    expect(await readIslandCount()).toBe(1)
+    expect(await readComponentCount()).toBe(1)
     expect((await checkGraph()).faults).toEqual([])
   })
 
@@ -288,7 +288,7 @@ describe("renameNode", () => {
 })
 
 describe("the graph after a run of writes", () => {
-  it("states degrees and island sizes that match its own edges", async () => {
+  it("states degrees and component sizes that match its own edges", async () => {
     for (const name of ["Kavara", "Miselin", "Vessarin", "Thorne", "Ashanlin"]) {
       await createNode(name)
     }
@@ -302,7 +302,7 @@ describe("the graph after a run of writes", () => {
     const checked = await checkGraph()
     expect(checked.faults).toEqual([])
     // Kavara, Miselin the Second, and the Thorne-Ashanlin pair.
-    expect(checked.islands).toBe(3)
-    expect(await readIslandCount()).toBe(3)
+    expect(checked.components).toBe(3)
+    expect(await readComponentCount()).toBe(3)
   })
 })

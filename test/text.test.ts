@@ -20,7 +20,7 @@ const node = (label: string): StoredNode => ({
   degree: 0,
   parent: normaliseLabel(label),
   created: MADE,
-  islandSize: 1,
+  componentSize: 1,
 })
 
 const key = (a: string, b: string): string => spelledPair(a, b)
@@ -261,9 +261,9 @@ describe("format, as joins", () => {
     ["kavara", "vessarin"],
   ]
 
-  it("writes the hub's line, then the island with no edges", () => {
+  it("writes the hub's line, then the component with no edges", () => {
     expect(format(nodes, edges, "joins")).toBe(
-      ["# 4 node(s), 2 edge(s), 2 island(s)", "", "Kavara | Miselin | Vessarin", "", "Thorne", ""].join(
+      ["# 4 node(s), 2 edge(s), 2 component(s)", "", "Kavara | Miselin | Vessarin", "", "Thorne", ""].join(
         "\n",
       ),
     )

@@ -46,7 +46,7 @@ wanted.
 The cost is 27 MB of devDependencies and a document that is not a browser. Nothing here
 proves Chrome agrees with happy-dom past the events these tests fire. A green suite can
 therefore sit on a page that does not work. The canvas keeps that gap whole. happy-dom
-ships no 2D context, so [globe-view.ts](../../web/src/globe-view.ts) is still read by the
+ships no 2D context, so [sphere-view.ts](../../web/src/sphere-view.ts) is still read by the
 drive scripts alone.
 
 ## Assumptions and unknowns

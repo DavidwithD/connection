@@ -20,10 +20,13 @@ export const DB_NAME = "connection"
 /**
  * Version 2 added `created` to every node. Version 1 recorded nothing about time.
  *
- * The upgrade is one way. A browser holding version 2 refuses to open at version 1. Code from
- * before this change cannot read a database that has been through it.
+ * Version 3 renamed `islandSize` to `componentSize`. It also replaced the `byIsland` index
+ * with `byComponent`. The data is the same.
+ *
+ * Each upgrade is one way. A browser holding version 3 refuses to open at version 2. Code from
+ * before a change cannot read a database that has been through it.
  */
-export const DB_VERSION = 2
+export const DB_VERSION = 3
 
 /**
  * A node, as the store holds it.
@@ -42,8 +45,8 @@ export interface StoredNode {
   degree: number
   /** Union-find parent. A node pointing at itself is a root. */
   parent: string
-  /** Set on roots only. Its absence keeps a record out of the `byIsland` index. */
-  islandSize?: number
+  /** Set on roots only. Its absence keeps a record out of the `byComponent` index. */
+  componentSize?: number
   /**
    * When the node was written, in milliseconds since the epoch.
    *
@@ -73,10 +76,10 @@ export interface GraphDB extends DBSchema {
     key: string
     value: StoredNode
     indexes: {
-      /** Sparse by construction: only a root has `islandSize`, so this holds one entry per
+      /** Sparse by construction: only a root has `componentSize`, so this holds one entry per
        *  component. `labelKey` breaks ties on size, so paging cannot repeat or skip a row. */
-      byIsland: [number, string]
-      /** Which nodes point at this one. The root-deletion repair reads it. See islands.ts. */
+      byComponent: [number, string]
+      /** Which nodes point at this one. The root-deletion repair reads it. See components.ts. */
       byParent: string
     }
   }
@@ -124,7 +127,7 @@ export function unavailable(err: unknown): Unavailable | null {
     )
   }
   if (err.name === "AbortError") {
-    return new Unavailable("the write was cut short, and none of it landed")
+    return new Unavailable("the write was cut short, and none of it was written")
   }
   return null
 }
@@ -152,24 +155,33 @@ export function open(): Promise<IDBPDatabase<GraphDB>> {
 }
 
 /**
- * Give every node already in the store a `created`, in the version change itself.
+ * Bring every node already in the store up to the current shape, in the version change itself.
  *
- * They all get the same moment: the upgrade. Version 1 recorded nothing about when a node was
- * written, so there is no truer date to give them. A graph built over months reads as one
- * day. The date control on the node list says so.
+ * From version 1, each node gets a `created`. They all get the same moment: the upgrade.
+ * Version 1 recorded nothing about when a node was written. So there is no truer date to
+ * give them. A graph built over months reads as one day. The date control on the node list
+ * says so.
+ *
+ * From version 1 or 2, a root's `islandSize` moves to `componentSize`. One walk does both
+ * changes, so two cursors never write the same record. From version 2, only roots carry
+ * `islandSize`. The walk writes those nodes and skips the rest.
  *
  * The walk stays inside the version change transaction. Every await here is on a store
  * request, so the transaction cannot commit halfway through. Nothing awaits this function:
  * the open does not resolve until its transaction finishes, and that waits for these
  * requests. See the rule at the top of this file.
  */
-async function stampCreated(
+async function upgradeNodes(
   nodes: IDBPObjectStore<GraphDB, ArrayLike<StoreNames<GraphDB>>, "nodes", "versionchange">,
+  from: number,
 ): Promise<void> {
-  const stamp = Date.now()
+  const now = Date.now()
   let cursor = await nodes.openCursor()
   while (cursor) {
-    await cursor.update({ ...cursor.value, created: stamp })
+    const { islandSize, ...node } = cursor.value as StoredNode & { islandSize?: number }
+    if (from < 2) node.created = now
+    if (islandSize !== undefined) node.componentSize = islandSize
+    if (from < 2 || islandSize !== undefined) await cursor.update(node)
     cursor = await cursor.continue()
   }
 }
@@ -193,15 +205,20 @@ async function connect(): Promise<IDBPDatabase<GraphDB>> {
     upgrade(db, from, _to, tx) {
       if (from < 1) {
         const nodes = db.createObjectStore("nodes", { keyPath: "labelKey" })
-        nodes.createIndex("byIsland", ["islandSize", "labelKey"])
+        nodes.createIndex("byComponent", ["componentSize", "labelKey"])
         nodes.createIndex("byParent", "parent")
         const edges = db.createObjectStore("edges", { keyPath: ["a", "b"] })
         edges.createIndex("byEnd", "ends", { multiEntry: true })
       }
-      // A failed request aborts the version change, and `opening` below rejects with it.
-      // The catch keeps that one failure from also arriving as an unhandled rejection.
-      if (from >= 1 && from < 2) {
-        void stampCreated(tx.objectStore("nodes")).catch(() => undefined)
+      if (from >= 1 && from < 3) {
+        // The index names a field that version 3 no longer writes. The schema type lists
+        // only the current index, so the old name needs a cast.
+        const nodes = tx.objectStore("nodes")
+        nodes.deleteIndex("byIsland" as never)
+        nodes.createIndex("byComponent", ["componentSize", "labelKey"])
+        // A failed request aborts the version change, and `opening` below rejects with it.
+        // The catch keeps that one failure from also arriving as an unhandled rejection.
+        void upgradeNodes(nodes, from).catch(() => undefined)
       }
     },
     blocked() {

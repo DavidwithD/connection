@@ -18,8 +18,8 @@ neither gate can tell afterwards that it did.
 every pull request.
 
 Two jobs. The first needs nothing installed and stays quick: typecheck, the two gates, and
-both builds, run twice — against the floor `engines` declares and against the version the
-work is done on. The second fetches a JRE and walks the README's getting-started through to
+both builds. It runs twice: on the floor `engines` declares, and on the version the work is
+done on. The second fetches a JRE and walks the README's getting-started through to
 its round trip.
 
 No step is a check of its own. Each one is an npm script a person can run, so a red run is
@@ -29,20 +29,20 @@ reproduced by the command printed beside it.
 - **The hook by itself.** Instant and free, and it was found uninstalled on the one machine
   anybody has checked.
 - **A pre-push hook underneath it.** Fires later, still local, still absent from a fresh
-  clone, still one flag from silence.
+  clone, and one flag still skips it.
 - **Pull requests only.** Cheaper, but main takes direct pushes here, which is precisely
   where the missing hook went unnoticed.
 
 ## Consequences
-Two files now describe how the gates run. A flag added to one is a divergence sitting in
-the other, and keeping the hook as the quick copy and CI as the authority is a discipline
-rather than a mechanism.
+Two files now describe how the gates run. A flag added to one makes the other differ. The
+hook is the quick copy and CI is the authority. People keep it that way, and no mechanism
+enforces it.
 
 The smoke job downloads a JAR and starts a database, so it costs minutes where the other
-costs seconds. Caching softens that; it cannot remove it.
+costs seconds. Caching reduces that cost and cannot remove it.
 
-A run cannot be waved through the way a hook can. That is the entire point, and also the
-bill: a stale sentence in the README will hold up a merge.
+Nobody can skip a run the way they can skip a hook. That is the entire point, and also the
+cost: a stale sentence in the README will hold up a merge.
 
 ## Assumptions and unknowns
 - **Assumed the runner carries python3.** lsof is installed when missing; python3 is taken

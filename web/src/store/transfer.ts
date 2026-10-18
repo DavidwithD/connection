@@ -6,15 +6,20 @@
  */
 import { open, unavailable, type StoredEdge, type StoredNode } from "./db.js"
 import { generate, type GenerateOptions } from "./generate.js"
-import { components, stampIslands, writeStamped } from "./islands.js"
+import { components, setComponents, writeComponents } from "./components.js"
 import { edgeEnds, edgeKey, naming, normaliseLabel } from "./keys.js"
 
 /**
- * The export format version this writes, and the only one it reads.
+ * The export format version this writes.
  *
- * Version 2 holds the store's own records. A file of any other version is refused whole.
+ * Version 3 holds the store's own records. Version 2 held the same records, with the size
+ * of a component in `islandSize`. `readExport` reads both. A file of any other version is
+ * refused whole.
  */
-export const EXPORT_VERSION = 2
+export const EXPORT_VERSION = 3
+
+/** The oldest export format `readExport` still reads. */
+const OLDEST_READ = 2
 
 export interface GraphExport {
   version: number
@@ -132,11 +137,11 @@ export function verify(nodes: StoredNode[], edges: StoredEdge[]): string[] {
       faults.push(`${node.labelKey} points at ${node.parent}, which is not here`)
     }
     const isRoot = node.parent === node.labelKey
-    if (isRoot && node.islandSize === undefined) {
-      faults.push(`${node.labelKey} is a root and counts no island`)
+    if (isRoot && node.componentSize === undefined) {
+      faults.push(`${node.labelKey} is a root and counts no component`)
     }
-    if (!isRoot && node.islandSize !== undefined) {
-      faults.push(`${node.labelKey} is not a root and still counts an island`)
+    if (!isRoot && node.componentSize !== undefined) {
+      faults.push(`${node.labelKey} is not a root and still counts a component`)
     }
   }
 
@@ -150,8 +155,8 @@ export function verify(nodes: StoredNode[], edges: StoredEdge[]): string[] {
   }
   const stated = new Map<string, number>()
   for (const node of held.values()) {
-    if (node.islandSize === undefined) continue
-    stated.set(parent.get(node.labelKey) ?? node.labelKey, node.islandSize)
+    if (node.componentSize === undefined) continue
+    stated.set(parent.get(node.labelKey) ?? node.labelKey, node.componentSize)
   }
   for (const [root, size] of sizes) {
     const said = stated.get(root)
@@ -169,7 +174,7 @@ export async function checkGraph(): Promise<{
   faults: string[]
   nodes: number
   edges: number
-  islands: number
+  components: number
 }> {
   const { nodes, edges } = await readWholeGraph()
   const { parent } = components(
@@ -180,22 +185,22 @@ export async function checkGraph(): Promise<{
     faults: verify(nodes, edges),
     nodes: nodes.length,
     edges: edges.length,
-    islands: new Set([...parent.values()]).size,
+    components: new Set([...parent.values()]).size,
   }
 }
 
 /**
  * Rebuild the component index from the nodes and edges.
  *
- * This is the repair for the one thing allowed to lag. `settle` runs inside the write and
+ * This is the repair for the one thing allowed to lag. `merge` runs inside the write and
  * cannot fail, but a split is a walk that runs afterwards and may be cut short. Something has
  * to be able to rebuild the whole index, and this is it.
  */
-export async function recountIslands(): Promise<{ islands: number; changed: number }> {
+export async function recountComponents(): Promise<{ components: number; changed: number }> {
   const { nodes, edges } = await readWholeGraph()
-  const { islands, changed } = stampIslands(nodes, pairsOf(edges))
-  await writeStamped(changed)
-  return { islands, changed: changed.length }
+  const { components, changed } = setComponents(nodes, pairsOf(edges))
+  await writeComponents(changed)
+  return { components, changed: changed.length }
 }
 
 /**
@@ -251,7 +256,7 @@ export function buildGraph(
       label: minted.label,
       degree: 0,
       parent: minted.labelKey,
-      islandSize: 1,
+      componentSize: 1,
       // Every node in one file shares a date, because they were written together. A file
       // holding its own dates goes through `readExport`, which keeps them.
       created: made,
@@ -279,7 +284,7 @@ export function buildGraph(
   const all = [...nodes.values()]
   // Compute the components from this graph, not from the source. A file may be a subset, and
   // a subset's components are not the ones it was exported from.
-  stampIslands(all, [...edges.values()].map((edge) => [edge.a, edge.b] as const))
+  setComponents(all, [...edges.values()].map((edge) => [edge.a, edge.b] as const))
   return { nodes: all, edges: [...edges.values()], faults }
 }
 
@@ -320,11 +325,11 @@ function shapeFaults(nodes: unknown[], edges: unknown[]): string[] {
       faults.push(`node ${String(at)} is missing labelKey, label, degree or parent`)
       continue
     }
-    const size = (node as Record<string, unknown>)["islandSize"]
+    const size = (node as Record<string, unknown>)["componentSize"]
     if (size !== undefined && typeof size !== "number") {
-      faults.push(`node ${String(at)} carries an islandSize that is not a number`)
+      faults.push(`node ${String(at)} carries a componentSize that is not a number`)
     }
-    // A file older than `created` has none, and `stampUndated` gives it one. A file that
+    // A file older than `created` has none, and `dateUndated` gives it one. A file that
     // carries something else there is a file nobody can date.
     const born = (node as Record<string, unknown>)["created"]
     if (born !== undefined && typeof born !== "number") {
@@ -356,8 +361,8 @@ function shapeFaults(nodes: unknown[], edges: unknown[]): string[] {
 /**
  * Read a file into records this store can hold.
  *
- * A version 2 file already holds these records, so this checks their shape and their
- * consistency. It does not convert anything.
+ * A version 3 file already holds these records, so this checks their shape and their
+ * consistency. A version 2 file differs in one field name, and `renameSizes` moves it.
  */
 export function readExport(payload: unknown): {
   nodes: StoredNode[]
@@ -370,14 +375,15 @@ export function readExport(payload: unknown): {
   const file = (typeof payload === "object" && payload !== null ? payload : {}) as
     Partial<GraphExport>
 
-  if (file.version === EXPORT_VERSION && Array.isArray(file.nodes)) {
-    const nodes = file.nodes
+  const version = typeof file.version === "number" ? file.version : 0
+  if (version >= OLDEST_READ && version <= EXPORT_VERSION && Array.isArray(file.nodes)) {
+    const nodes = version < 3 ? renameSizes(file.nodes) : file.nodes
     const edges = Array.isArray(file.edges) ? file.edges : []
     // Stop here if the records are the wrong shape. `verify` would read fields that are not
     // there, and "is this graph consistent" has no answer for something that is not a graph.
     const malformed = shapeFaults(nodes, edges)
     if (malformed.length) return { nodes: [], edges: [], faults: malformed }
-    const dated = stampUndated(nodes)
+    const dated = dateUndated(nodes)
     return { nodes: dated, edges, faults: verify(dated, edges) }
   }
 
@@ -385,10 +391,27 @@ export function readExport(payload: unknown): {
     nodes: [],
     edges: [],
     faults: [
-      `this reads version ${String(EXPORT_VERSION)}, and that file says ` +
+      `this reads versions ${String(OLDEST_READ)} to ${String(EXPORT_VERSION)}, and that ` +
+        `file says ` +
         `${String(file.version)}`,
     ],
   }
+}
+
+/**
+ * Move `islandSize` to `componentSize` on every node of a version 2 file.
+ *
+ * Only roots carry the field. Any other value in the record is kept as it is. `shapeFaults`
+ * checks the result.
+ */
+function renameSizes(nodes: unknown[]): StoredNode[] {
+  return nodes.map((node) => {
+    if (typeof node !== "object" || node === null || !("islandSize" in node)) {
+      return node as StoredNode
+    }
+    const { islandSize, ...rest } = node as { islandSize: unknown }
+    return { ...rest, componentSize: islandSize } as StoredNode
+  })
 }
 
 /**
@@ -398,7 +421,7 @@ export function readExport(payload: unknown): {
  * moment of the load. It is the only date such a file supports, and a node with no date at
  * all would sort nowhere.
  */
-function stampUndated(nodes: StoredNode[]): StoredNode[] {
+function dateUndated(nodes: StoredNode[]): StoredNode[] {
   const read = Date.now()
   return nodes.map((node) =>
     typeof node.created === "number" ? node : { ...node, created: read },

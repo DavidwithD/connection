@@ -23,15 +23,15 @@ What this enables, what it precludes, and the trade-offs we're accepting.
 
 ## Assumptions and unknowns
 What this rests on, and what we don't know yet. Write the uncertainty down as
-uncertainty — it is the one thing this record holds that nothing else in the repo can,
-and it is what tells a future reader whether a bad outcome was a bad call or bad luck.
+uncertainty. Only this record can hold it. It tells a future reader whether a bad outcome
+was a bad call or bad luck.
 
 - **<assumption>** — how we'd know if it's wrong.
 - **<unknown>** — what we chose not to find out, and why that was acceptable.
 
 ## Revisit when
 Conditions that reopen this. Each one must be observable — something that either has
-happened or hasn't. "As needed" is not a trigger.
+happened or hasn't. "As needed" fails that test.
 
 - <event, threshold, or date>
 

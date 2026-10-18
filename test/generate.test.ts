@@ -2,12 +2,12 @@
  * The demo graph generator, from web/src/store/generate.ts.
  *
  * Two properties carry the rest. The same seed gives the same graph, so a demo can be
- * reproduced. Every edge stays inside one island, so the island count the page shows is the
+ * reproduced. Every edge stays inside one component, so the component count the page shows is the
  * one that was asked for.
  */
 import { describe, expect, it } from "vitest"
 
-import { components } from "../web/src/store/islands.js"
+import { components } from "../web/src/store/components.js"
 import { generate, shares, type GenerateOptions } from "../web/src/store/generate.js"
 
 /** A graph small enough to check by hand, and large enough for a ring to mean something. */
@@ -17,7 +17,7 @@ const base: GenerateOptions = { n: 20, k: 4, p: 0, seed: 7 }
 const at = (id: string): number => Number.parseInt(id.slice(1), 10)
 
 describe("shares", () => {
-  it("gives the whole graph to one island", () => {
+  it("gives the whole graph to one component", () => {
     expect(shares(100, 1)).toEqual([100])
   })
 
@@ -27,12 +27,12 @@ describe("shares", () => {
     expect(split.reduce((sum, size) => sum + size, 0)).toBe(40)
   })
 
-  it("sums to n and leaves no island empty, at every size it is asked", () => {
+  it("sums to n and leaves no component empty, at every size it is asked", () => {
     for (const n of [4, 17, 100, 688, 5001]) {
-      for (const islands of [1, 2, 3, 7, 20]) {
-        if (islands > n) continue
-        const split = shares(n, islands)
-        expect(split).toHaveLength(islands)
+      for (const components of [1, 2, 3, 7, 20]) {
+        if (components > n) continue
+        const split = shares(n, components)
+        expect(split).toHaveLength(components)
         expect(split.reduce((sum, size) => sum + size, 0)).toBe(n)
         expect(Math.min(...split)).toBeGreaterThanOrEqual(1)
       }
@@ -45,17 +45,17 @@ describe("generate", () => {
     expect(() => generate({ ...base, n: 3 })).toThrow("n must be at least 4")
   })
 
-  it("refuses an island count it cannot honour", () => {
-    expect(() => generate({ ...base, islands: 0 })).toThrow("at least one")
-    expect(() => generate({ ...base, islands: 21 })).toThrow("must not exceed n")
+  it("refuses a component count it cannot honour", () => {
+    expect(() => generate({ ...base, components: 0 })).toThrow("at least one")
+    expect(() => generate({ ...base, components: 21 })).toThrow("must not exceed n")
   })
 
   it("refuses more hubs than nodes", () => {
     expect(() => generate({ ...base, hubs: 20 })).toThrow("hubs must be below n")
   })
 
-  it("refuses a mean degree the largest island cannot hold", () => {
-    expect(() => generate({ ...base, k: 40 })).toThrow("well below the largest island")
+  it("refuses a mean degree the largest component cannot hold", () => {
+    expect(() => generate({ ...base, k: 40 })).toThrow("well below the largest component")
   })
 
   it("gives the same graph for the same seed", () => {
@@ -98,20 +98,20 @@ describe("generate", () => {
     }
   })
 
-  it("keeps every edge inside one island", () => {
-    const islands = 3
+  it("keeps every edge inside one component", () => {
+    const components = 3
     const n = 120
-    const sizes = shares(n, islands)
+    const sizes = shares(n, components)
     const starts = sizes.map((_, i) => sizes.slice(0, i).reduce((sum, s) => sum + s, 0))
-    const islandOf = (id: string): number =>
+    const componentOf = (id: string): number =>
       starts.findLastIndex((start) => at(id) >= start)
 
-    const { edges } = generate({ n, k: 6, p: 0.4, seed: 9, islands, hubs: 4, hubK: 20 })
-    for (const [a, b] of edges) expect(islandOf(a)).toBe(islandOf(b))
+    const { edges } = generate({ n, k: 6, p: 0.4, seed: 9, components, hubs: 4, hubK: 20 })
+    for (const [a, b] of edges) expect(componentOf(a)).toBe(componentOf(b))
   })
 
-  it("gives each island its own component", () => {
-    const { nodes, edges } = generate({ n: 120, k: 6, p: 0, seed: 9, islands: 3 })
+  it("gives each component its own component", () => {
+    const { nodes, edges } = generate({ n: 120, k: 6, p: 0, seed: 9, components: 3 })
     const { sizes } = components(
       nodes.map((node) => node.id),
       edges,
@@ -146,9 +146,9 @@ describe("generate", () => {
     )
   })
 
-  it("gives an island of one node no edges", () => {
+  it("gives a component of one node no edges", () => {
     // Its only candidate neighbour is itself.
-    const { edges } = generate({ n: 8, k: 2, p: 0, seed: 2, islands: 3 })
+    const { edges } = generate({ n: 8, k: 2, p: 0, seed: 2, components: 3 })
     const sizes = shares(8, 3)
     expect(sizes.at(-1)).toBe(1)
     const last = sizes.slice(0, -1).reduce((sum, size) => sum + size, 0)

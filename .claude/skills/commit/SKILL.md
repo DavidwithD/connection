@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Review the working tree and write the commit. Use when the user asks to commit, stage, or draft a commit message, or says "commit this" / "/commit". Checks the diff for half-finished work, unverified tests, debug leftovers, secrets, approach drift, unrecorded decisions, and writing problems in comments and docs. Blocks on the serious ones, then writes the message in this repo's style. Also covers splitting one dirty tree into several commits, and amend/fixup.
+description: Review the working tree and write the commit. Use when the user asks to commit, stage, or draft a commit message, or says "commit this" / "/commit". Checks the diff for half-finished work, unverified tests, debug leftovers, secrets, departures from the repo's approach, unrecorded decisions, and writing problems in comments and docs. Blocks on the serious ones, then writes the message in this repo's style. Also covers splitting one dirty tree into several commits, and amend/fixup.
 ---
 
 # Commit gate
@@ -99,22 +99,22 @@ deletes work and you cannot say why. §6 confirms the message says it.
 **Half-finished** — `W001` `TODO`/`FIXME`/`XXX`/`HACK`/`WIP` added by this diff · `W002`
 a stub that returns nothing, `throw new Error('not implemented')`, an empty `catch {}` ·
 `W003` a code path written but never reachable, or a flag added with no reader · `W004`
-one side of a pair changed alone — `db.ts` without `DB_VERSION`, `package.json` without
-`package-lock.json`, a new script with no `npm` entry, a new element id in one page's HTML
-with no reader in the module that loads it.
+one side of a pair changed alone. Examples: `db.ts` without `DB_VERSION`, `package.json`
+without `package-lock.json`, a new script with no `npm` entry. A new element id in one page's
+HTML with no reader in the module that loads it also counts.
 
 **Leftovers** — `W005` `console.log`, `debugger`, stray `print()` · `W006` `.only(` or
 `.skip(` in a test, an assertion commented out · `W007` commented-out code kept "just in
 case". Delete it; git holds the old version · `W008` a hardcoded endpoint, port, path, or
 `/Users/...` where config belongs.
 
-**Approach** — `W009` drift from what this repo already decided: ESM, no server, no build
+**Approach** — `W009` a departure from what this repo already decided: ESM, no server, no build
 step but Vite, the graph in the browser · `W010` a new dependency where the platform or
 stdlib already does the job, or one added without a record · `W011` `any`, `@ts-ignore`,
 non-null `!` used to get past a real type problem · `W012` an error swallowed, so a failure
 surfaces as wrong data instead of a crash · `W013` logic duplicated from somewhere else in
-`web/src/` instead of shared · `W014` a schema change — a store, a key path, an index —
-with no `DB_VERSION` bump and no `upgrade` path for a graph already in someone's browser ·
+`web/src/` instead of shared · `W014` a schema change to a store, a key path or an index.
+It needs a `DB_VERSION` bump and an `upgrade` path for a graph already in someone's browser ·
 `W032` an `await` inside an IndexedDB transaction on anything other than a store request.
 The transaction commits early, and the rest of the write is dropped with no error
 (`web/src/store/db.ts`).
@@ -129,10 +129,10 @@ repo for the old name. Searching the definition site alone misses the callers.
 change picks between real alternatives, or sets a constraint future work must follow. Write
 the record inside this change. A record written afterwards omits the uncertainty
 (`docs/decisions/GATE.md`) · `W019` behaviour changed, and `README.md` now contradicts the
-code · `W020` a sentence landed in the wrong document — reasoning in `design/`, a component
-or table named in `requirements/`, a number copied instead of cited once, a fact true only
-this week written into a living doc (`docs/README.md`). The content is correct and the file
-is wrong. Moving it later costs more.
+code · `W020` a sentence landed in the wrong document. Examples: reasoning in `design/`, a
+component or table named in `requirements/`, a number copied instead of cited once. A fact
+true only this week written into a living doc also counts (`docs/README.md`). The content is
+correct and the file is wrong. Moving it later costs more.
 
 **Writing** — `W021` a fact placed one level below its topic: right file, wrong section.
 Also a rule placed inside a figure, tree, or example cell that exists to illustrate ·
@@ -145,11 +145,12 @@ pattern as Y") about a topic the reader is not currently following · `W025` one
 repeated across files, sections, or comments. Inside a function, that means a docstring and
 an inline comment carrying the same content. The docstring owns the contract; the comment
 owns why this implementation · `W026` a comment restating what the code says, or running
-multi-line where a pointer would do, or comparing the code against an alternative that is
-not in the repo for a reader to check · `W027` provenance outside its home — "confirmed by
-X on date Y", a threshold derived from one sample sitting in a general algorithm comment,
-first-person narrative in a doc ("my guess was wrong"). Keep the rationale. Move the log to
-a record · `W028` "not A but B", its disguises ("A isn't enough — you need B",
+multi-line where a pointer would do. A comment comparing the code against an alternative
+that is not in the repo for a reader to check also counts · `W027` provenance outside its
+home. Examples: "confirmed by X on date Y", or a threshold derived from one sample in a
+general algorithm comment. First-person narrative in a doc ("my guess was wrong") also
+counts. Keep the rationale. Move the log to a record · `W028` "not A but B", its disguises
+("A isn't enough — you need B",
 `Aではなく`/`Aではない` trailed by the positive), and the bare `X, not Y` / `X and not Y`.
 Grep for `ではなく`, `ではない`, `rather than`, `isn't`, `, not `, `— not `, ` and not `, then
 read the sentence and ask: **would a reader have assumed A?** If yes, it disambiguates. "The
@@ -158,15 +159,17 @@ would reach for. If no, A is a strawman, so write only B. Plain negation does no
 here: "whichever end is not the anchor" has no B · `W029` a struck-through list item
 (`~~#2~~ — resolved: …`), or a gap left by an earlier deletion. Delete resolved items,
 renumber from 1, keep the list contiguous · `W030` a paragraph or bullet breaking the
-section's established pattern — an inline formula where the section uses code blocks,
-outputs mixed into a list of inputs, an item wedged between two paragraphs that belong
-together · `W031` a claim about a schema, column, API shape, config value, or enum meaning
+section's established pattern. One example is an inline formula where the section uses code
+blocks. Others are outputs mixed into a list of inputs, or an item wedged between two
+paragraphs that belong together · `W031` a claim about a schema, column, API shape, config
+value, or enum meaning
 asserted with no primary source. Verify it, or mark it unverified. A guess written in the
 body will be read later as a fact · `W033` a sentence that breaks the rule in
-`docs/README.md` § *How it is written*. The four banned patterns are a gesture or page part as
-the actor, a sentence that states only what does not happen, a figurative noun where
-`docs/glossary.md` has a literal term, and an aphorism. It applies to `docs/**` including record
-titles, to comments under `web/src/`, `scripts/` and `test/`, and to §4's message. Run
+`docs/README.md` § *How it is written*. It bans four patterns. The first is a gesture or
+page part as the actor. The second is a sentence that states only what does not happen. The
+third is a figurative noun where `docs/glossary.md` has a literal term. The fourth is an
+aphorism. It applies to `docs/**` including record titles, to comments under `web/src/`,
+`scripts/` and `test/`, and to §4's message. Run
 `npm run prose -- <file>` on each changed file. Read each added sentence once and ask what its
 subject is and what that subject does. If the answer is a click, a box or a panel, name the
 code instead.

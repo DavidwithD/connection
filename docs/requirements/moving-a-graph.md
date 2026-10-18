@@ -11,35 +11,34 @@ about a whole graph as a thing you can hold, hand over, and keep.
 Two readers, and they want opposite things from the same capability.
 
 Whoever is typing a graph in. A demo's graph is invented, so anything worth showing anyone
-has to be entered — and entering it one dialogue per edge is not entering it.
+has to be entered. One dialogue per edge is too slow to enter a real graph.
 
-Whoever wants a graph to outlive the store it is in. Seeding replaces what is there, and a
-graph built by hand over an afternoon is lost to the next one unless it exists somewhere else
-first.
+Whoever wants a graph to outlive the store it is in. Seeding replaces what is there. A graph
+built by hand over an afternoon is lost to the next seed, unless a copy exists somewhere else first.
 
 ## What they cannot do without it
 
-Trust the graph they made. A store you can only add to one edge at a time, and only read
-through a map, holds a graph nobody can see whole, back up, review, or hand to anyone else. It
-is real work with no way to keep it.
+Trust the graph they made. Take a store you can only add to one edge at a time, and only read
+through a map. Nobody can see its graph whole, back it up, review it, or hand it to anyone
+else. It is real work with no way to keep it.
 
-And there is a sharper version: without a writer for the format, the property that would make
-the format trustworthy — *a graph written down is the graph you started with* — cannot be
-checked at all.
+One property would make the format trustworthy: *a graph written down is the graph you
+started with*. Without a writer for the format, nobody can check that property at all.
 
 ## The requests
 
 - *Given a graph in the store, write it down* in something a person can read and edit.
 - *Given that file, load it back* and get the graph I started with.
 - *Given a file I typed by hand, load it* — names, not ids, and no header to get right.
-- *Given a file with a mistake in it, tell me before you write anything* — what it would
+- *Given a file with a mistake in it, tell me before you write anything.* Show what it would
   create, and what it read each line to mean.
 - *Given the same file twice, leave one graph* — a second run adds nothing.
 - *Given a file too big for one request, say so before I wait for it*, and tell me what to run
   instead.
-- *Given a graph I want to keep exactly, give me a backup* — ids, counts and all, not just
-  the readable form.
-- *Given a name I cannot write down, refuse rather than write a file that lies.*
+- *Given a graph I want to keep exactly, give me a backup.* It holds ids, counts and all, not
+  just the readable form.
+- *Given a name I cannot write down, refuse it. Never write a file that reads back as a
+  different graph.*
 
 ## How anyone would tell it worked
 
@@ -50,19 +49,19 @@ checked at all.
   everything as already there rather than failing.
 - The preview names every node the file would create. Somebody reading it can spot a
   misspelling before it becomes a node.
-- What a line was read to mean is visible somewhere before the write — a line's reading is not
-  visible in the line.
+- The page shows what each line was read to mean before the write. The line itself does not
+  show its reading.
 - A file a person typed, with comments and blank lines in it, loads without complaint.
-- A load stopped partway leaves a graph, not wreckage; running it again finishes the job.
-- The readable file and the backup file are honestly different things, and the one that puts
-  everything back is the one that says it does.
+- A load stopped partway leaves a valid graph. Running it again finishes the job.
+- The readable file and the backup file are clearly different. The backup is the one that
+  says it restores everything, and it does.
 
 ## Not required
 
 Being authoritative: deleting a line does not part an edge, and nothing about this makes the
 store match a file. Merging two versions of a file. Any escape for the characters the format
-reserves. Streaming progress while a load runs. Restoring a backup from the page — that guard
-lives on the machine of whoever runs it.
+reserves. Streaming progress while a load runs. Restoring a backup from the page. That guard
+is on the machine of whoever runs it.
 
 ## Where the design is
 

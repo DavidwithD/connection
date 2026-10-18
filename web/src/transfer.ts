@@ -22,7 +22,7 @@ import {
   readCounts,
   readExport,
   readWholeGraph,
-  recountIslands,
+  recountComponents,
   replaceGraph,
   pairsOf,
 } from "./store/transfer.js"
@@ -50,9 +50,9 @@ const SEED = {
   // look like the only interesting one.
   hubs: Math.max(1, Math.round(SEED_N / 5)),
   hubK: 20,
-  // Ten islands. With one island the map has nothing the reader cannot walk to, and the
-  // island panel has nothing to show.
-  islands: 10,
+  // Ten components. With one component the map has nothing the reader cannot walk to, and the
+  // component panel has nothing to show.
+  components: 10,
 }
 
 const el = <T extends HTMLElement>(id: string): T => {
@@ -128,7 +128,7 @@ function download(name: string, body: string, type: string): void {
 }
 
 /** A timestamp for a filename, so a second backup does not overwrite the first. */
-const stamped = (): string => new Date().toISOString().replace(/[:.]/g, "-")
+const fileTimestamp = (): string => new Date().toISOString().replace(/[:.]/g, "-")
 
 async function downloadText(shape: Shape): Promise<void> {
   downloaded.textContent = ""
@@ -161,7 +161,7 @@ async function downloadJson(into: HTMLParagraphElement): Promise<void> {
     into.textContent = "There is no graph here to back up."
     return
   }
-  download(`graph-export-${stamped()}.json`, JSON.stringify(payload, null, 2), "application/json")
+  download(`graph-export-${fileTimestamp()}.json`, JSON.stringify(payload, null, 2), "application/json")
   into.textContent =
     `${String(payload.counts.nodes)} node(s) and ${String(payload.counts.edges)} edge(s). ` +
     "Keep it somewhere that is not this browser."
@@ -311,7 +311,7 @@ el<HTMLButtonElement>("check").addEventListener("click", () => {
         result.faults.length
           ? `${String(result.faults.length)} fault(s) across ${String(result.nodes)} node(s).`
           : `Clean: ${String(result.nodes)} node(s), ${String(result.edges)} edge(s), ` +
-              `${String(result.islands)} island(s).`,
+              `${String(result.components)} component(s).`,
         result.faults.length ? "error" : "idle",
       )
     })
@@ -319,16 +319,16 @@ el<HTMLButtonElement>("check").addEventListener("click", () => {
 })
 
 el<HTMLButtonElement>("recount").addEventListener("click", () => {
-  // The one whole-graph action with no confirmation. It only rewrites the island index,
+  // The one whole-graph action with no confirmation. It only rewrites the component index,
   // which is derived from the nodes and edges, so the worst it can do is rewrite it as is.
   listed([])
-  tell("Reckoning the components…", "busy")
-  void recountIslands()
-    .then(({ islands, changed }) => {
+  tell("Recounting the components…", "busy")
+  void recountComponents()
+    .then(({ components, changed }) => {
       tell(
         changed
-          ? `${String(islands)} island(s); ${String(changed)} record(s) were behind.`
-          : `${String(islands)} island(s), and nothing was out of date.`,
+          ? `${String(components)} component(s); ${String(changed)} record(s) were behind.`
+          : `${String(components)} component(s), and nothing was out of date.`,
         "idle",
       )
     })
@@ -486,8 +486,8 @@ applyButton.addEventListener("click", () => {
       named(null)
       say(
         `Added ${String(done.created)} node(s) and ${String(done.joined)} edge(s). ` +
-          "Anything new is its own island until something joins it — find it on the map " +
-          "under islands.",
+          "Anything new is its own component until something joins it — find it on the map " +
+          "under components.",
         "idle",
       )
     })

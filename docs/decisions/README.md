@@ -1,13 +1,13 @@
 # Decisions (ADRs)
 
-Architecture Decision Records — each captures *one* significant choice, the context,
-and the reasoning, so the "why" survives even after the code changes.
+Architecture Decision Records. Each one records *one* significant choice, its context and
+its reasoning. The "why" then stays on record after the code changes.
 
 | # | Decision | Status |
 |---|----------|--------|
 | [0002](0002-single-table-layout.md) | Single-table layout for an undefined domain | ♻️ Superseded |
 | [0003](0003-graph-exploration-demo-stack.md) | Rendering stack for the graph demo | 🔵 Proposed |
-| [0004](0004-the-centre-and-its-neighbourhood.md) | Showing the centre all of its neighbours | 🔵 Proposed |
+| [0004](0004-the-centre-and-its-neighbourhood.md) | Showing the selected node all of its neighbours | 🔵 Proposed |
 | [0005](0005-a-second-view-that-keeps-no-world.md) | A second view that keeps no world | ♻️ Superseded |
 | [0006](0006-only-the-centre-reads.md) | Read ahead of what is drawn | ♻️ Superseded |
 | [0007](0007-a-table-for-the-graph.md) | A table for the graph | ♻️ Superseded |
@@ -22,20 +22,20 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0016](0016-the-gates-run-in-ci.md) | The gates run in CI | 🔵 Proposed |
 | [0017](0017-the-second-view-goes.md) | The second view goes | 🔵 Proposed |
 | [0018](0018-the-graph-outlives-the-seed.md) | The graph outlives the seed | ♻️ Superseded |
-| [0019](0019-every-island-has-an-address.md) | Every island has an address | 🔵 Proposed |
-| [0020](0020-the-islands-list-is-an-index.md) | The islands list is an index | 🔵 Proposed |
+| [0019](0019-every-component-has-an-address.md) | Every component has an address | 🔵 Proposed |
+| [0020](0020-the-components-list-is-an-index.md) | The components list is an index | 🔵 Proposed |
 | [0021](0021-a-graph-in-a-text-file.md) | A graph in a text file | 🔵 Proposed |
 | [0022](0022-a-graph-written-back-out.md) | A graph written back out as text | 🔵 Proposed |
 | [0023](0023-the-graph-moves-through-the-page.md) | The graph moves through the page | 🔵 Proposed |
 | [0024](0024-taking-a-node-out-with-its-edges.md) | Taking a node out with its edges | 🔵 Proposed |
-| [0025](0025-when-a-ghost-stands.md) | When a ghost stands | 🔵 Proposed |
+| [0025](0025-when-an-off-screen-marker-stands.md) | When an off-screen marker stands | 🔵 Proposed |
 | [0026](0026-a-fourth-kind-of-document.md) | A fourth kind of document | 🔵 Proposed |
 | [0027](0027-a-ring-holds-what-it-holds.md) | A ring holds what it holds | 🔵 Proposed |
 | [0028](0028-where-a-chained-name-lands.md) | Where a chained name lands | 🔵 Proposed |
 | [0029](0029-a-click-that-joins.md) | A click that joins | ♻️ Superseded |
 | [0030](0030-the-graph-moves-into-the-browser.md) | The graph moves into the browser | 🔵 Proposed |
 | [0031](0031-parting-an-edge-from-the-map.md) | Parting an edge from the map | 🔵 Proposed |
-| [0032](0032-the-centre-is-named.md) | The centre is named | 🔵 Proposed |
+| [0032](0032-the-centre-is-named.md) | A person selects the node | 🔵 Proposed |
 | [0033](0033-a-click-takes-no-camera.md) | A click takes no camera | 🔵 Proposed |
 | [0034](0034-what-reading-cannot-check.md) | What reading cannot check | 🔵 Proposed |
 | [0035](0035-a-rule-for-new-sentences.md) | A rule for new sentences | 🔵 Proposed |
@@ -44,7 +44,7 @@ and the reasoning, so the "why" survives even after the code changes.
 | [0038](0038-a-drag-that-joins-two-nodes.md) | A drag that joins two nodes | 🔵 Proposed |
 | [0039](0039-any-nodes-name-on-the-clipboard.md) | Any node's name on the clipboard | 🔵 Proposed |
 | [0040](0040-a-node-under-a-new-name.md) | A node under a new name | 🔵 Proposed |
-| [0041](0041-the-chrome-comes-off-the-map.md) | The chrome comes off the map | 🔵 Proposed |
+| [0041](0041-the-controls-come-off-the-map.md) | The controls come off the map | 🔵 Proposed |
 | [0042](0042-the-map-draws-on-a-sphere.md) | The map draws on a sphere | 🔵 Proposed |
 | [0043](0043-off-screen-becomes-an-angle.md) | Off screen becomes an angle | 🔵 Proposed |
 | [0044](0044-the-node-record-carries-a-date.md) | The node record carries a date | 🔵 Proposed |
@@ -60,23 +60,22 @@ and the reasoning, so the "why" survives even after the code changes.
 
 ## How to add one
 
-1. **Check that there is one to record.** A fork, an option that lost, and somebody who
-   pays for the choice. Name that somebody before anything else; if the only one you can
-   name is a reader who might turn up, stop — you have a note, and a note goes in the
-   document it explains. The tests no script runs are at the foot of [GATE.md](GATE.md),
-   and they are worth answering before a number is spent rather than after a shape is
-   filled in.
-2. Take the next unused number (zero-padded to 4 digits). Numbers are spent once and
-   never reused, so records start at 0002 — 0001 was withdrawn before it was decided.
-3. Copy [template.md](template.md) to `NNNN-<kebab-case-title>.md` — that file is the
-   one copy of the shape, so it does not get restated here.
-4. Add a row to the table above **in the same change** — the index is the map.
-5. Link the record from the code or spec that carries the constraint. A record nothing
-   points at is unreachable at the moment it was needed.
+1. **Check that there is one to record.** A decision has a fork, an option that lost, and
+   somebody who pays for the choice. Name that somebody first. If the only one you can name
+   is a reader who might turn up, stop. You have a note, and a note goes in the document it
+   explains. The tests no script runs are at the foot of [GATE.md](GATE.md). Answer them
+   before you take a number, and before you fill in the shape.
+2. Take the next unused number (zero-padded to 4 digits). Each number is used once and
+   never reused. Records start at 0002, because 0001 was withdrawn before it was decided.
+3. Copy [template.md](template.md) to `NNNN-<kebab-case-title>.md`. That file is the one
+   copy of the shape, so this page does not repeat it.
+4. Add a row to the table above **in the same change**. The index lists every record.
+5. Link the record from the code or spec that carries the constraint. Nobody can find a
+   record that nothing links to, at the moment they need it.
 6. Never renumber or delete a *decided* ADR. A reversal gets a *new* ADR, and the old
-   one flips to ♻️ Superseded with a link forward. A record whose Decision was never
-   made is a note, not a decision, and may be withdrawn — its number stays spent.
+   one changes to ♻️ Superseded with a link forward. A record whose Decision was never
+   made is a note. It may be withdrawn, and its number stays used.
 
-Run `npm run adr` before it lands — or `npm run hooks:install` once, and the pre-commit
+Run `npm run adr` before you commit. Or run `npm run hooks:install` once, and the pre-commit
 hook runs it for you. [GATE.md](GATE.md) documents the required shape, the budgets, and
 the checks a reader still has to make themselves.

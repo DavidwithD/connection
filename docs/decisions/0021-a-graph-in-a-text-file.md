@@ -10,9 +10,8 @@
 name, an edge between two names. Any graph is then a command per edge, or a dialogue per
 edge in the page.
 
-[0018](0018-the-graph-outlives-the-seed.md) already moves a whole graph, in a file that is a
-table dump — ids, degrees, index stamps, both halves of every edge — read back by dropping
-the table. Nobody types that.
+[0018](0018-the-graph-outlives-the-seed.md) moves a whole graph as a table dump: ids, degrees,
+index stamps, both halves of every edge, read back by dropping the table. Nobody types that.
 
 So there is no way to write a graph down.
 
@@ -23,7 +22,7 @@ that already exist (`load.ts`).
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
 | A line | Its first name joins each of the rest | A hub is one line. |
-| A lone name | That node, no edges | The island [0019](0019-every-island-has-an-address.md) is for. |
+| A lone name | That node, no edges | The one-node component [0019](0019-every-component-has-an-address.md) is for. |
 | Identity | The label, no ids | A node is its name — [0012](0012-the-name-is-the-node.md). |
 | Applying it | `createNode` and `addEdge`, unchanged | Per-write invariants need no file-wide ones. |
 | A second run | Both "already there" refusals counted | What makes the file editable. |
@@ -36,7 +35,7 @@ that already exist (`load.ts`).
 - **A file the graph is made to match.** A line removed would part an edge, and a misspelling
   would delete rather than add. Refused until somebody asks for it.
 - **Ids in the file.** A third thing minting them, which
-  [0018](0018-the-graph-outlives-the-seed.md) made load-bearing — or a lookup, which is the
+  [0018](0018-the-graph-outlives-the-seed.md) made the code depend on — or a lookup, which is the
   label.
 - **One batched write.** `bulk.ts` writes whole items, after dropping the table — the one
   thing a loader must not do.

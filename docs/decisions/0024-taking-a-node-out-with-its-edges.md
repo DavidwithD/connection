@@ -7,12 +7,12 @@
 ## Context
 [0011](0011-taking-a-write-back.md) refuses to delete a node holding any edge, and names the
 opposite as what would reopen it. Every node the map draws was reached by walking to a
-neighbour ([main.ts](../../web/src/main.ts)), so each holds one — and a gesture for taking one
-off the map has nothing to call.
+neighbour ([main.ts](../../web/src/main.ts)). So each holds an edge, and a gesture for taking
+one off the map has nothing to call.
 
 ## Decision
-A node leaves edge by edge: each edge through the write that already parts one, the node
-through the delete that already refuses one holding any.
+A node is removed edge by edge, through the write that already parts one. Then the delete
+that refuses a node holding any edge removes the node.
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
@@ -20,36 +20,36 @@ through the delete that already refuses one holding any.
 | Atomicity | None — every step leaves a graph | A transaction over a hub outgrows what one holds. |
 | Recovery | Asked once, not taken back | Edges cannot return with the node they hung on. |
 | The bare delete | Unchanged | An undo reads its refusal as the node staying. |
-| Reach | Whatever the map has at its centre | That degree is already on the page. |
+| Reach | Whatever node the map has selected | That degree is already on the page. |
 
 ## Alternatives considered
-- **One transaction, chunked.** Fewer round trips and one repair, but it wants a reason table
-  of its own — and `resettle` (`islands.ts`) answers for one edge parting a component, not a
-  node scattering it.
+- **One transaction, chunked.** Fewer round trips and one repair, but it needs its own reason
+  table. And `resettle` (`components.ts`) handles one edge splitting a component, not a node
+  splitting it.
 - **Parting every edge by hand first.** Already in the panel. A chore on any real node, and
   nothing says which part makes the delete legal.
 - **Taking the edges and leaving the node.** A name with nothing behind it, which a refused
   join already strands by accident ([join.ts](../../web/src/join.ts)).
 - **An undo rather than a question.** What [0011](0011-taking-a-write-back.md) prefers
-  elsewhere. Putting one back wants a create holding the old id and a join per edge, any of
-  which can fail — the node returning with part of its graph.
+  elsewhere. Putting one back needs a create holding the old id and a join per edge. Any can
+  fail, and the node then returns with part of its graph.
 
 ## Consequences
 A hub costs a round trip and a component walk per edge, since every part asks whether it was a
 bridge (`edge.ts`). The wait grows with the degree.
 
-A run that stops partway leaves the node holding fewer edges — a graph, and asking again
-finishes the job, index included, since each part repairs it in passing.
+A run that stops partway leaves the node holding fewer edges, still a valid graph. Asking
+again finishes the job, index included, since each part repairs the index.
 
-The map gains a write the panel does not own, so the line writes queue in leaves the panel
+The map gains a write the panel does not own, so the write queue moves out of the panel
 ([join.ts](../../web/src/join.ts)) first.
 
-`rootId` can now name a node that has gone (`init.ts`), and the page reads it before drawing
-anything — so boot takes that absence for an answer.
+`rootId` can now name a node that has gone (`init.ts`). The page reads it before drawing
+anything. So boot treats a missing node as a valid answer.
 
 ## Assumptions and unknowns
-- **Assumed a hub is removed seldom enough for the wait to pass.** Unmeasured; the first
-  settles it.
+- **Assumed a hub is removed seldom enough for the wait to pass.** Unmeasured. The first
+  such removal will answer it.
 - **Assumed a question carrying a count is read, not clicked past.** Nothing recovers it when
   it is not.
 - **Unknown what the index costs over a node coming apart.** Each walk was sized for a single

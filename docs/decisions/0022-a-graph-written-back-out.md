@@ -7,11 +7,11 @@
 ## Context
 [0021](0021-a-graph-in-a-text-file.md) defined a file anybody can type and nothing can
 produce. A graph built in the browser leaves only as
-[0018](0018-the-graph-outlives-the-seed.md)'s table dump — ids, degrees, both halves of
-every edge — which nobody reads and nothing but `graph:restore` accepts.
+[0018](0018-the-graph-outlives-the-seed.md)'s table dump. The dump holds ids, degrees and
+both halves of every edge. Nobody reads it, and only `graph:restore` accepts it.
 
-So the format has a reader and no writer, and the property that would make it trustworthy —
-that a graph written down is the graph you started with — cannot be checked at all.
+So the format has a reader and no writer. One property would make it trustworthy: a graph
+written down is the graph you started with. Nothing can check that property.
 
 ## Decision
 `graph:export` learns `--text` and `--names`. The format's two directions move into
@@ -20,18 +20,18 @@ that a graph written down is the graph you started with — cannot be checked at
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
 | Which end writes a pair | The busier node; ties by name | A hub is one line, as typed. |
-| A node with no edges | A line of its own | The [0019](0019-every-island-has-an-address.md) island of one. |
-| Order | Island, then name, never id | Ids change across a reload; labels do not. |
+| A node with no edges | A line of its own | The [0019](0019-every-component-has-an-address.md) component of one. |
+| Order | Component, then name, never id | Ids change across a reload; labels do not. |
 | A date in the file | None | It is committed and diffed, not archived. |
 | What is exported | The whole graph, always | 0018's split is about backups, not graphs. |
 | A name holding `|` or `#` | Refuse the export | No escape exists to write one with. |
 
-The ordering rules exist so that export, load into an empty table and export again give back
-the same bytes — a round trip `diff` can check, rather than a reader.
+The ordering rules make export, load into an empty table and export again give back the
+same bytes. `diff` can check that round trip, rather than a reader.
 
 ## Alternatives considered
-- **A second command.** A second answer to "which items are the graph", drifting from
-  `select` in `export.ts`.
+- **A second command.** A second answer to "which items are the graph", which could stop
+  matching `select` in `export.ts`.
 - **Both ends of every edge, as stored.** Twice the file, and `a | b` beside `b | a` reads
   as two facts.
 - **`--all` meaning something here.** It cannot: a text file is the whole graph. Refused
@@ -39,12 +39,12 @@ the same bytes — a round trip `diff` can check, rather than a reader.
 - **Escaping `|` in a name.** Changes what every file already written means.
 
 ## Consequences
-The format's rules now have one home, so a writer cannot quietly stop agreeing with its
-reader — the failure that produces files loading as a *different* graph rather than as an
+The format's rules now live in one file. So a writer cannot quietly stop agreeing with its
+reader. That failure produces files that load as a *different* graph rather than as an
 error. `load.ts` keeps only what touches a table.
 
-A text export is lossy on purpose: no ids, no degrees, no `rootId`, no `graph#index`. It is
-not a backup and the JSON still is.
+A text export is lossy on purpose: no ids, no degrees, no `rootId`, no `graph#index`. The JSON
+export is still the backup.
 
 ## Assumptions and unknowns
 - **The round trip has been run on one graph.** A seeded 60-node one, out and back with every
@@ -59,4 +59,4 @@ not a backup and the JSON still is.
 ## Revisit when
 - A name a person wanted is refused by the writer rather than by the graph.
 - Two exports of one unchanged graph differ.
-- The blank line between islands stops being what a reader finds their place by.
+- The blank line between components stops being what a reader finds their place by.

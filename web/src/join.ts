@@ -15,7 +15,7 @@ import {
   type NodeMeta,
 } from "./store/index.js"
 import { Combobox, norm, type ComboboxHooks, type Picked } from "./combobox.js"
-import type { Receipt, Writes } from "./writes.js"
+import type { LogEntry, Writes } from "./writes.js"
 
 /**
  * A name held by one of the two inputs.
@@ -27,7 +27,7 @@ import type { Receipt, Writes } from "./writes.js"
  * `node` is filled in by the first write that needs it. Several writes aimed at a name that
  * does not exist yet then create that node once.
  */
-interface Anchor {
+interface EndName {
   readonly label: string
   node: NodeMeta | null
 }
@@ -80,7 +80,7 @@ export interface PanelHooks {
 
 /** One of the two inputs. */
 class Side {
-  anchor: Anchor | null = null
+  start: EndName | null = null
   readonly box: Combobox
 
   constructor(
@@ -151,7 +151,7 @@ export class JoinPanel {
   private collapse(): void {
     for (const side of [this.near, this.far]) {
       side.box.clear()
-      side.anchor = null
+      side.start = null
     }
     this.paint()
   }
@@ -164,17 +164,17 @@ export class JoinPanel {
   private pick(side: Side, picked: Picked, chain: boolean): void {
     const label = picked.kind === "node" ? picked.node.label : picked.label
     const other = this.other(side)
-    const anchor = other.anchor
+    const start = other.start
 
-    if (anchor && this.same(anchor, picked)) {
+    if (start && this.same(start, picked)) {
       this.hooks.onStatus("⚠ a node cannot be joined to itself", "error")
       return
     }
 
-    const named: Anchor = { label, node: picked.kind === "node" ? picked.node : null }
+    const named: EndName = { label, node: picked.kind === "node" ? picked.node : null }
 
-    if (!anchor) {
-      side.anchor = named
+    if (!start) {
+      side.start = named
       // Set here rather than in `paint`, which does not touch an input being typed in.
       side.ui.input.value = label
       this.paint()
@@ -187,35 +187,35 @@ export class JoinPanel {
     // Empty this input now, not when the write lands. The next name is already being typed
     // into it.
     side.box.clear()
-    side.anchor = null
+    side.start = null
 
     // ⌘ moves the anchor to the other input, the one not being typed in, so the caret stays
     // where it is. The two inputs hold one anchor, so the previous one is released.
     //
     // This stores the same object the queued write holds, not a copy. A name that write has
     // yet to create then becomes a node in both places at once. The write keeps the pair it
-    // was made with either way, because it holds `anchor`, which is no longer in an input.
+    // was made with either way, because it holds `start`, which is no longer in an input.
     if (chain) {
-      other.anchor = named
+      other.start = named
       // The camera follows the anchor, and this input is the anchor now. As above, a name
       // with no node behind it has nowhere to go.
       if (named.node) this.hooks.onArm(named.node)
     }
     this.paint()
 
-    const pair: [Anchor, Anchor] = side === this.near ? [named, anchor] : [anchor, named]
-    const receipt = this.receipt(pair, picked.kind === "create")
-    this.writes.run(receipt, () => this.write(anchor, named, receipt))
+    const pair: [EndName, EndName] = side === this.near ? [named, start] : [start, named]
+    const entry = this.entry(pair, picked.kind === "create")
+    this.writes.run(entry, () => this.write(start, named, entry))
   }
 
   /** True if a pick names what the other input already holds. */
-  private same(anchor: Anchor, picked: Picked): boolean {
+  private same(start: EndName, picked: Picked): boolean {
     if (picked.kind === "node") {
-      return anchor.node ? anchor.node.id === picked.node.id : false
+      return start.node ? start.node.id === picked.node.id : false
     }
     // Only reached between two names that do not exist yet. A create row is offered only
     // when no node has that name, so it cannot match a node that does exist.
-    return !anchor.node && norm(anchor.label) === norm(picked.label)
+    return !start.node && norm(start.label) === norm(picked.label)
   }
 
   /**
@@ -224,35 +224,35 @@ export class JoinPanel {
    * The result is stored on the anchor, so several writes aimed at a name that does not
    * exist yet create it once and join to it after that.
    */
-  private async realise(anchor: Anchor): Promise<NodeMeta> {
-    if (anchor.node) return anchor.node
-    const made = await createNode(anchor.label)
-    anchor.node = made
+  private async realise(start: EndName): Promise<NodeMeta> {
+    if (start.node) return start.node
+    const made = await createNode(start.label)
+    start.node = made
     this.hooks.onNode(made)
     // It is a node now, not a pending name. Repaint so the input stops marking it as new.
     this.paint()
     return made
   }
 
-  private async write(anchor: Anchor, fired: Anchor, receipt: Receipt): Promise<void> {
+  private async write(start: EndName, fired: EndName, entry: LogEntry): Promise<void> {
     try {
       // Create the anchor first, and only once. It is not part of what an undo reverses:
       // it is what the reader is working from, and deleting it would empty the input that
       // still names it.
-      const a = await this.realise(anchor)
+      const a = await this.realise(start)
       const fresh = !fired.node
       const b = await this.realise(fired)
 
       await joinNodes(a.id, b.id)
       this.hooks.onEdge(a, b)
-      receipt.settle("ok", `joined ${a.label} and ${b.label}`)
-      this.offerUndo(receipt, { a, b, created: fresh ? b : null })
+      entry.finish("ok", `joined ${a.label} and ${b.label}`)
+      this.offerUndo(entry, { a, b, created: fresh ? b : null })
       this.hooks.onStatus(`joined ${a.label} and ${b.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       // A refusal is the graph saying no. Anything else is the write failing. Both stop this
       // pair. Neither stops the next one, because `Writes.run` catches.
-      receipt.settle("warn", reason)
+      entry.finish("warn", reason)
       this.hooks.onStatus(`⚠ ${reason}`, "error")
     }
   }
@@ -265,7 +265,7 @@ export class JoinPanel {
    * If something else has been joined to that node since, the delete is refused and the node
    * stays. The edge is still removed, which is what was asked for.
    */
-  private async revert(receipt: Receipt, done: Done): Promise<void> {
+  private async revert(entry: LogEntry, done: Done): Promise<void> {
     try {
       await unjoinNodes(done.a.id, done.b.id)
 
@@ -284,11 +284,11 @@ export class JoinPanel {
       // `reuse` blocks the same dead name for the same reason.
       if (removed) this.forget(removed)
       const fate = removed ? `${done.b.label} removed` : `${done.b.label} left in place`
-      receipt.settle("undone", fate)
+      entry.finish("undone", fate)
       this.hooks.onStatus(`undid ${done.a.label} and ${done.b.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      receipt.settle("warn", reason)
+      entry.finish("warn", reason)
       this.hooks.onStatus(`⚠ ${reason}`, "error")
     }
   }
@@ -301,8 +301,8 @@ export class JoinPanel {
    */
   forget(node: NodeMeta): void {
     for (const side of [this.near, this.far]) {
-      if (side.anchor?.node?.id !== node.id) continue
-      side.anchor = null
+      if (side.start?.node?.id !== node.id) continue
+      side.start = null
       // Never clear an input being typed in, the same rule `paint` follows. The anchor is
       // what has to go. Half-typed text belongs to whoever is typing it.
       if (document.activeElement !== side.ui.input) side.box.clear()
@@ -312,76 +312,76 @@ export class JoinPanel {
 
   private paint(): void {
     for (const side of [this.near, this.far]) {
-      const anchor = side.anchor
+      const start = side.start
       // Never write over an input being typed in. A write landing mid-word would replace
       // half-typed text with whatever the input held before.
-      if (document.activeElement !== side.ui.input) side.ui.input.value = anchor?.label ?? ""
+      if (document.activeElement !== side.ui.input) side.ui.input.value = start?.label ?? ""
       // A name still to be created shows as chosen, and marked as not in the graph yet.
-      side.ui.input.dataset["state"] = anchor ? (anchor.node ? "set" : "new") : ""
+      side.ui.input.dataset["state"] = start ? (start.node ? "set" : "new") : ""
       side.ui.clear.hidden = !side.ui.input.value
     }
     // Expanded while either input holds a name, not only the near one. The input that
     // completed the pair is emptied, so testing the near input alone would collapse the
     // panel on every write and take the far input's anchor with it.
-    const grown = Boolean(this.near.anchor ?? this.far.anchor)
+    const grown = Boolean(this.near.start ?? this.far.start)
     this.ui.far.field.hidden = !grown
     this.ui.link.hidden = !grown
   }
 
   private clear(side: Side): void {
     side.box.clear()
-    side.anchor = null
+    side.start = null
     this.paint()
     side.ui.input.focus()
   }
 
-  private receipt(pair: [Anchor, Anchor], isNew: boolean): Receipt {
+  private entry(pair: [EndName, EndName], isNew: boolean): LogEntry {
     const chip = this.writes.open()
     if (isNew) chip.el.dataset["new"] = "true"
 
     const sep = document.createElement("i")
     sep.className = "sep"
     sep.textContent = "·"
-    // Both names, because a receipt outlives the pair that made it. The inputs are showing
+    // Both names, because a write log entry outlives the pair that made it. The inputs are showing
     // something else by the time it is read.
     chip.el.append(this.reuse(chip, pair[0]), sep, this.reuse(chip, pair[1]))
     return chip
   }
 
   /**
-   * A name in a receipt, as a way back to that node.
+   * A name in a write log entry, as a way back to that node.
    *
    * Clickable only while the write stands. An undone write can name a node the undo deleted:
    * ADR 0011 removes a created node along with its edge. A refused write can name a node
    * that was never created. Loading either into an input would point it at nothing.
    */
-  private reuse(chip: Receipt, anchor: Anchor): HTMLButtonElement {
+  private reuse(chip: LogEntry, start: EndName): HTMLButtonElement {
     const button = document.createElement("button")
     button.type = "button"
     button.className = "pick"
-    button.textContent = anchor.label
-    button.title = `start from ${anchor.label}`
+    button.textContent = start.label
+    button.title = `start from ${start.label}`
     button.addEventListener("click", () => {
-      if (!chip.landed || !anchor.node) return
+      if (!chip.written || !start.node) return
       // Always the near input, whichever name was clicked and whatever the far input holds.
       // A fixed rule is easier to predict than one that guesses. A new Anchor object, so a
       // queued write keeps the one it was made with.
-      this.near.anchor = { label: anchor.label, node: anchor.node }
-      this.near.ui.input.value = anchor.label
+      this.near.start = { label: start.label, node: start.node }
+      this.near.ui.input.value = start.label
       this.paint()
-      this.hooks.onArm(anchor.node)
+      this.hooks.onArm(start.node)
       // Focus the far input, because the next step is naming what this joins to.
       this.ui.far.input.focus()
     })
     return button
   }
 
-  private offerUndo(receipt: Receipt, done: Done): void {
+  private offerUndo(entry: LogEntry, done: Done): void {
     const title = done.created
       ? `part them again and delete ${done.b.label}`
       : "part them again"
-    receipt.offerUndo(title, () => {
-      this.writes.run(receipt, () => this.revert(receipt, done))
+    entry.offerUndo(title, () => {
+      this.writes.run(entry, () => this.revert(entry, done))
     })
   }
 }

@@ -39,37 +39,37 @@ export interface Neighbourhood {
  * Which node names it depends on the order the unions ran in. The name is stable only while
  * nothing merges or splits the component. See ADR 0020.
  */
-export interface IslandMeta extends NodeMeta {
+export interface ComponentMeta extends NodeMeta {
   size: number
 }
 
 /**
- * One page of islands, and where to continue from.
+ * One page of components, and where to continue from.
  *
  * A graph can have any number of components, so the list is paged. `cursor` is null only
  * when the last row is included. The cursor is opaque: it is the store's own index key, and
  * a caller that parses it will break when the index changes shape.
  */
-export interface IslandPage {
-  islands: IslandMeta[]
+export interface ComponentPage {
+  components: ComponentMeta[]
   cursor: string | null
 }
 
 /**
  * Everything the map page needs on its first frame.
  *
- * The map starts at `islands[0]`: the largest component, and the node that names it. That is
- * one field rather than three, because the opening node, the island holding it, and the node
- * the map will show are all the same id. An empty `islands` means a graph with no nodes,
+ * The map starts at `components[0]`: the largest component, and the node that names it. That is
+ * one field rather than three, because the opening node, the component holding it, and the node
+ * the map will show are all the same id. An empty `components` means a graph with no nodes,
  * which is the only case with nowhere to start.
  */
 export interface Opening {
   /** The first page of components, largest first. The map opens on the first one. */
-  islands: IslandMeta[]
-  /** Where to continue from, or null when `islands` holds all of them. */
-  islandCursor: string | null
+  components: ComponentMeta[]
+  /** Where to continue from, or null when `components` holds all of them. */
+  componentCursor: string | null
   /** How many components there are in total, which one page cannot say. */
-  islandCount: number
+  componentCount: number
 }
 
 /**

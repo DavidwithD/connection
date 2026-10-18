@@ -65,7 +65,7 @@ body.map { overflow: hidden; overscroll-behavior: none; }
 /* The arrow a shift-drag draws. Over #stage and under every .panel, which sits at 2, so it
    crosses the map without covering a control. It takes no pointer events, so the release that
    ends the drag reaches the node under it rather than the arrow. */
-#aim {
+#drag-arrow {
   position: fixed;
   inset: 0;
   /* Both, and not `inset` alone. An `svg` is a replaced element, so `width: auto` resolves to
@@ -78,13 +78,13 @@ body.map { overflow: hidden; overscroll-behavior: none; }
   display: none;
 }
 /* One class for the whole gesture: the arrow is drawn, and the cursor stops reading as a pan. */
-body.joining #aim { display: block; }
+body.joining #drag-arrow { display: block; }
 /* No pointer while the drag is in flight: the arrowhead is drawn at the cursor and is what the
    reader aims with. drag-join.ts draws that head from the first pixel of the press, and every
    way out of the gesture goes through its `disarm`, which is what gives the pointer back. */
 body.joining #stage { cursor: none; }
 /* The ink is one colour, and the gradient in index.html is what varies along the arrow. */
-#aim stop { stop-color: var(--accent); }
+#drag-arrow stop { stop-color: var(--accent); }
 
 /* One bordered-box style, used twice. `.panel` is fixed to the viewport on the map page.
    `.sheet` sits in the page flow on the transfer page. */
@@ -113,19 +113,19 @@ body.joining #stage { cursor: none; }
   white-space: nowrap;
 }
 
-/* The island drawer, at the left edge, and the tab that pulls it out.
+/* The component side panel, at the left edge, and the tab that pulls it out.
 
    Three panels used to share a column here. Two of them are in #guide now, and what is left
    is the list the map is navigated with.
 
-   The panel is as tall as its rows and no taller than the window. Ten islands make a short
+   The panel is as tall as its rows and no taller than the window. Ten components make a short
    box; three hundred fill the screen and the list scrolls inside it. It shifts itself off the
    edge by its own width plus the margin — a percentage of its own width, so the rule holds
-   whatever the longest island name makes it.
+   whatever the longest component name makes it.
 
-   `visibility` waits out the slide, so a shut drawer takes no focus and the slide still
+   `visibility` waits out the slide, so a shut side panel takes no focus and the slide still
    draws. */
-#islands {
+#components {
   /* Centred on the window, level with the tab that opens it. The centring is written as
      `translate` so the shut state's `transform` is free to carry the slide on its own. */
   top: 50%;
@@ -134,7 +134,7 @@ body.joining #stage { cursor: none; }
   /* Clear of the tab, not over it. Both are painted at the same level, and the panel comes
      second, so any overlap would cover the handle the reader just used. */
   left: 40px;
-  /* The width comes from the longest row. The max caps the island names, which come from the
+  /* The width comes from the longest row. The max caps the component names, which come from the
      data and can be any length. */
   width: max-content;
   min-width: 232px;
@@ -143,7 +143,7 @@ body.joining #stage { cursor: none; }
   flex-direction: column;
   transition: transform 160ms ease, visibility 0s;
 }
-body:has(#rail-tab[aria-expanded="false"]) #islands {
+body:has(#side-panel-tab[aria-expanded="false"]) #components {
   transform: translateX(calc(-100% - 40px));
   visibility: hidden;
   transition-delay: 0s, 160ms;
@@ -151,7 +151,7 @@ body:has(#rail-tab[aria-expanded="false"]) #islands {
 
 /* The tab, on the edge itself. Vertically centred, so it never lands in a corner another panel
    wants. The word is set on its side; the tab is too narrow to read it any other way. */
-#rail-tab {
+#side-panel-tab {
   position: fixed;
   z-index: 2;
   left: 0;
@@ -168,11 +168,11 @@ body:has(#rail-tab[aria-expanded="false"]) #islands {
   backdrop-filter: blur(8px);
   color: var(--ink-2);
 }
-#rail-tab:hover { color: var(--ink); }
-#rail-tab span:last-child { writing-mode: vertical-rl; letter-spacing: 0.04em; }
-/* islands.ts hides the panel when the store holds no islands. The tab goes with it: there is
+#side-panel-tab:hover { color: var(--ink); }
+#side-panel-tab span:last-child { writing-mode: vertical-rl; letter-spacing: 0.04em; }
+/* components.ts hides the panel when the store holds no components. The tab goes with it: there is
    nothing to pull out, and #empty already says the store is empty. */
-body:has(#islands[hidden]) #rail-tab { display: none; }
+body:has(#components[hidden]) #side-panel-tab { display: none; }
 
 /* A CSS triangle, not a text glyph. It rotates between the open and shut states instead of
    being swapped for a different character. */
@@ -185,8 +185,8 @@ body:has(#islands[hidden]) #rail-tab { display: none; }
   border-bottom: 4px solid transparent;
   transition: transform 120ms ease;
 }
-/* Pointing at the map while the drawer is shut, and back at the edge while it is out. */
-#rail-tab[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+/* Pointing at the map while the side panel is shut, and back at the edge while it is out. */
+#side-panel-tab[aria-expanded="true"] .chevron { transform: rotate(180deg); }
 
 #guide .sub { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; }
 
@@ -212,7 +212,7 @@ body:has(#islands[hidden]) #rail-tab { display: none; }
 body:not(:has(#walk-by-pan:checked)) .when-walking,
 body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 
-/* The status line, as a pill beside #guide-toggle. Drawn only when it has something to say:
+/* The status line, as a label box beside #guide-toggle. Drawn only when it has something to say:
    idle is the state it is in for all but the first second and whatever a write costs. The text
    is written in every state, because the drive scripts wait on it. */
 #status {
@@ -231,7 +231,7 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 #status[data-tone="busy"] { color: var(--accent); }
 #status[data-tone="error"] { color: var(--accent); font-weight: 500; }
 
-#islands h2 {
+#components h2 {
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -242,36 +242,36 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 }
 /* The count sits at the right of the heading, matching the ends' list. Muted, because it
    describes the list and is empty most of the time. */
-#islands-count { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+#components-count { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 
 /* The last row of the list. It loads the next page when it scrolls into view. Styled as a
    row, not a spinner, so nothing shifts when the new rows replace it. Clicking it retries
    after a failed read. */
-.island-more {
+.component-more {
   padding: 3px 6px;
   line-height: 16px;
   color: var(--ink-muted);
   cursor: pointer;
 }
-.island-more:hover { color: var(--ink-2); }
-/* The list fills the drawer and scrolls without a bar. The drawer's own cap replaced the pixel
-   cap this had, and with it the row height that cap had to be a multiple of. */
-#islands-list {
+.component-more:hover { color: var(--ink-2); }
+/* The list fills the side panel and scrolls without a bar. The side panel's own cap replaced
+   the pixel cap this had, and with it the row height that cap had to be a multiple of. */
+#components-list {
   list-style: none;
   margin: 0;
   padding: 0;
   flex: 1 1 auto;
-  /* `min-height: 0` lets the drawer shrink the list. Without it a flex item cannot go below
+  /* `min-height: 0` lets the side panel shrink the list. Without it a flex item cannot go below
      its content height, and the content here is every row loaded so far. */
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
 }
-#islands-list::-webkit-scrollbar { display: none; }
+#components-list::-webkit-scrollbar { display: none; }
 
-/* What the hidden bar used to say. Drawn only while rows sit past the fold, which islands.ts
+/* What the hidden bar used to say. Drawn only while rows sit past the fold, which components.ts
    tests on a scroll, a resize and an append — so a list at its end does not fade its last row. */
-#islands[data-more="true"]::after {
+#components[data-more="true"]::after {
   content: "";
   position: absolute;
   inset: auto 1px 1px;
@@ -283,7 +283,7 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 /* The same row style as the ends' list, without the degree number. Both lists are lists of
    things to pick, so they look the same. The line height is stated so that every row is the
    same height whatever the font stack does with a name. */
-.island {
+.component {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -294,21 +294,21 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
   line-height: 16px;
   text-align: left;
 }
-.island:hover,
-.island:focus-visible { background: var(--plane); }
-.island-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.component:hover,
+.component:focus-visible { background: var(--plane); }
+.component-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* An island with no position yet. Clicking this row places the whole island on the map for
+/* A component with no position yet. Clicking this row places the whole component on the map for
    good: World never moves a node once it is placed. Clicking any other row only moves the
    camera. The muted colour marks that difference. */
-.island.off-map { color: var(--ink-muted); }
+.component.off-map { color: var(--ink-muted); }
 
-/* The dot that marks the current island.
+/* The dot that marks the current component.
 
    Every row draws the dot and only the current row fills it in. A dot on the current row
    alone would indent that row past its neighbours. There is no room outside the list either:
    `overflow-y: auto` on the list clips both axes. */
-.island::before {
+.component::before {
   content: "";
   flex: none;
   width: 5px;
@@ -316,8 +316,8 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
   border-radius: 50%;
   background: transparent;
 }
-.island[aria-current]::before { background: var(--accent); }
-.island[aria-current] { font-weight: 500; }
+.component[aria-current]::before { background: var(--accent); }
+.component[aria-current] { font-weight: 500; }
 /* The three groups inside #guide, ruled off from each other. The same hairline #status used to
    carry when it sat inside the panel. */
 #guide #legend,
@@ -331,16 +331,17 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 #legend .label { color: var(--ink-2); font-size: 11px; }
 #ramp { display: flex; align-items: center; gap: 5px; }
 .dot { display: inline-block; border-radius: 50%; }
-.dot.accent { width: 15px; height: 15px; background: var(--accent); }
+.dot.selected { width: 15px; height: 15px; background: var(--accent); }
 .dot.dashed {
   width: 13px;
   height: 13px;
   background: transparent;
   border: 2px dashed var(--ink-2);
 }
-/* Legend key for a ghost node. A hollow dashed pill, the shape the map draws. The pill shape
-   tells it apart from the frontier dot above it, which marks a node that is really there. */
-.ghost-key {
+/* Legend key for an off-screen marker. A hollow dashed label box, the shape the map draws. The
+   label box shape tells it apart from the frontier dot above it, which marks a node that is
+   really there. */
+.marker-key {
   display: inline-block;
   width: 16px;
   height: 11px;
@@ -368,7 +369,7 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 }
 
 /* The two name inputs, top centre, left of the controls. The width is fixed: the box grows
-   downward as receipts are added, never sideways. The media query at the end of this file
+   downward as write log entries are added, never sideways. The media query at the end of this file
    drops the fixed width on a narrow window. */
 #ends {
   top: 16px;
@@ -449,7 +450,7 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 .end .clear:hover { color: var(--ink); }
 
 /* The line and two dots drawn beside the inputs. It never changes. Write state is shown in
-   the receipts instead.
+   the write log entries instead.
 
    The line stops 15px from each end, which is half an input's height. A dot sits at each end
    of the line. Both dots then line up with the inputs' centres whatever height the rows
@@ -520,12 +521,12 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
 .end .create { color: var(--accent); }
 .end .empty { padding: 4px 8px; color: var(--ink-muted); font-size: 11px; }
 
-/* The receipts: what was written, how it went, and the undo button. This is not a queue.
+/* The write log entries: what was written, how it went, and the undo button. This is not a queue.
    Every write here has already happened, and undo is a second write. The row spans both
    columns at the bottom, so it stays visible when the box above it shrinks. */
-#receipts { display: flex; flex-wrap: wrap; gap: 5px; grid-column: 1 / -1; }
-#receipts:empty { display: none; }
-.receipt {
+#write-log { display: flex; flex-wrap: wrap; gap: 5px; grid-column: 1 / -1; }
+#write-log:empty { display: none; }
+.log-entry {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -535,22 +536,22 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
   border-radius: 20px;
   padding: 2px 4px 2px 9px;
 }
-.receipt:not(:has(.undo)) { padding-right: 9px; }
-.receipt[data-new="true"] { border-style: dashed; }
-.receipt[data-state="waiting"], .receipt[data-state="busy"] { color: var(--ink-muted); }
-.receipt[data-state="busy"]::before { content: "·"; }
-.receipt[data-state="ok"] { border-color: var(--accent); }
-.receipt[data-state="ok"]::before { content: "✓"; }
-.receipt[data-state="warn"] { color: var(--accent); border-color: var(--accent); }
-.receipt[data-state="warn"]::before { content: "⚠"; }
+.log-entry:not(:has(.undo)) { padding-right: 9px; }
+.log-entry[data-new="true"] { border-style: dashed; }
+.log-entry[data-state="waiting"], .log-entry[data-state="busy"] { color: var(--ink-muted); }
+.log-entry[data-state="busy"]::before { content: "·"; }
+.log-entry[data-state="ok"] { border-color: var(--accent); }
+.log-entry[data-state="ok"]::before { content: "✓"; }
+.log-entry[data-state="warn"] { color: var(--accent); border-color: var(--accent); }
+.log-entry[data-state="warn"]::before { content: "⚠"; }
 /* An undone write is muted, not accented. It is finished, not failed. */
-.receipt[data-state="undone"] { color: var(--ink-muted); opacity: 0.6; }
-.receipt[data-state="undone"]::before { content: "↩"; }
-.receipt[data-state="undone"] .pick { text-decoration: line-through; }
+.log-entry[data-state="undone"] { color: var(--ink-muted); opacity: 0.6; }
+.log-entry[data-state="undone"]::before { content: "↩"; }
+.log-entry[data-state="undone"] .pick { text-decoration: line-through; }
 
 /* Clicking either name puts it back into the near end. Only a write that landed allows this,
    so the cursor stays `default` until then. See join.ts for why. */
-.receipt .pick {
+.log-entry .pick {
   font: inherit;
   min-width: 0;
   color: inherit;
@@ -560,10 +561,10 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
   padding: 0;
   cursor: default;
 }
-.receipt[data-state="ok"] .pick { cursor: pointer; }
-.receipt[data-state="ok"] .pick:hover { color: var(--accent); text-decoration: underline; }
-.receipt .sep { color: var(--ink-muted); }
-.receipt .undo {
+.log-entry[data-state="ok"] .pick { cursor: pointer; }
+.log-entry[data-state="ok"] .pick:hover { color: var(--accent); text-decoration: underline; }
+.log-entry .sep { color: var(--ink-muted); }
+.log-entry .undo {
   min-width: 0;
   font-size: 10px;
   line-height: 1;
@@ -573,7 +574,7 @@ body:has(#walk-by-pan:checked) .when-pinned { display: none; }
   border-radius: 20px;
   padding: 2px 7px;
 }
-.receipt .undo:hover { color: var(--accent); border-color: var(--accent); }
+.log-entry .undo:hover { color: var(--accent); border-color: var(--accent); }
 
 /* The right-click menu. It opens at the pointer. `.panel` already fixes it to the viewport,
    so the click's client coordinates are all the placement it needs. */
@@ -661,12 +662,12 @@ kbd {
 
 /* ── Narrow and short windows ─────────────────────────────────────────────────────
    Three panels floated over the map here before, and most of this section decided which one
-   to drop. The drawer and the guide answer that at every window size, so what is left is the
+   to drop. The side panel and the guide answer that at every window size, so what is left is the
    two boxes still pinned to a corner: #ends at the top, #controls and #guide-toggle at the
    bottom.
 
    #controls is moved rather than measured. Its width depends on how the font stack renders
-   "Recentre" at 11px, so the exact width where it overlaps cannot be written here. */
+   "Go to selected" at 11px, so the exact width where it overlaps cannot be written here. */
 
 /* The overlap starts at 816px. The extra 44px covers wider font stacks. */
 @media (max-width: 860px) {
@@ -681,23 +682,24 @@ kbd {
      the only panel up there that is interactive and the only one that grows. */
   #controls { top: auto; bottom: 16px; }
 
-  /* #controls has taken the corner, so the button crosses to the other one and the pill sits
-     above them both. The guide opens over the pill: it is asked for, and the pill is not. */
+  /* #controls has taken the corner, so the button crosses to the other one and the label box sits
+     above them both. The guide opens over the label box: it is asked for, and the label box
+     is not. */
   #guide-toggle { left: 16px; right: auto; }
 
-  /* The drawer gives up the top and bottom strips. #ends spans the width up there, and
+  /* The side panel gives up the top and bottom strips. #ends spans the width up there, and
      #controls and the guide's button are down here.
 
      The 76 is 16 for the page margin, 50 for #ends holding one input, 10 between. The 72 is
      the same sum over #controls: one row of 11px buttons, 46px tall whatever the graph does.
      The panel stays centred, so the cap it takes off is split 74 to each end. */
-  #islands { max-height: calc(100vh - 148px); }
+  #components { max-height: calc(100vh - 148px); }
   #status { left: 16px; right: 16px; bottom: 58px; max-width: none; }
   #guide { inset: auto 16px 58px 16px; width: auto; }
 }
 
 /* A phone in portrait. The side margins drop to 8px, which is worth more as content width.
-   The drawer keeps its 40px, which is what holds it clear of the tab. */
+   The side panel keeps its 40px, which is what holds it clear of the tab. */
 @media (max-width: 460px) {
   #ends { left: 8px; right: 8px; }
   #controls { right: 8px; }
@@ -776,7 +778,8 @@ kbd {
 .act.go:disabled { filter: none; opacity: 0.55; }
 
 /* The drop target. It is the only control in the section until a file is chosen. A dashed
-   border means "nothing here yet", the same as on the map's ghosts and its new-name input. */
+   border means "nothing here yet", the same as on the map's off-screen markers and its
+   new-name input. */
 #drop {
   display: block;
   padding: 22px 16px;

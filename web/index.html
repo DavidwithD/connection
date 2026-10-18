@@ -21,14 +21,14 @@
          narrow where it meets the head, and no stroke can taper. The gradient fades along the
          same axis, so the end under the reader's hand is the quiet one. Both are aimed by
          drag-join.ts, which is where the shape and the two ends are set. -->
-    <svg id="aim" aria-hidden="true">
+    <svg id="drag-arrow" aria-hidden="true">
       <defs>
-        <linearGradient id="aim-ink" gradientUnits="userSpaceOnUse">
+        <linearGradient id="drag-arrow-ink" gradientUnits="userSpaceOnUse">
           <stop offset="0" stop-opacity="0.12" />
           <stop offset="1" stop-opacity="0.95" />
         </linearGradient>
       </defs>
-      <path id="aim-arrow" fill="url(#aim-ink)" />
+      <path id="drag-arrow-path" fill="url(#drag-arrow-ink)" />
     </svg>
 
     <!-- Shown when the store holds no graph. That is the state of a fresh browser profile.
@@ -42,24 +42,24 @@
       </p>
     </div>
 
-    <!-- The island list, as a drawer at the left edge. Shut on a first visit, and the tab is
-         all that is on screen while it is. The drawer overlays the map rather than moving it:
+    <!-- The component list, as a side panel at the left edge. Shut on a first visit, and the tab is
+         all that is on screen while it is. The side panel overlays the map rather than moving it:
          #stage is fixed to the viewport, and resizing it would take the camera with it.
 
          The tab is a sibling of the panel, not a child. The panel translates itself off the
          edge by its own width, so nothing measures it, and a tab inside would go with it. -->
-    <button id="rail-tab" type="button" aria-expanded="false" aria-controls="islands">
+    <button id="side-panel-tab" type="button" aria-expanded="false" aria-controls="components">
       <span class="chevron" aria-hidden="true"></span>
-      <span>islands</span>
+      <span>components</span>
     </button>
 
-    <!-- One row per island, each a place to go. Hidden when the store holds no islands, and
+    <!-- One row per component, each a place to go. Hidden when the store holds no components, and
          app.css takes the tab away with it. -->
-    <section class="panel" id="islands" hidden>
-      <!-- The count compares rows shown against islands that exist. It is empty while the
-           list shows all of them, and filled once the drawer runs out of room. -->
-      <h2>islands <span id="islands-count"></span></h2>
-      <ul id="islands-list"></ul>
+    <section class="panel" id="components" hidden>
+      <!-- The count compares rows shown against components that exist. It is empty while the
+           list shows all of them, and filled once the side panel runs out of room. -->
+      <h2>components <span id="components-count"></span></h2>
+      <ul id="components-list"></ul>
     </section>
 
     <!-- Two name inputs and the line drawn between them. The × buttons have tabindex="-1" on
@@ -94,13 +94,13 @@
         <ul id="far-list"></ul>
       </div>
 
-      <div id="receipts"></div>
+      <div id="write-log"></div>
     </section>
 
     <!-- Right-click menu. It opens at the centre only: on that node, or on a line reaching
          it. The remove button's row is written when the menu opens. Taking the node out is
          the one write the page cannot undo, so that row carries the edge count instead of a
-         second confirm dialog. Parting a pair is undone from its receipt.
+         second confirm dialog. Parting a pair is undone from its write log entry.
 
          Edit is offered on a node and not on a line, and it swaps its own row for the box
          below it. That box is an input and one row saying whether the typed name is free.
@@ -118,7 +118,7 @@
     <div class="panel" id="controls">
       <button id="zoom-out" type="button" title="Zoom out">−</button>
       <button id="zoom-in" type="button" title="Zoom in">+</button>
-      <button id="home" type="button">Recentre</button>
+      <button id="go-to-selected" type="button">Go to selected</button>
     </div>
 
     <!-- The line that reports a read or a write. Out here rather than inside the guide,
@@ -157,7 +157,7 @@
 
       <div id="legend">
         <div class="row">
-          <span class="dot accent"></span>
+          <span class="dot selected"></span>
           <span class="label">the centre</span>
         </div>
         <div class="row">
@@ -169,7 +169,7 @@
           <span class="label">more graph behind it</span>
         </div>
         <div class="row">
-          <span class="ghost-key"></span>
+          <span class="marker-key"></span>
           <span class="label">a neighbour off screen</span>
         </div>
         <div class="row">

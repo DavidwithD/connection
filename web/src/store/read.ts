@@ -8,8 +8,8 @@ import { open, type StoredNode } from "./db.js"
 import { normaliseLabel } from "./keys.js"
 import { Missing } from "./refused.js"
 import type {
-  IslandMeta,
-  IslandPage,
+  ComponentMeta,
+  ComponentPage,
   Neighbourhood,
   NodeMeta,
   NodeRow,
@@ -33,13 +33,13 @@ import type {
 export const MAX_EDGES_PER_NODE = 120
 
 /**
- * How many islands one page holds.
+ * How many components one page holds.
  *
  * A page, not a cap. A graph can have any number of components: 688 nodes of vocabulary came
  * in as 267 of them. A list that stops at a round number without saying so claims to be the
  * whole graph. Twenty fits the panel with room to scroll.
  */
-export const ISLAND_LIMIT = 20
+export const COMPONENT_LIMIT = 20
 
 /** The most results a prefix search returns. A search box shows a list, not a page. */
 export const SEARCH_LIMIT = 20
@@ -69,7 +69,7 @@ const metaOf = (node: StoredNode): NodeMeta => ({
 /**
  * Everything the first frame needs, in one call.
  *
- * The opening node is the first row of the island page. `byIsland` is read in descending
+ * The opening node is the first row of the component page. `byComponent` is read in descending
  * order, so its first row is the root of the largest component. It is derived, not stored, so
  * it cannot be stale and cannot name a node that has been deleted.
  *
@@ -80,12 +80,12 @@ const metaOf = (node: StoredNode): NodeMeta => ({
  * overtaken. That happens on a merge or a split, not on an ordinary join.
  */
 export async function readOpening(): Promise<Opening> {
-  const [page, islandCount] = await Promise.all([readIslandPage(), readIslandCount()])
+  const [page, componentCount] = await Promise.all([readComponentPage(), readComponentCount()])
 
   return {
-    islands: page.islands,
-    islandCursor: page.cursor,
-    islandCount,
+    components: page.components,
+    componentCursor: page.cursor,
+    componentCount,
   }
 }
 
@@ -150,7 +150,7 @@ export const MAX_LIST_NODES = 50_000
  * Every node, with its date. The only read here that scans the store.
  *
  * The node list searches names by substring, orders by date, and orders at random. No index
- * in this schema answers any of those. `byIsland` holds one entry per component and
+ * in this schema answers any of those. `byComponent` holds one entry per component and
  * `byParent` groups by root, so neither one lists nodes. So the page takes the whole list
  * once and works over it in memory.
  *
@@ -163,50 +163,50 @@ export async function readAllNodes(limit: number = MAX_LIST_NODES): Promise<Node
   return found.map((node) => ({ ...metaOf(node), created: node.created }))
 }
 
-/** Where a page of islands stopped: the index key of its last row. */
-export type IslandKey = [number, string]
+/** Where a page of components stopped: the index key of its last row. */
+export type ComponentKey = [number, string]
 
 /**
  * One page of components, largest first.
  *
- * `byIsland` is sparse by construction, because only a root has `islandSize`. So this walks
+ * `byComponent` is sparse by construction, because only a root has `componentSize`. So this walks
  * one entry per component rather than filtering one per node. Its key is
- * `[islandSize, labelKey]`, so no two rows share a key and paging cannot repeat or skip a
+ * `[componentSize, labelKey]`, so no two rows share a key and paging cannot repeat or skip a
  * row, as long as the index is not changing. A join changes a size, which moves a row, so
  * pages either side of a write are pages of two different lists.
  *
- * `islandSize` is a number and sorts as one. The old sort key needed six digits of
+ * `componentSize` is a number and sorts as one. The old sort key needed six digits of
  * zero-padding to sort correctly as a string.
  */
-export async function readIslandPage(
-  limit: number = ISLAND_LIMIT,
-  after?: IslandKey,
-): Promise<IslandPage> {
+export async function readComponentPage(
+  limit: number = COMPONENT_LIMIT,
+  after?: ComponentKey,
+): Promise<ComponentPage> {
   const db = await open()
-  const index = db.transaction("nodes", "readonly").store.index("byIsland")
+  const index = db.transaction("nodes", "readonly").store.index("byComponent")
 
   // Start strictly past the last row of the previous page. Descending order is "prev", so
   // continuing means everything below the key already served.
   const range = after ? IDBKeyRange.upperBound(after, true) : null
   let cursor = await index.openCursor(range, "prev")
 
-  const islands: IslandMeta[] = []
-  let last: IslandKey | null = null
+  const components: ComponentMeta[] = []
+  let last: ComponentKey | null = null
 
-  while (cursor && islands.length < limit) {
+  while (cursor && components.length < limit) {
     const node = cursor.value
-    islands.push({
+    components.push({
       id: node.labelKey,
       label: node.label,
       degree: node.degree,
-      size: node.islandSize ?? 1,
+      size: node.componentSize ?? 1,
     })
     last = cursor.key
     cursor = await cursor.continue()
   }
 
   // A cursor that is still open means there is a row this page did not return.
-  return { islands, cursor: cursor && last ? encodeCursor(last) : null }
+  return { components, cursor: cursor && last ? encodeCursor(last) : null }
 }
 
 /**
@@ -215,9 +215,9 @@ export async function readIslandPage(
  * Counted on demand rather than stored. A stored total maintained by the same writes that may
  * lag could disagree with the rows it counts, and a wrong total is worse than no total.
  */
-export async function readIslandCount(): Promise<number> {
+export async function readComponentCount(): Promise<number> {
   const db = await open()
-  return db.countFromIndex("nodes", "byIsland")
+  return db.countFromIndex("nodes", "byComponent")
 }
 
 /**
@@ -247,13 +247,13 @@ export async function searchLabels(
  * UTF-8 first, because `btoa` rejects any character above 255 and names here are not all
  * Latin.
  */
-function encodeCursor(key: IslandKey): string {
+function encodeCursor(key: ComponentKey): string {
   const bytes = new TextEncoder().encode(JSON.stringify(key))
   return btoa(String.fromCharCode(...bytes))
 }
 
 /** Decode a cursor. Returns null for anything `encodeCursor` did not produce. */
-export function decodeCursor(raw: string): IslandKey | null {
+export function decodeCursor(raw: string): ComponentKey | null {
   try {
     const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0))
     const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes))
@@ -265,9 +265,9 @@ export function decodeCursor(raw: string): IslandKey | null {
   }
 }
 
-/** The islands after `cursor`. Called only by the island list asking for another page. */
-export async function fetchIslands(cursor: string): Promise<IslandPage> {
+/** The components after `cursor`. Called only by the component list asking for another page. */
+export async function fetchComponents(cursor: string): Promise<ComponentPage> {
   const key = decodeCursor(cursor)
-  if (!key) return { islands: [], cursor: null }
-  return readIslandPage(ISLAND_LIMIT, key)
+  if (!key) return { components: [], cursor: null }
+  return readComponentPage(COMPONENT_LIMIT, key)
 }

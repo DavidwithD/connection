@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import { emptyGraph, seed } from "./graph.js"
 import type { StoredEdge, StoredNode } from "../web/src/store/db.js"
-import { readIslandCount, readNode } from "../web/src/store/read.js"
+import { readComponentCount, readNode } from "../web/src/store/read.js"
 import {
   EXPORT_VERSION,
   buildGraph,
@@ -18,7 +18,7 @@ import {
   exportGraph,
   pairsOf,
   readExport,
-  recountIslands,
+  recountComponents,
   replaceGraph,
   verify,
 } from "../web/src/store/transfer.js"
@@ -29,7 +29,7 @@ const MADE = Date.UTC(2026, 0, 1)
 /** A consistent two-node graph: one edge, both degrees at one, one component of two. */
 const pair = (): { nodes: StoredNode[]; edges: StoredEdge[] } => ({
   nodes: [
-    { labelKey: "kavara", label: "Kavara", degree: 1, parent: "kavara", islandSize: 2,
+    { labelKey: "kavara", label: "Kavara", degree: 1, parent: "kavara", componentSize: 2,
       created: MADE },
     { labelKey: "miselin", label: "Miselin", degree: 1, parent: "kavara", created: MADE },
   ],
@@ -43,7 +43,7 @@ describe("verify", () => {
   })
 
   it("finds no fault in a graph the generator built", () => {
-    const built = buildSeed({ n: 200, k: 6, p: 0.3, seed: 4, hubs: 4, hubK: 30, islands: 3 })
+    const built = buildSeed({ n: 200, k: 6, p: 0.3, seed: 4, hubs: 4, hubK: 30, components: 3 })
     expect(built.faults).toEqual([])
     expect(verify(built.nodes, built.edges)).toEqual([])
   })
@@ -84,13 +84,13 @@ describe("verify", () => {
 
   it("catches a root that counts the wrong number of nodes", () => {
     const { nodes, edges } = pair()
-    nodes[0]!.islandSize = 9
+    nodes[0]!.componentSize = 9
     expect(verify(nodes, edges)).toContainEqual(expect.stringContaining("a root counts 9"))
   })
 
-  it("catches a node that is not a root and still counts an island", () => {
+  it("catches a node that is not a root and still counts a component", () => {
     const { nodes, edges } = pair()
-    nodes[1]!.islandSize = 1
+    nodes[1]!.componentSize = 1
     expect(verify(nodes, edges)).toContainEqual(
       expect.stringContaining("is not a root and still counts"),
     )
@@ -124,8 +124,8 @@ describe("buildGraph", () => {
     )
     expect(built.faults).toEqual([])
     expect(verify(built.nodes, built.edges)).toEqual([])
-    const roots = built.nodes.filter((node) => node.islandSize !== undefined)
-    expect(roots.map((node) => node.islandSize).sort()).toEqual([1, 2])
+    const roots = built.nodes.filter((node) => node.componentSize !== undefined)
+    expect(roots.map((node) => node.componentSize).sort()).toEqual([1, 2])
   })
 
   it("counts the degrees from the edges it kept, never from the file", () => {
@@ -160,6 +160,18 @@ describe("readExport", () => {
     expect(read.faults).toEqual([])
     expect(read.nodes).toHaveLength(2)
     expect(read.edges).toHaveLength(1)
+  })
+
+  it("reads a version 2 file, and moves islandSize to componentSize", () => {
+    const { nodes, edges } = pair()
+    const old = nodes.map(({ componentSize, ...rest }) =>
+      componentSize === undefined ? rest : { ...rest, islandSize: componentSize },
+    )
+    const read = readExport({ version: 2, nodes: old, edges })
+    expect(read.faults).toEqual([])
+    expect(read.nodes[0]).toMatchObject({ labelKey: "kavara", componentSize: 2 })
+    expect(read.nodes[0]).not.toHaveProperty("islandSize")
+    expect(read.nodes[1]).not.toHaveProperty("componentSize")
   })
 
   it("refuses a file of another version whole", () => {
@@ -232,7 +244,7 @@ describe("against the store", () => {
     expect(checked.faults).toEqual([])
     expect(checked.nodes).toBe(4)
     expect(checked.edges).toBe(2)
-    expect(checked.islands).toBe(2)
+    expect(checked.components).toBe(2)
   })
 
   it("replaces the whole graph rather than adding to it", async () => {
@@ -240,7 +252,7 @@ describe("against the store", () => {
     const { nodes, edges } = pair()
     await replaceGraph(
       [
-        { labelKey: "thorne", label: "Thorne", degree: 0, parent: "thorne", islandSize: 1,
+        { labelKey: "thorne", label: "Thorne", degree: 0, parent: "thorne", componentSize: 1,
           created: MADE },
       ],
       [],
@@ -251,30 +263,30 @@ describe("against the store", () => {
     expect(edges).toHaveLength(1)
   })
 
-  it("rebuilds an island index somebody has broken", async () => {
+  it("rebuilds a component index somebody has broken", async () => {
     await seed(["Kavara | Miselin | Vessarin", "Thorne"])
     const file = await exportGraph()
 
     // Two components, and every record claiming to be a root of one node.
     await replaceGraph(
-      file.nodes.map((node) => ({ ...node, parent: node.labelKey, islandSize: 1 })),
+      file.nodes.map((node) => ({ ...node, parent: node.labelKey, componentSize: 1 })),
       file.edges,
     )
     expect((await checkGraph()).faults.length).toBeGreaterThan(0)
 
-    const repair = await recountIslands()
-    expect(repair.islands).toBe(2)
+    const repair = await recountComponents()
+    expect(repair.components).toBe(2)
     expect(repair.changed).toBeGreaterThan(0)
     expect((await checkGraph()).faults).toEqual([])
-    expect(await readIslandCount()).toBe(2)
+    expect(await readComponentCount()).toBe(2)
   })
 
   it("writes nothing on a recount of a graph that is already right", async () => {
     await seed(["Kavara | Miselin", "Thorne"])
-    expect(await recountIslands()).toEqual({ islands: 2, changed: 0 })
+    expect(await recountComponents()).toEqual({ components: 2, changed: 0 })
   })
 
-  it("counts a graph with no nodes as no islands", async () => {
-    expect(await checkGraph()).toEqual({ faults: [], nodes: 0, edges: 0, islands: 0 })
+  it("counts a graph with no nodes as no components", async () => {
+    expect(await checkGraph()).toEqual({ faults: [], nodes: 0, edges: 0, components: 0 })
   })
 })

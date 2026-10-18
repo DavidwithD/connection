@@ -12,15 +12,14 @@ is the capability that picks it up.
 
 Whoever has to judge whether a graph can be *kept* in this store, not just read from it.
 Reading a graph somebody generated tests only that it can be served. Changing one tests the
-promise underneath — that what the store says about a node and what it will hand back for
-that node cannot come apart.
+promise underneath. What the store says about a node must always match what it returns for
+that node.
 
 ## What they cannot do without it
 
 Tell a store that can hold a graph somebody maintains from one that can only serve a graph
-somebody generated. A store that reads beautifully can still make every change a chance to
-leave it describing itself wrongly, and nothing short of changing one shows which kind you
-have.
+somebody generated. A store with fast reads can still let any change leave its own counts
+wrong. Only changing a graph shows which kind you have.
 
 Also: the graph a demo starts with is invented. Anything worth showing anyone has to be
 typed in.
@@ -60,6 +59,6 @@ detects or resolves a collision beyond refusing it.
 
 ## Where the design is
 
-[writing-to-the-graph.md](../design/writing-to-the-graph.md) for the four transactions and
-the way back, and [the-islands.md](../design/the-islands.md) for what a join or a part does
-to the index of places.
+[writing-to-the-graph.md](../design/writing-to-the-graph.md) covers the four transactions and
+the undo. [the-components.md](../design/the-components.md) covers what a join or a part does
+to the component index.

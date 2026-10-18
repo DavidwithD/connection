@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Drive the globe with names far longer than a pill, and check how they are cut.
+ * Drive the sphere view with names far longer than a label box, and check how they are cut.
  *
  *   npm run web                              # in another terminal
  *   node scripts/drive-long-names.mjs        # or: npm run drive:long-names
@@ -26,10 +26,10 @@ const WEB = process.env.WEB_URL ?? "http://localhost:5173"
 const SHOTS = ".shots"
 const headed = process.argv.includes("--head")
 
-const RING_MAX = 150
+const NEIGHBOUR_MAX = 150
 const HOVER_MAX = 260
-const CENTRE_MAX = 300
-const LINE = 12 + 16 // one ring line, plus the padding: the shortest a ring pill gets
+const SELECTED_MAX = 300
+const LINE = 12 + 16 // one ring line, plus the padding: the shortest a ring label box gets
 
 const LONG = [
   "Seoul, the capital of South Korea, sits on the Han River and has about nine million residents",
@@ -77,19 +77,19 @@ async function main() {
   // Centre the hub, whichever node the page opened on.
   let seen = await frame(page)
   const hub = seen.elements.find((one) => one.kind === "node" && one.label === HUB)
-  if (hub && hub.id !== seen.accent && hub.at) {
+  if (hub && hub.id !== seen.selected && hub.at) {
     await clickOn(page, hub.at)
     await still(page)
     seen = await frame(page)
   }
-  await page.screenshot({ path: `${SHOTS}/long-1-ring.png` })
+  await page.screenshot({ path: `${SHOTS}/long-1-neighbours.png` })
 
-  const ring = read(seen).ring
-  const long = ring.filter((one) => LONG.includes(one.label))
-  check(long.length === LONG.length, `the ring holds all ${String(LONG.length)} long names (${String(long.length)})`)
+  const neighbours = read(seen).neighbours
+  const long = neighbours.filter((one) => LONG.includes(one.label))
+  check(long.length === LONG.length, `the neighbour circle holds all ${String(LONG.length)} long names (${String(long.length)})`)
   check(
-    ring.every((one) => one.box.w <= RING_MAX + 0.5),
-    `no ring pill is wider than ${String(RING_MAX)} (widest ${Math.max(...ring.map((one) => one.box.w)).toFixed(0)})`,
+    neighbours.every((one) => one.box.w <= NEIGHBOUR_MAX + 0.5),
+    `no neighbour label box is wider than ${String(NEIGHBOUR_MAX)} (widest ${Math.max(...neighbours.map((one) => one.box.w)).toFixed(0)})`,
   )
   check(
     long.every((one) => one.box.h > LINE),
@@ -99,7 +99,7 @@ async function main() {
     long.every((one) => one.box.h <= 12 + 12 * 1.25 + 16 + 0.5),
     "no long name takes more than two lines",
   )
-  const short = ring.filter((one) => SHORT.includes(one.label))
+  const short = neighbours.filter((one) => SHORT.includes(one.label))
   check(
     short.every((one) => Math.abs(one.box.h - LINE) < 0.5),
     "a short name keeps its one-line height",
@@ -114,7 +114,7 @@ async function main() {
     const open = (await frame(page)).elements.find((one) => one.id === target.id)
     check(
       open.box.w > target.box.w && open.box.w <= HOVER_MAX + 0.5,
-      `the pointer opens a ring name: ${target.box.w.toFixed(0)} → ${open.box.w.toFixed(0)} wide`,
+      `the pointer opens a neighbour's name: ${target.box.w.toFixed(0)} → ${open.box.w.toFixed(0)} wide`,
     )
     check(open.box.h > target.box.h, `and its height: ${target.box.h.toFixed(0)} → ${open.box.h.toFixed(0)}`)
     // Still on the opened name, one step in from its edge, it has not closed.
@@ -140,31 +140,31 @@ async function main() {
     const stage = await stageBox(page)
     const held = (await frame(page)).elements.find((one) => one.id === target.id)
     check(
-      held.box.w > RING_MAX,
-      `a clicked node opens as the centre without a move (${held.box.w.toFixed(0)} wide)`,
+      held.box.w > NEIGHBOUR_MAX,
+      `a clicked node opens as the selected without a move (${held.box.w.toFixed(0)} wide)`,
     )
     // The pointer goes to a corner, so the centre closes.
     await page.mouse.move(stage.x + 12, stage.y + stage.height - 12)
     await page.waitForTimeout(200)
     const after = await frame(page)
-    const centre = after.elements.find((one) => one.id === after.accent)
-    check(centre?.label === target.label, "the click centres the long name")
+    const selected = after.elements.find((one) => one.id === after.selected)
+    check(selected?.label === target.label, "the click centres the long name")
     check(
-      centre.box.w <= RING_MAX + 0.5,
-      `at rest the centre is ${centre.box.w.toFixed(0)} wide (cap ${String(RING_MAX)})`,
+      selected.box.w <= NEIGHBOUR_MAX + 0.5,
+      `at rest the selected is ${selected.box.w.toFixed(0)} wide (cap ${String(NEIGHBOUR_MAX)})`,
     )
-    check(centre.box.h <= 15 + 15 * 1.25 + 16 + 0.5, `and ${centre.box.h.toFixed(0)} tall, at most 2 lines`)
-    await page.screenshot({ path: `${SHOTS}/long-3-centre-rest.png` })
+    check(selected.box.h <= 15 + 15 * 1.25 + 16 + 0.5, `and ${selected.box.h.toFixed(0)} tall, at most 2 lines`)
+    await page.screenshot({ path: `${SHOTS}/long-3-selected-rest.png` })
 
-    await page.mouse.move(stage.x + centre.at.x, stage.y + centre.at.y)
+    await page.mouse.move(stage.x + selected.at.x, stage.y + selected.at.y)
     await page.waitForTimeout(300)
-    const open = (await frame(page)).elements.find((one) => one.id === after.accent)
+    const open = (await frame(page)).elements.find((one) => one.id === after.selected)
     check(
-      open.box.w > RING_MAX && open.box.w <= CENTRE_MAX + 0.5,
-      `the pointer opens the centre to ${open.box.w.toFixed(0)} wide (cap ${String(CENTRE_MAX)})`,
+      open.box.w > NEIGHBOUR_MAX && open.box.w <= SELECTED_MAX + 0.5,
+      `the pointer opens the selected to ${open.box.w.toFixed(0)} wide (cap ${String(SELECTED_MAX)})`,
     )
-    check(open.box.h > centre.box.h, `and ${open.box.h.toFixed(0)} tall, so it shows every line`)
-    await page.screenshot({ path: `${SHOTS}/long-4-centre-open.png` })
+    check(open.box.h > selected.box.h, `and ${open.box.h.toFixed(0)} tall, so it shows every line`)
+    await page.screenshot({ path: `${SHOTS}/long-4-selected-open.png` })
   }
 
   check(problems.length === 0, `no page errors${problems.length ? `: ${problems.join("; ")}` : ""}`)

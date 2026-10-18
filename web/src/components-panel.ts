@@ -1,71 +1,71 @@
 /**
- * The island panel on the left. One row per connected component, each a place to go.
+ * The component panel on the left. One row per connected component, each a place to go.
  *
  * Every component is listed, including the one the reader is in. Clicking a row never
  * removes it. The list is paged and the heading shows the total, because a graph can have
  * any number of components.
  *
- * The panel is a drawer at the left edge, and its list scrolls without a scrollbar. What the
+ * The panel is a side panel at the left edge, and its list scrolls without a scrollbar. What the
  * bar used to say is said by the sentinel row and by `markMore` below. See ADR 0041.
  */
-import { fetchIslands, type IslandMeta, type IslandPage } from "./store/index.js"
+import { fetchComponents, type ComponentMeta, type ComponentPage } from "./store/index.js"
 
-export interface IslandsHooks {
+export interface ComponentsHooks {
   /**
-   * Move the camera to this island.
+   * Move the camera to this component.
    *
-   * `seated` is a node of the island that is already on the map. The move is then only a
-   * camera move. Null means the island has to be placed on the map first.
+   * `placedId` is a node of the component that is already on the map. The move is then only a
+   * camera move. Null means the component has to be placed on the map first.
    */
-  onCross: (island: IslandMeta, seated: string | null) => void
-  /** True if this island's naming node is already on the map. */
+  onCross: (component: ComponentMeta, placedId: string | null) => void
+  /** True if this component's naming node is already on the map. */
   placed: (id: string) => boolean
 }
 
-export class IslandsPanel {
-  /** One button per island, keyed by id, so a repaint does not rebuild the rows. */
+export class ComponentsPanel {
+  /** One button per component, keyed by id, so a repaint does not rebuild the rows. */
   private readonly rows = new Map<string, HTMLButtonElement>()
 
   /**
-   * The first page's island ids, joined in order. Used to detect a real change.
+   * The first page's component ids, joined in order. Used to detect a real change.
    *
    * Rebuilding the list resets its scroll position to the top, which loses the reader's
    * place. So the rows are built once and this key is compared after every write. Only a
    * write that changed the first page rebuilds them.
    *
    * Only the first page, because that is all a fresh read returns. A merge between two
-   * islands further down the list is not visible from here and is left stale. The island
+   * components further down the list is not visible from here and is left stale. The component
    * index already accepts the same kind of over-listing.
    */
   private key = ""
 
   /**
-   * The island the reader is in, or null when it cannot be determined.
+   * The component the reader is in, or null when it cannot be determined.
    *
-   * This holds an island id, not a row index. A join merges two rows into one and shifts
+   * This holds a component id, not a row index. A join merges two rows into one and shifts
    * every row below it. A split does the reverse. An index would then point at the wrong
    * row. The id survives both. When the id itself disappears the mark is cleared rather
-   * than moved to whichever island took its place.
+   * than moved to whichever component took its place.
    */
   private current: string | null = null
 
   /**
-   * The island the map opened in, and the node that boot placed on the map.
+   * The component the map opened in, and the node that boot placed on the map.
    *
-   * `placed` asks whether an island's naming node is on the map, and the panel asks it
-   * before boot has placed anything. Without this field the opening island would answer
+   * `placed` asks whether a component's naming node is on the map, and the panel asks it
+   * before boot has placed anything. Without this field the opening component would answer
    * "not on the map", and clicking its row would place a second copy of it. Boot supplies
    * the answer here instead. It is cleared when the components change.
    *
-   * One id, not a pair. The map opens on the first row of the island page, so the component
+   * One id, not a pair. The map opens on the first row of the component page, so the component
    * and the node that names it share an id. See `Opening` in the store.
    */
-  private home: string | null = null
+  private start: string | null = null
 
   /** Where the next page starts, or null when the last row is loaded. */
   private cursor: string | null = null
 
-  /** How many islands the store holds. Compared against how many rows are loaded. */
+  /** How many components the store holds. Compared against how many rows are loaded. */
   private total = 0
 
   /** True while a page is being read. Stops the sentinel asking for two pages at once. */
@@ -77,7 +77,7 @@ export class IslandsPanel {
   /**
    * Watches the sentinel against the list box, not the window.
    *
-   * `root` is the scrolling box. The list scrolls inside the drawer, so the sentinel can sit
+   * `root` is the scrolling box. The list scrolls inside the side panel, so the sentinel can sit
    * far below the fold and inside the viewport at once. An observer against the viewport would
    * never fire on it.
    */
@@ -87,9 +87,9 @@ export class IslandsPanel {
     private readonly root: HTMLElement,
     private readonly list: HTMLUListElement,
     private readonly count: HTMLElement,
-    private readonly hooks: IslandsHooks,
+    private readonly hooks: ComponentsHooks,
   ) {
-    this.sentinel.className = "island-more"
+    this.sentinel.className = "component-more"
     this.sentinel.addEventListener("click", () => void this.more())
 
     // The list has no scrollbar, so nothing else on the panel says rows continue below the
@@ -115,14 +115,14 @@ export class IslandsPanel {
    * Take the first page as the store last reported it.
    *
    * Called on the first frame and after every write. Most writes leave the components
-   * unchanged: an edge inside one island is the common case. Those must not cost the reader
+   * unchanged: an edge inside one component is the common case. Those must not cost the reader
    * their scroll position or the pages already loaded.
    */
-  setFirstPage(page: IslandPage, total: number): void {
+  setFirstPage(page: ComponentPage, total: number): void {
     this.total = total
-    this.root.hidden = page.islands.length === 0
+    this.root.hidden = page.components.length === 0
 
-    const key = page.islands.map((island) => island.id).join("\n")
+    const key = page.components.map((component) => component.id).join("\n")
     if (key === this.key && this.rows.size > 0) {
       // Same components in the same order. Only which of them are on the map can have
       // changed, and that is a CSS class.
@@ -131,11 +131,11 @@ export class IslandsPanel {
     }
     this.key = key
 
-    // The components changed. If a marked island is no longer listed, clear the mark. Nothing
-    // here can say which island absorbed it, because union order picks the surviving name.
-    const listed = (id: string): boolean => page.islands.some((island) => island.id === id)
+    // The components changed. If a marked component is no longer listed, clear the mark. Nothing
+    // here can say which component absorbed it, because union order picks the surviving name.
+    const listed = (id: string): boolean => page.components.some((component) => component.id === id)
     if (this.current !== null && !listed(this.current)) this.current = null
-    if (this.home !== null && !listed(this.home)) this.home = null
+    if (this.start !== null && !listed(this.start)) this.start = null
 
     // Drop back to one page. The later pages were read against an index that has moved, and
     // there is no cursor into the middle of the new index: a page boundary is a size and an
@@ -150,14 +150,14 @@ export class IslandsPanel {
   }
 
   /**
-   * Set which island the reader is in. That island is also the way back to it.
+   * Set which component the reader is in. That component is also the way back to it.
    *
-   * Only the store can answer this: finding a node's island takes a read. Boot calls this
+   * Only the store can answer this: finding a node's component takes a read. Boot calls this
    * once, with the answer from the first frame.
    */
-  here(island: string | null): void {
-    this.home = island
-    this.current = island
+  here(component: string | null): void {
+    this.start = component
+    this.current = component
     this.paint()
   }
 
@@ -168,30 +168,30 @@ export class IslandsPanel {
    * every page. On the last page it is removed: left in place it would claim the list is
    * still growing.
    */
-  private append(page: IslandPage): void {
-    for (const island of page.islands) {
+  private append(page: ComponentPage): void {
+    for (const component of page.components) {
       const item = document.createElement("li")
       const go = document.createElement("button")
       go.type = "button"
-      go.className = "island"
+      go.className = "component"
 
       const name = document.createElement("span")
-      name.className = "island-name"
-      name.textContent = island.label
+      name.className = "component-name"
+      name.textContent = component.label
 
       go.append(name)
       go.addEventListener("click", () => {
-        // Read this before moving the mark. `seatOf` treats the current island as reached,
-        // and after this click the current island is a different one.
-        const seat = this.seatOf(island.id)
-        this.current = island.id
-        this.hooks.onCross(island, seat)
+        // Read this before moving the mark. `placedIdOf` treats the current component as reached,
+        // and after this click the current component is a different one.
+        const placedId = this.placedIdOf(component.id)
+        this.current = component.id
+        this.hooks.onCross(component, placedId)
         this.paint()
       })
 
       item.append(go)
       this.list.append(item)
-      this.rows.set(island.id, go)
+      this.rows.set(component.id, go)
     }
 
     if (this.cursor) {
@@ -230,7 +230,7 @@ export class IslandsPanel {
     this.sentinel.textContent = "loading…"
 
     try {
-      const page = await fetchIslands(this.cursor)
+      const page = await fetchComponents(this.cursor)
       this.cursor = page.cursor
       // `append` re-observes the sentinel, or removes it on the last page. Do not re-observe
       // in a `finally` instead. After a failure the sentinel is still in view, and observing
@@ -246,18 +246,18 @@ export class IslandsPanel {
   }
 
   /**
-   * A node of this island that is already on the map, or null.
+   * A node of this component that is already on the map, or null.
    *
-   * There are two ways to know one and both are needed. Usually it is the island's naming
-   * node, placed by the crossing that took the reader there. Walking into an island over an
-   * edge does not place that node, which is why such a row stays dim. The island the map
-   * opened in is the other case, and boot answered for it through `home`.
+   * There are two ways to know one and both are needed. Usually it is the component's naming
+   * node, placed by the crossing that took the reader there. Walking into a component over an
+   * edge does not place that node, which is why such a row stays dim. The component the map
+   * opened in is the other case, and boot answered for it through `start`.
    *
-   * The answer is the island's own id either way, because both routes go through the node
+   * The answer is the component's own id either way, because both routes go through the node
    * that names it.
    */
-  private seatOf(id: string): string | null {
-    return this.hooks.placed(id) || this.home === id ? id : null
+  private placedIdOf(id: string): string | null {
+    return this.hooks.placed(id) || this.start === id ? id : null
   }
 
   /**
@@ -268,16 +268,16 @@ export class IslandsPanel {
    */
   paint(): void {
     for (const [id, go] of this.rows) {
-      const seat = this.seatOf(id)
-      go.classList.toggle("off-map", seat === null)
+      const placedId = this.placedIdOf(id)
+      go.classList.toggle("off-map", placedId === null)
       // `title` says the same thing in words, for hover and for a reader who cannot see
       // the muted colour.
       go.title =
         id === this.current
           ? "you are here"
-          : seat
+          : placedId
             ? "back to it"
-            : "cross to it — this seats it on the map"
+            : "cross to it. This places it on the map"
 
       if (id === this.current) go.setAttribute("aria-current", "true")
       else go.removeAttribute("aria-current")

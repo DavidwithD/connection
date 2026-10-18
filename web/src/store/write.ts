@@ -11,7 +11,7 @@
  */
 import { open, unavailable, type StoredNode } from "./db.js"
 import { edgeEnds, naming } from "./keys.js"
-import { find, recount, reparent, settle, type Island } from "./islands.js"
+import { find, recount, reparent, merge, type Component } from "./components.js"
 import { MAX_EDGES_PER_NODE } from "./read.js"
 import { ALREADY_JOINED, Missing, NAME_TAKEN, Refused } from "./refused.js"
 import type { NodeMeta } from "./shapes.js"
@@ -28,7 +28,7 @@ const meta = (node: StoredNode): NodeMeta => ({
  * Run outside the transaction on purpose, and allowed to fail on purpose. The nodes and edges
  * are the graph. This is an index over them, and a failed reindex must not undo a write that
  * already landed. When it fails, the index over-lists components or reports a size that is
- * too large. **Recount the islands** on the transfer page rebuilds both from the nodes and
+ * too large. **Recount the components** on the transfer page rebuilds both from the nodes and
  * edges.
  */
 async function reindex(run: () => Promise<void>): Promise<void> {
@@ -36,7 +36,7 @@ async function reindex(run: () => Promise<void>): Promise<void> {
     await run()
   } catch (err) {
     console.warn(
-      `island list lagging — run Recount the islands on the transfer page: ` +
+      `component list lagging — run Recount the components on the transfer page: ` +
         `${err instanceof Error ? err.message : String(err)}`,
     )
   }
@@ -183,7 +183,7 @@ export async function createNode(label: string): Promise<NodeMeta> {
     // A node with no edges is a component of one. That is known, not guessed, so it is
     // written here in the record the transaction is already writing. Every other component
     // update happens after the write. This is the only place the answer is known first.
-    islandSize: 1,
+    componentSize: 1,
     created: Date.now(),
   }
 
@@ -208,8 +208,8 @@ export async function createNode(label: string): Promise<NodeMeta> {
 /**
  * Join two nodes.
  *
- * `settle` runs inside this transaction. A merge is two record updates at any graph size, so
- * a join can never leave the island list stale. The degrees are written before it, so what it
+ * `merge` runs inside this transaction. A merge is two record updates at any graph size, so
+ * a join can never leave the component list stale. The degrees are written before it, so what it
  * reads is the graph this write leaves behind.
  */
 export async function addEdge(aId: string, bId: string): Promise<void> {
@@ -235,8 +235,8 @@ export async function addEdge(aId: string, bId: string): Promise<void> {
       await edges.add({ a: x, b: y, ends: [x, y] })
       await nodes.put({ ...a, degree: a.degree + 1 })
       await nodes.put({ ...b, degree: b.degree + 1 })
-      // After the degrees, so the records `settle` reads are the ones this write leaves.
-      await settle(nodes, aId, bId)
+      // After the degrees, so the records `merge` reads are the ones this write leaves.
+      await merge(nodes, aId, bId)
     }
 
     await tx.done
@@ -264,7 +264,7 @@ export async function removeEdge(aId: string, bId: string): Promise<void> {
   if (aId === bId) throw new Refused("a node cannot be joined to itself")
 
   let refusal: string | null = null
-  let was: Island | null = null
+  let was: Component | null = null
 
   try {
     const db = await open()
@@ -346,7 +346,7 @@ export async function deleteNode(id: string): Promise<void> {
  */
 export async function deleteNodeWithEdges(id: string): Promise<{ id: string; parted: string[] }> {
   const parted: string[] = []
-  let was: Island | null = null
+  let was: Component | null = null
   let found = false
 
   try {

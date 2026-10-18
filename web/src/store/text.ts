@@ -13,7 +13,7 @@
  * The writer never does — see `format`.
  */
 import type { StoredNode } from "./db.js"
-import { components } from "./islands.js"
+import { components } from "./components.js"
 import { NUL, normaliseLabel } from "./keys.js"
 
 /** What separates names on a line, and what starts a comment. A name can contain neither. */
@@ -77,22 +77,22 @@ export function parse(text: string): Reading {
 
   // The lines an indented line can hang from, outermost first. Each holds the column it
   // starts at and the name a child of it joins.
-  const open: { column: number; anchor: string }[] = []
+  const open: { column: number; lineHead: string }[] = []
 
   // The first line that indented, and what it indented with. Columns can only be compared
   // inside one style, so the file has to pick one.
   let style: { at: number; used: "tabs" | "spaces" } | null = null
   let mixed = false
 
-  const join = (anchor: string, other: string, at: number): void => {
+  const join = (lineHead: string, other: string, at: number): void => {
     // Both are first spellings, so two equal strings are the same node. The store has no
     // self-edges, so report it as a fault in the file rather than letting the write fail.
-    if (other === anchor) {
-      faults.push(`line ${String(at)}: "${anchor}" is joined to itself`)
+    if (other === lineHead) {
+      faults.push(`line ${String(at)}: "${lineHead}" is joined to itself`)
       return
     }
-    const key = spelledPair(anchor, other)
-    if (!pairs.has(key)) pairs.set(key, [anchor, other])
+    const key = spelledPair(lineHead, other)
+    if (!pairs.has(key)) pairs.set(key, [lineHead, other])
   }
 
   text.split(/\r?\n/).forEach((raw, index) => {
@@ -125,7 +125,7 @@ export function parse(text: string): Reading {
     // hold its columns exactly, and the preview lists every pair it read.
     const column = indent.length
     while ((open.at(-1)?.column ?? -1) >= column) open.pop()
-    const under = open.at(-1)?.anchor
+    const under = open.at(-1)?.lineHead
     if (column > 0 && under === undefined) {
       faults.push(`line ${String(at)}: "${line}" is indented under nothing`)
     }
@@ -144,13 +144,13 @@ export function parse(text: string): Reading {
     }
 
     // Every name on the line was empty. The fault above already reported it.
-    const [anchor, ...rest] = named
-    if (anchor === undefined) return
+    const [lineHead, ...rest] = named
+    if (lineHead === undefined) return
 
-    if (under !== undefined) join(under, anchor, at)
-    for (const other of rest) join(anchor, other, at)
+    if (under !== undefined) join(under, lineHead, at)
+    for (const other of rest) join(lineHead, other, at)
 
-    open.push({ column, anchor })
+    open.push({ column, lineHead })
   })
 
   return { names: [...names.values()], pairs: [...pairs.values()], faults, lines }
@@ -244,50 +244,50 @@ export function format(
   // Choose which end of a pair writes the line: the node with the higher degree. A hub then
   // gathers its neighbours onto one line, the way someone would have typed it. Ties break by
   // name, so one graph always produces one file.
-  const anchored = new Map<string, string[]>()
+  const headed = new Map<string, string[]>()
   for (const [a, b] of pairs.values()) {
     const da = degree.get(a) ?? 0
     const db = degree.get(b) ?? 0
-    const [anchor, other] = da > db || (da === db && byLabel(a, b) < 0) ? [a, b] : [b, a]
-    const group = anchored.get(anchor!)
+    const [lineHead, other] = da > db || (da === db && byLabel(a, b) < 0) ? [a, b] : [b, a]
+    const group = headed.get(lineHead!)
     if (group) group.push(other!)
-    else anchored.set(anchor!, [other!])
+    else headed.set(lineHead!, [other!])
   }
 
   // A node with no edges appears on no line above, so give it a line of its own. A lone name
   // is what the reader turns back into a node with no edges.
-  for (const [id, count] of degree) if (!count) anchored.set(id, [])
+  for (const [id, count] of degree) if (!count) headed.set(id, [])
 
   const { parent, sizes } = components(labels.keys(), pairs.values())
-  const islands = new Map<string, string[]>()
-  for (const anchor of anchored.keys()) {
-    const root = parent.get(anchor) ?? anchor
-    const group = islands.get(root)
-    if (group) group.push(anchor)
-    else islands.set(root, [anchor])
+  const groups = new Map<string, string[]>()
+  for (const lineHead of headed.keys()) {
+    const root = parent.get(lineHead) ?? lineHead
+    const group = groups.get(root)
+    if (group) group.push(lineHead)
+    else groups.set(root, [lineHead])
   }
-  for (const group of islands.values()) group.sort(byLabel)
+  for (const group of groups.values()) group.sort(byLabel)
 
-  // Largest island first, as the map page lists them. Ties break by the island's first name.
-  const order = [...islands.keys()].sort((a, b) => {
+  // Largest component first, as the map page lists them. Ties break by the component's first name.
+  const order = [...groups.keys()].sort((a, b) => {
     const size = (sizes.get(b) ?? 0) - (sizes.get(a) ?? 0)
     if (size !== 0) return size
-    return byLabel(islands.get(a)?.[0] ?? "", islands.get(b)?.[0] ?? "")
+    return byLabel(groups.get(a)?.[0] ?? "", groups.get(b)?.[0] ?? "")
   })
 
   const head =
     `${COMMENT} ${String(labels.size)} node(s), ${String(pairs.size)} edge(s), ` +
-    `${String(islands.size)} island(s)`
+    `${String(groups.size)} component(s)`
 
   const out: string[] = [head, ""]
   for (const root of order) {
-    for (const anchor of islands.get(root) ?? []) {
-      const rest = (anchored.get(anchor) ?? [])
+    for (const lineHead of groups.get(root) ?? []) {
+      const rest = (headed.get(lineHead) ?? [])
         .sort(byLabel)
         .map((id) => labels.get(id) ?? "")
-      out.push([labels.get(anchor) ?? "", ...rest].join(` ${SEPARATOR} `))
+      out.push([labels.get(lineHead) ?? "", ...rest].join(` ${SEPARATOR} `))
     }
-    // One blank line between islands. The reader ignores it. It is there so a file of a few
+    // One blank line between components. The reader ignores it. It is there so a file of a few
     // hundred lines can be read.
     out.push("")
   }

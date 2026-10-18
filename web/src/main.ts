@@ -1,12 +1,12 @@
 /**
  * The map page: wiring, the centre and the panels around it.
  *
- * The centre is the node somebody named: a click, a search hit, a doorway, a crossing. Under
- * **walk by pan** the camera names one too, whatever it stops nearest. A click never takes the
- * camera. A clicked node becomes the centre where it stands, ring and all, so the centre can
- * end up off screen, and Recentre is the way back. The search box, the islands list and a
- * doorway do still travel to their node. How long the camera must be still before it counts as
- * stopped depends on what moved it. A drag waits longest.
+ * The centre is the node somebody named: a click, a search hit, an off-screen marker, a crossing.
+ * Under **walk by pan** the camera names one too, whatever it stops nearest. A click never takes
+ * the camera. A clicked node becomes the centre where it stands, ring and all, so the centre can
+ * end up off screen, and Go to selected is the way back. The search box, the components list
+ * and an off-screen marker do still travel to their node. How long the camera must be still before it
+ * counts as stopped depends on what moved it. A drag waits longest.
  */
 import {
   Missing,
@@ -22,11 +22,11 @@ import {
 import type { Neighbourhood, NodeMeta, Opening } from "./store/index.js"
 import { DragJoin } from "./drag-join.js"
 import { Explorer, debounce, perFrame } from "./explore.js"
-import { GlobeView } from "./globe-view.js"
-import { IslandsPanel } from "./islands.js"
+import { SphereView } from "./sphere-view.js"
+import { ComponentsPanel } from "./components-panel.js"
 import { JoinPanel } from "./join.js"
 import { priced } from "./labels.js"
-import { ghostTarget, type MapSurface } from "./map.js"
+import { markerTarget, type MapSurface } from "./map.js"
 import { MapView } from "./map-view.js"
 import { currentPalette, onThemeChange } from "./palette.js"
 import { RenameBox } from "./rename-box.js"
@@ -34,25 +34,25 @@ import { distance, type Point } from "./placement.js"
 import { CURVATURE } from "./projection.js"
 import {
   curvature,
-  railOut,
+  sidePanelOpen,
   setCurvature,
-  setRailOut,
+  setSidePanelOpen,
   setWalkByPan,
   walkByPan,
 } from "./settings.js"
 import { World, type WorldNode } from "./world.js"
-import { Writes, type Receipt } from "./writes.js"
+import { Writes, type LogEntry } from "./writes.js"
 
 /**
- * Camera stillness before the doorways are revised.
+ * Camera stillness before the off-screen markers are revised.
  *
- * A pan no longer changes the centre, so nothing here is about what a gesture drifts across
- * any more. What is left answers to the viewport: a doorway stands while its neighbour is off
- * screen, and a doorway is an element, so raising and lowering them through the frames of a
- * fling would strobe. The wait is for the picture the camera finished on, not for any of the
- * ones it passed through.
+ * A pan no longer changes the centre, so nothing here is about what a gesture passes across
+ * any more. What is left answers to the viewport: an off-screen marker stands while its neighbour
+ * is off screen, and an off-screen marker is an element, so raising and lowering them through the
+ * frames of a fling would strobe. The wait is for the picture the camera finished on, not for any
+ * of the ones it passed through.
  */
-const SETTLE_MS = 190
+const IDLE_MS = 190
 
 /**
  * The same wait, for an input that stops at once.
@@ -62,7 +62,7 @@ const SETTLE_MS = 190
  * is coming, and a held arrow repeats faster than this on a stock keyboard, so a run of them
  * still costs the one revision at the end of it.
  */
-const NUDGE_SETTLE_MS = 110
+const NUDGE_IDLE_MS = 110
 
 /**
  * How much closer to the middle a rival must be before it takes the centre from the incumbent.
@@ -71,7 +71,7 @@ const NUDGE_SETTLE_MS = 110
  * distances to the same point. It prevents the flicker a bare nearest-wins test gives when the
  * middle passes between two nodes.
  */
-const ACCENT_HYSTERESIS = 0.78
+const SELECT_HYSTERESIS = 0.78
 
 /** Keyboard pan step, in screen pixels. */
 const NUDGE = 120
@@ -86,7 +86,7 @@ const el = <T extends Element>(id: string): T => {
 
 const stage = el<HTMLDivElement>("stage")
 const status = el<HTMLParagraphElement>("status")
-const railTab = el<HTMLButtonElement>("rail-tab")
+const sidePanelTab = el<HTMLButtonElement>("side-panel-tab")
 const guide = el<HTMLDivElement>("guide")
 const guideToggle = el<HTMLButtonElement>("guide-toggle")
 const walkToggle = el<HTMLInputElement>("walk-by-pan")
@@ -101,11 +101,13 @@ const world = new World()
  * Which renderer draws the map. Scaffolding, and it goes when map-view.ts does.
  *
  * Every drive script that reaches Cytoscape through its container needs the page to keep
- * opening on Cytoscape. So the globe is behind a query until those scripts address a canvas
+ * opening on Cytoscape. So the sphere view is behind a query until those scripts address a canvas
  * instead. Nothing the reader can click chooses a renderer.
  */
-const onGlobe = new URLSearchParams(location.search).has("globe")
-const view: MapSurface = onGlobe ? new GlobeView(stage, world) : new MapView(stage, world)
+const query = new URLSearchParams(location.search)
+// `?globe` is the name from before the rename. Old bookmarks still open the sphere view.
+const onSphere = query.has("sphere") || query.has("globe")
+const view: MapSurface = onSphere ? new SphereView(stage, world) : new MapView(stage, world)
 
 /**
  * The queue every write to the graph goes through.
@@ -113,31 +115,31 @@ const view: MapSurface = onGlobe ? new GlobeView(stage, world) : new MapView(sta
  * Built here because two things write: the join panel below, and the map itself. Putting the
  * queue inside either one would leave it out of reach of the other.
  */
-const writes = new Writes(el<HTMLDivElement>("receipts"), setStatus)
+const writes = new Writes(el<HTMLDivElement>("write-log"), setStatus)
 
 /**
- * The island panel: every component of the graph, as a place to go.
+ * The component panel: every component of the graph, as a place to go.
  *
- * Built here rather than in `boot`, because a graph the map cannot open on still has islands
- * in it, and this list is the only way to reach them. See the `home` branch in `boot`.
+ * Built here rather than in `boot`, because a graph the map cannot open on still has components
+ * in it, and this list is the only way to reach them. See the `start` branch in `boot`.
  */
-const islands = new IslandsPanel(
-  el<HTMLElement>("islands"),
-  el<HTMLUListElement>("islands-list"),
-  el<HTMLSpanElement>("islands-count"),
+const components = new ComponentsPanel(
+  el<HTMLElement>("components"),
+  el<HTMLUListElement>("components-list"),
+  el<HTMLSpanElement>("components-count"),
   {
-    onCross: (island, seated) => {
-      // If a node of this island is already on the map, go to that node, not to the island's
+    onCross: (component, placedId) => {
+      // If a node of this component is already on the map, go to that node, not to the component's
       // naming node. They are usually different, and placing a node that is already drawn
       // would put a second copy of it somewhere else.
-      const known = seated === null ? null : world.get(seated)
+      const known = placedId === null ? null : world.get(placedId)
       if (known) {
         goTo(known)
         return
       }
-      // Use `berth`, not the nearest gap. An island grows as it is walked, and starting it
+      // Use `freeSpot`, not the nearest gap. A component grows as it is walked, and starting it
       // beside the camera would grow it through whatever is already there.
-      goTo(island, world.berth(island.id))
+      goTo(component, world.freeSpot(component.id))
     },
     placed: (id) => world.has(id),
   },
@@ -146,7 +148,7 @@ const islands = new IslandsPanel(
 function setStatus(text: string, tone: "idle" | "busy" | "error"): void {
   status.textContent = text
   status.dataset["tone"] = tone
-  // The pill is drawn only when the tone is not idle, and it is narrow. Put the tone on the
+  // The label box is drawn only when the tone is not idle, and it is narrow. Put the tone on the
   // guide's button as well, which is in the same corner and always there.
   guideToggle.dataset["tone"] = tone
 }
@@ -179,56 +181,56 @@ const explorer = new Explorer(world, view, {
   onChange: () => {
     render()
     // The reply adds neighbours the settle that asked for it could not see: the read is not
-    // awaited there, so the ghost pass ran before the reply arrived. Schedule another settle
-    // to cover them. This keeps ghosts tied to a settled camera, rather than creating
-    // elements inside `add`, which a pan also calls.
-    settle()
+    // awaited there, so the off-screen marker pass ran before the reply arrived. Schedule another
+    // settle to cover them. This keeps off-screen markers tied to a settled camera, rather than
+    // creating elements inside `add`, which a pan also calls.
+    whenIdle()
   },
   onError: (message) => setStatus(`⚠ ${message}`, "error"),
 })
 
 /**
- * Repaint the island rows and the status line.
+ * Repaint the component rows and the status line.
  *
  * The last thing it does is write the idle hint over the status line, unless that line
  * already holds an error. So a caller with something to say calls this first and
  * `setStatus` after.
  */
 function render(): void {
-  // Which islands are on the map changes without the store changing: walking across an edge
+  // Which components are on the map changes without the store changing: walking across an edge
   // places one. So repaint the rows here, not only after a write.
-  islands.paint()
+  components.paint()
 
   if (status.dataset["tone"] === "error") return
   if (explorer.pending > 0) setStatus(`loading ${explorer.pending}…`, "busy")
-  else setStatus("drag to pan · wheel to zoom · click to centre", "idle")
+  else setStatus("drag to pan · wheel to zoom · click to select", "idle")
 }
 
 /**
  * Name a node the centre, and take whatever its arrival makes possible.
  *
- * Every way in comes through here: a click, a search, an island, the claim below for a map
+ * Every way in comes through here: a click, a search, a component, the claim below for a map
  * that has just lost its centre, and the tracker below that when the reader has handed the
- * centre back to the camera. `flyTo` is the one exception, promoting its own destination on
- * landing so that the ghost has something to dissolve into.
+ * centre back to the camera. `moveToMarker` is the one exception, promoting its own destination on
+ * landing so that the off-screen marker has something to dissolve into.
  *
- * The early return is load-bearing, not tidiness. `setAccent` reports whether the mark
+ * The early return is load-bearing, not tidiness. `select` reports whether the mark
  * actually moved, and the tracker calls this on every frame of a pan — so a frame that finds
  * the same node nearest costs one comparison and touches neither the DOM nor the store.
  */
-function becomeCentre(id: string): void {
-  if (!view.setAccent(id)) return
+function selectNode(id: string): void {
+  if (!view.select(id)) return
   // Room is a property of the map at one moment. Arriving is the moment to ask again
   // whether the neighbours this node never had space for can be fitted now.
-  const late = world.seatPending(id)
+  const late = world.placePending(id)
   if (late.nodes.length || late.edges.length) view.add(late.nodes, late.edges)
   render()
-  // `setAccent` has just taken down the doorways the last centre raised, and nothing else here
-  // puts them back. A click moves no camera, so there is no `viewport` to schedule this on, and
-  // a node whose ring was already read asks `Explorer` for nothing either — the centre would
+  // `select` has just taken down the off-screen markers the last centre raised, and nothing else
+  // here puts them back. A click moves no camera, so there is no `viewport` to schedule this on,
+  // and a node whose ring was already read asks `Explorer` for nothing either — the centre would
   // stand with no way out of it until the reader happened to pan. The early return above is
   // what keeps this off a naming that changed nothing.
-  settle()
+  whenIdle()
 }
 
 /**
@@ -243,81 +245,82 @@ function becomeCentre(id: string): void {
  * is no incumbent left to be biased toward, and on a switch the bias would sometimes leave the
  * mark where it was and read as a control that did nothing.
  *
- * Never during a flight. `setAccent` clears the ghosts, so a claim landing mid-journey would
- * take down the one in the air — and the flight names its own destination anyway.
+ * Never during a flight. `select` clears the off-screen markers, so a claim landing mid-journey
+ * would take down the one in the air — and the flight names its own destination anyway.
  */
-function claimCentre(): void {
-  if (view.inFlight) return
-  const candidate = world.nearestTo(view.centre(), view.reach())
-  if (candidate) becomeCentre(candidate.id)
+function selectNearest(): void {
+  if (view.cameraMoving) return
+  const candidate = world.nearestTo(view.middle(), view.reach())
+  if (candidate) selectNode(candidate.id)
 }
 
 /**
  * The centre, handed back to the camera: whatever is nearest the middle takes it.
  *
- * Off by default, and the whole of 0032 is why. On, a seat is still permanent, so every node
- * the middle crosses has its ring read and placed for good — the drift is the cost the reader
+ * Off by default, and the whole of 0032 is why. On, a placed node still stays where it is, so
+ * every node the middle crosses has its ring read and placed for good. That is the cost the reader
  * is choosing, not a bug to be fixed here.
  *
  * Hysteresis because this runs against an incumbent: a bare nearest-wins test flickers between
- * two nodes as the midpoint passes between them, which `claimCentre` never has to deal with.
+ * two nodes as the midpoint passes between them, which `selectNearest` never has to deal with.
  */
-const trackCentre = perFrame(() => {
+const followCamera = perFrame(() => {
   // A flight pans the camera over every node between the start and the target. Letting the
-  // centre follow would give it to each in turn, and would take down the ghost being flown to.
-  if (view.inFlight) return
+  // centre follow would give it to each in turn, and would take down the off-screen marker being
+  // flown to.
+  if (view.cameraMoving) return
 
-  const middle = view.centre()
+  const middle = view.middle()
   const candidate = world.nearestTo(middle, view.reach())
   if (!candidate) return
 
-  const current = view.accent ? world.get(view.accent) : null
+  const current = view.selected ? world.get(view.selected) : null
   if (current && current.id !== candidate.id) {
     const rival = distance(candidate, middle)
     const incumbent = distance(current, middle)
-    if (rival > incumbent * ACCENT_HYSTERESIS) return
+    if (rival > incumbent * SELECT_HYSTERESIS) return
   }
-  becomeCentre(candidate.id)
+  selectNode(candidate.id)
 })
 
 /**
  * The tracker and the switch it answers to.
  *
- * Tested here rather than inside `trackCentre`, because `perFrame` schedules a frame before the
+ * Tested here rather than inside `followCamera`, because `perFrame` schedules a frame before the
  * body can decline it. Guarding within would have a map with the setting off pay a callback on
  * every frame of every pan for a feature it is not using. A frame already queued when the
  * reader unticks still lands, which matches having flipped the box one frame later.
  */
 const walk = (): void => {
-  if (walkByPan()) trackCentre()
+  if (walkByPan()) followCamera()
 }
 
 /**
  * Everything that waits for the camera to stop.
  *
  * Cytoscape emits `viewport` on every frame of an animated pan, and emits it even when the
- * pan moved nothing. A Recentre with the centre already centred still reaches here. That is
+ * pan moved nothing. A Go to selected with the centre already centred still reaches here. That is
  * harmless because the only read this schedules is the centre's, and a node is read once: a
  * second settle over the same node finds it already marked.
  */
-const settle = debounce(() => {
-  explorer.loadCentre()
-  // Ghosts are created and removed only on a settled camera. Their colour tiers are data
-  // writes and cheap to redo mid-pan, but elements appearing and disappearing on every frame
+const whenIdle = debounce(() => {
+  explorer.loadSelected()
+  // Off-screen markers are created and removed only on a settled camera. Their colour tiers are
+  // data writes and cheap to redo mid-pan, but elements appearing and disappearing on every frame
   // of a pan would flicker.
-  view.reviseGhosts()
+  view.updateMarkers()
   render()
-}, SETTLE_MS)
+}, IDLE_MS)
 
 /** Set by an arrow key, and read by the `viewport` event it causes. */
 let nudged = false
 
 view.on("viewport", () => {
   // The menu opened over a node at a screen position. Moving the map under it would leave it
-  // pointing at whatever drifted under the pointer instead.
+  // pointing at whatever moved under the pointer instead.
   closeMenu()
   walk()
-  settle(nudged ? NUDGE_SETTLE_MS : SETTLE_MS)
+  whenIdle(nudged ? NUDGE_IDLE_MS : IDLE_MS)
   nudged = false
 })
 
@@ -332,17 +335,17 @@ view.on("nodeLeave", () => {
 })
 
 view.on("nodeTap", (id) => {
-  // A ghost stands in for an off-screen node. Clicking one flies to that node. The read
-  // starts now rather than on the settle at the far end, because the destination is already
+  // An off-screen marker stands in for an off-screen node. Clicking one flies to that node. The
+  // read starts now rather than on the settle at the far end, because the destination is already
   // known and the flight is otherwise idle time.
-  const target = ghostTarget(id)
+  const target = markerTarget(id)
   if (target) {
-    // The name before the journey. A ghost carries it on screen long before the node it
-    // stands for arrives, and the reader may have wanted the one without the other.
+    // The name before the journey. An off-screen marker carries it on screen long before the node
+    // it stands for arrives, and the reader may have wanted the one without the other.
     const named = world.get(target)
     if (named) void copyLabel(named.label)
     explorer.prefetch(target)
-    if (view.flyTo(id, () => render())) render()
+    if (view.moveToMarker(id, () => render())) render()
     return
   }
 
@@ -355,14 +358,14 @@ view.on("nodeTap", (id) => {
 
   // On a click on the centre, this handler stops after the copy. The join panel's inputs
   // keep their values. See docs/decisions/0049-a-click-leaves-the-panel-alone.md.
-  if (id === view.accent) return
+  if (id === view.selected) return
 
   // Named where it stands. This handler was the last place the page moved the camera on its
   // own: a click drew the node to the middle whether or not anyone wanted to be moved. The
   // node's ring now draws around it wherever it sits, off the edge of the screen included.
-  // **Recentre** is how the middle is asked for.
+  // **Go to selected** is how the middle is asked for.
   explorer.prefetch(id)
-  becomeCentre(id)
+  selectNode(id)
 })
 
 /**
@@ -370,8 +373,8 @@ view.on("nodeTap", (id) => {
  *
  * Right-click, and only at the centre: the centre node itself, or one of the lines that
  * reaches it. The centre is what the reader walked to, and it is the only node whose degree
- * is shown on the page, so it is the only one whose cost the menu can state. A ghost is never
- * the centre.
+ * is shown on the page, so it is the only one whose cost the menu can state. An off-screen marker
+ * is never the centre.
  *
  * The writes are not alike, and the menu says so. A node taken out cannot be put back,
  * because its edges cannot come with it. So the button names how much is going, and the
@@ -453,12 +456,12 @@ editRow.addEventListener("click", () => {
 /**
  * The node at one end of a drawn line, or null if that end is not one.
  *
- * A ghost is not a node on the map, but it names one, and its dashed lead stands for that
- * node's edge to the centre. A stub names nothing, so a stub's lead ends here and the line
+ * An off-screen marker is not a node on the map, but it names one, and its dashed lead stands for
+ * that node's edge to the centre. A stub names nothing, so a stub's lead ends here and the line
  * it draws cannot be parted.
  */
 function ended(id: string): WorldNode | null {
-  return world.get(ghostTarget(id) ?? id) ?? null
+  return world.get(markerTarget(id) ?? id) ?? null
 }
 
 // Without this the browser's own context menu opens on top of this one.
@@ -471,7 +474,7 @@ window.addEventListener("pointerdown", (event) => {
 })
 
 view.on("nodeMenu", (id, at) => {
-  if (id !== view.accent) return
+  if (id !== view.selected) return
   const node = world.get(id)
   if (!node) return
 
@@ -482,12 +485,12 @@ view.on("edgeMenu", (from, to, at) => {
   const a = ended(from)
   const b = ended(to)
   if (!a || !b) return
-  // One end has to be the centre, the same rule the node above follows. A ghost's lead
-  // already meets it: a ghost belongs to the centre that created it.
-  if (a.id !== view.accent && b.id !== view.accent) return
+  // One end has to be the centre, the same rule the node above follows. An off-screen marker's lead
+  // already meets it: an off-screen marker belongs to the centre that created it.
+  if (a.id !== view.selected && b.id !== view.selected) return
 
   // The centre first, so the row reads out from where the reader is standing.
-  const [near, far] = a.id === view.accent ? [a, b] : [b, a]
+  const [near, far] = a.id === view.selected ? [a, b] : [b, a]
   openMenu(
     { kind: "edge", a: near.id, b: far.id },
     `part ${near.label} and ${far.label}`,
@@ -520,46 +523,46 @@ const rename = new RenameBox(el<HTMLInputElement>("map-name"), el<HTMLButtonElem
  * The store does the hard half in one transaction. What is left here is the drawn map, where
  * a Cytoscape id cannot be changed. The node is dropped with its edges, then added again
  * under the new name, at the position `World.rename` kept for it. A rename that kept its key
- * moves nothing, and only the pill is redrawn.
+ * moves nothing, and only the label box is redrawn.
  *
  * This offers an undo where removing a node cannot, because a rename is exactly reversible.
  * The way back is a rename back, and it is refused if something claimed the old name in
  * between.
  */
 function renameNode(node: NodeMeta, next: string): void {
-  const receipt = writes.open()
-  receipt.el.textContent = node.label
-  writes.run(receipt, async () => {
+  const entry = writes.open()
+  entry.el.textContent = node.label
+  writes.run(entry, async () => {
     try {
       const renamed = await applyRename(node, next)
-      receipt.settle("ok", `renamed ${node.label} to ${renamed.label}`)
-      receipt.offerUndo("put the old name back", () => {
-        writes.run(receipt, () => renameBack(receipt, renamed, node.label))
+      entry.finish("ok", `renamed ${node.label} to ${renamed.label}`)
+      entry.offerUndo("put the old name back", () => {
+        writes.run(entry, () => renameBack(entry, renamed, node.label))
       })
-      void refreshIslands()
+      void refreshComponents()
       // Set the status after `render`, never before. `render` writes the idle hint over
       // whatever the status line holds.
       render()
       setStatus(`renamed ${node.label} to ${renamed.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      receipt.settle("warn", reason)
+      entry.finish("warn", reason)
       setStatus(`⚠ ${reason}`, "error")
     }
   })
 }
 
 /** Undo one. It is the same write in the other direction, so it settles as undone. */
-async function renameBack(receipt: Receipt, node: NodeMeta, was: string): Promise<void> {
+async function renameBack(entry: LogEntry, node: NodeMeta, was: string): Promise<void> {
   try {
     const back = await applyRename(node, was)
-    receipt.settle("undone", `${back.label} has its old name back`)
-    void refreshIslands()
+    entry.finish("undone", `${back.label} has its old name back`)
+    void refreshComponents()
     render()
     setStatus(`undid renaming ${node.label}`, "idle")
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
-    receipt.settle("warn", reason)
+    entry.finish("warn", reason)
     setStatus(`⚠ ${reason}`, "error")
   }
 }
@@ -586,14 +589,14 @@ async function applyRename(node: NodeMeta, next: string): Promise<NodeMeta> {
     }
   }
 
-  // `setAccent` and not `becomeCentre`, which every other path here uses. That one is for
-  // arriving at a node: it seats whatever was waiting for room and schedules a read. A rename
+  // `select` and not `selectNode`, which every other path here uses. That one is for
+  // arriving at a node: it places whatever was waiting for room and schedules a read. A rename
   // arrives nowhere, and `World.rename` carried the expanded mark and the pending list across.
-  // Its `settle` would also repaint the status line a moment after this write set it.
-  view.setAccent(renamed.id)
-  // A ghost stands for a node by name, so the ones this node owns are stale. `rejoin` revises
-  // them here for the same reason, rather than leaving them to the next settle.
-  view.reviseGhosts()
+  // Its `whenIdle` would also repaint the status line a moment after this write set it.
+  view.select(renamed.id)
+  // An off-screen marker stands for a node by name, so the ones this node owns are stale. `rejoin`
+  // revises them here for the same reason, rather than leaving them to the next settle.
+  view.updateMarkers()
   // An input in the panel may be holding the old name, which now names nothing.
   panel.forget(node)
   return renamed
@@ -603,13 +606,13 @@ async function applyRename(node: NodeMeta, next: string): Promise<NodeMeta> {
  * Shift and drag between two nodes to join them.
  *
  * The gesture and its arrow are drag-join.ts. What reaches the graph is `joinPair` below.
- * `ended` is the same resolver the menu above parts an edge with. So a ghost stands for its node
- * at either end of a drag, as it does under a right-click.
+ * `ended` is the same resolver the menu above parts an edge with. So an off-screen marker stands
+ * for its node at either end of a drag, as it does under a right-click.
  */
-new DragJoin(view, el<SVGPathElement>("aim-arrow"), el<SVGLinearGradientElement>("aim-ink"), {
+new DragJoin(view, el<SVGPathElement>("drag-arrow-path"), el<SVGLinearGradientElement>("drag-arrow-ink"), {
   ended,
   join: joinPair,
-  aim: (id) => view.aim(id),
+  markDropTarget: (id) => view.markDropTarget(id),
   // The menu opens at a point on screen, and a drag is about to change what is under it.
   onStart: closeMenu,
 })
@@ -620,9 +623,9 @@ function removeNode(id: string): void {
   if (!node) return
 
   // Through the same queue as every other write, behind whatever the panel has queued.
-  const receipt = writes.open()
-  receipt.el.textContent = node.label
-  writes.run(receipt, async () => {
+  const entry = writes.open()
+  entry.el.textContent = node.label
+  writes.run(entry, async () => {
     try {
       const { parted } = await deleteNodeWithEdges(id)
 
@@ -642,14 +645,14 @@ function removeNode(id: string): void {
       view.drop(gone, dropped)
       // `drop` clears an accent that has gone and leaves the caller to re-pick. This is the
       // only thing that will: the camera no longer hands the mark around. Without the claim
-      // the map sits with no centre, drawing no ring and raising no doorways.
-      claimCentre()
+      // the map sits with no centre, drawing no ring and raising no off-screen markers.
+      selectNearest()
       // An input in the panel may be holding this name. This write does not go through the
       // panel, so tell it. A name that no longer exists must not stay in an input.
       panel.forget(node)
 
-      receipt.settle("ok", `removed ${node.label}`)
-      void refreshIslands()
+      entry.finish("ok", `removed ${node.label}`)
+      void refreshComponents()
       render()
       setStatus(`removed ${node.label}`, "idle")
     } catch (err) {
@@ -658,35 +661,35 @@ function removeNode(id: string): void {
       // error carries no list of them. A fresh read cannot recover it either, because reads
       // are capped: an edge missing from one read is not proof it is gone. So report the
       // state rather than trying to repair it.
-      receipt.settle("warn", reason)
+      entry.finish("warn", reason)
       setStatus(`⚠ ${reason} — edges may already have gone; ask again to finish`, "error")
     }
   })
 }
 
-/** Part two nodes: the store write, then the map, then a receipt carrying the way back. */
+/** Part two nodes: the store write, then the map, then a write log entry carrying the way back. */
 function partEdge(aId: string, bId: string): void {
   const a = world.get(aId)
   const b = world.get(bId)
   if (!a || !b) return
 
-  const receipt = writes.open()
-  receipt.el.textContent = `${a.label} — ${b.label}`
-  writes.run(receipt, async () => {
+  const entry = writes.open()
+  entry.el.textContent = `${a.label} — ${b.label}`
+  writes.run(entry, async () => {
     try {
       await unjoinNodes(aId, bId)
       partOnMap(aId, bId)
 
-      receipt.settle("ok", `parted ${a.label} and ${b.label}`)
-      receipt.offerUndo("join them again", () => {
-        writes.run(receipt, () => rejoin(receipt, a, b))
+      entry.finish("ok", `parted ${a.label} and ${b.label}`)
+      entry.offerUndo("join them again", () => {
+        writes.run(entry, () => rejoin(entry, a, b))
       })
-      void refreshIslands()
+      void refreshComponents()
       render()
       setStatus(`parted ${a.label} and ${b.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      receipt.settle("warn", reason)
+      entry.finish("warn", reason)
       setStatus(`⚠ ${reason}`, "error")
     }
   })
@@ -701,10 +704,10 @@ function partOnMap(a: string, b: string): void {
   world.lowerDegree(a)
   world.lowerDegree(b)
   view.drop([], [[a, b]])
-  // `drop` does not run this, and it is the only thing that takes down a ghost whose target
-  // has stopped being a neighbour. Without it the ghost and its dashed lead stand until the
-  // next camera settle, naming an edge this write has just removed.
-  view.reviseGhosts()
+  // `drop` does not run this, and it is the only thing that takes down an off-screen marker whose
+  // target has stopped being a neighbour. Without it the off-screen marker and its dashed lead
+  // stand until the next camera settle, naming an edge this write has just removed.
+  view.updateMarkers()
 }
 
 /** Draw a join the store has taken. The mirror of `partOnMap`, and shared with the drag. */
@@ -713,24 +716,24 @@ function joinOnMap(a: string, b: string): void {
   world.bumpDegree(a)
   world.bumpDegree(b)
   if (world.linkExisting(a, b)) view.add([], [[a, b]])
-  // The mirror of the ghost pass in `partOnMap`. The far end is a neighbour again, and an
-  // off-screen one gets its ghost back now instead of on the next settle.
-  view.reviseGhosts()
+  // The mirror of the off-screen marker pass in `partOnMap`. The far end is a neighbour again, and
+  // an off-screen one gets its off-screen marker back now instead of on the next settle.
+  view.updateMarkers()
 }
 
-/** Join the pair again, from the receipt's undo. */
-async function rejoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void> {
+/** Join the pair again, from the write log entry's undo. */
+async function rejoin(entry: LogEntry, a: NodeMeta, b: NodeMeta): Promise<void> {
   try {
     await joinNodes(a.id, b.id)
     joinOnMap(a.id, b.id)
 
-    receipt.settle("undone", `joined ${a.label} and ${b.label} again`)
-    void refreshIslands()
+    entry.finish("undone", `joined ${a.label} and ${b.label} again`)
+    void refreshComponents()
     render()
     setStatus(`undid parting ${a.label} and ${b.label}`, "idle")
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
-    receipt.settle("warn", reason)
+    entry.finish("warn", reason)
     setStatus(`⚠ ${reason}`, "error")
   }
 }
@@ -739,45 +742,45 @@ async function rejoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void>
  * Join two nodes named by a drag on the map: the store write, then the map, then the way back.
  *
  * Nothing is checked here first. A pair the graph already holds is the store's to refuse, and
- * the receipt is where its sentence lands. A node aimed at itself never reaches here. The
+ * the write log entry is where its sentence lands. A node aimed at itself never reaches here. The
  * gesture reads a release on its own source as naming one node, not a pair.
  */
 function joinPair(a: WorldNode, b: WorldNode): void {
-  const receipt = writes.open()
-  receipt.el.textContent = `${a.label} — ${b.label}`
-  writes.run(receipt, async () => {
+  const entry = writes.open()
+  entry.el.textContent = `${a.label} — ${b.label}`
+  writes.run(entry, async () => {
     try {
       await joinNodes(a.id, b.id)
       joinOnMap(a.id, b.id)
 
-      receipt.settle("ok", `joined ${a.label} and ${b.label}`)
-      receipt.offerUndo("part them again", () => {
-        writes.run(receipt, () => unjoin(receipt, a, b))
+      entry.finish("ok", `joined ${a.label} and ${b.label}`)
+      entry.offerUndo("part them again", () => {
+        writes.run(entry, () => unjoin(entry, a, b))
       })
-      void refreshIslands()
+      void refreshComponents()
       render()
       setStatus(`joined ${a.label} and ${b.label}`, "idle")
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      receipt.settle("warn", reason)
+      entry.finish("warn", reason)
       setStatus(`⚠ ${reason}`, "error")
     }
   })
 }
 
-/** Part the pair again, from the receipt's undo. The mirror of `rejoin`. */
-async function unjoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void> {
+/** Part the pair again, from the write log entry's undo. The mirror of `rejoin`. */
+async function unjoin(entry: LogEntry, a: NodeMeta, b: NodeMeta): Promise<void> {
   try {
     await unjoinNodes(a.id, b.id)
     partOnMap(a.id, b.id)
 
-    receipt.settle("undone", `parted ${a.label} and ${b.label} again`)
-    void refreshIslands()
+    entry.finish("undone", `parted ${a.label} and ${b.label} again`)
+    void refreshComponents()
     render()
     setStatus(`undid joining ${a.label} and ${b.label}`, "idle")
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
-    receipt.settle("warn", reason)
+    entry.finish("warn", reason)
     setStatus(`⚠ ${reason}`, "error")
   }
 }
@@ -790,22 +793,22 @@ async function unjoin(receipt: Receipt, a: NodeMeta, b: NodeMeta): Promise<void>
  * only come from where the camera is. That is a one-off. Once placed it is an ordinary node,
  * and its neighbours are read on the settle at the end of the flight like anywhere else.
  *
- * `at` overrides that, and an island uses it. A searched node is one node and can follow the
- * camera. An island is the first node of a neighbourhood that grows as it is walked, so it
- * needs room around it rather than the nearest gap. See `World.berth`.
+ * `at` overrides that, and a component uses it. A searched node is one node and can follow the
+ * camera. A component is the first node of a neighbourhood that grows as it is walked, so it
+ * needs room around it rather than the nearest gap. See `World.freeSpot`.
  */
 function goTo(node: NodeMeta, at?: Point): void {
   if (!world.has(node.id)) {
-    view.add([world.place(node, at ?? world.landing(view.centre(), node.id))], [])
+    view.add([world.place(node, at ?? world.nearestFreeSpot(view.middle(), node.id))], [])
   }
-  // From here on this is the named-destination path, and the glide separates it from a click.
+  // From here on this is the named-destination path, and the camera move separates it from a click.
   // Somebody who names a node is asking to be taken there; somebody who clicks one can already
   // see it. Read it now rather than on the settle at the far end. Named whether or not it had to
-  // be placed — a hit already on the map is still being arrived at, and the glide alone would
-  // leave the centre behind on the node the reader came from. `becomeCentre` is what repaints,
+  // be placed — a hit already on the map is still being arrived at, and the camera move alone would
+  // leave the centre behind on the node the reader came from. `selectNode` is what repaints,
   // so nothing here needs to: a destination that is already the centre has nothing to repaint.
   explorer.prefetch(node.id)
-  becomeCentre(node.id)
+  selectNode(node.id)
   view.focus(node.id)
 }
 
@@ -843,11 +846,11 @@ const panel = new JoinPanel(
     // Setting the anchor is the page's other way of arriving at a node.
     onArm: goTo,
     onNode: (node) => {
-      // Re-read the islands here, not only after the edge. A create that lands before a
+      // Re-read the components here, not only after the edge. A create that lands before a
       // refused join is still a node in the store, and the list and the panel say so.
-      void refreshIslands()
+      void refreshComponents()
       if (world.has(node.id)) return
-      view.add([world.place(node, world.landing(view.centre(), node.id))], [])
+      view.add([world.place(node, world.nearestFreeSpot(view.middle(), node.id))], [])
       render()
     },
     onEdge: (a, b) => {
@@ -858,8 +861,8 @@ const panel = new JoinPanel(
       world.bumpDegree(b.id)
       const drawn = world.linkExisting(a.id, b.id)
       if (drawn) view.add([], [[a.id, b.id]])
-      // The island rows came from one read at boot and are now one write out of date.
-      void refreshIslands()
+      // The component rows came from one read at boot and are now one write out of date.
+      void refreshComponents()
       render()
     },
     onUndone: (a, b, removed) => {
@@ -872,8 +875,8 @@ const panel = new JoinPanel(
       view.drop(gone, [[a.id, b.id]])
       // A removed node may have been the centre, and nothing else will ask. Without this the
       // accent would go on marking a node that is gone.
-      if (gone.length) claimCentre()
-      void refreshIslands()
+      if (gone.length) selectNearest()
+      void refreshComponents()
       render()
     },
   },
@@ -921,31 +924,31 @@ window.addEventListener("keydown", (event) => {
 })
 
 el<HTMLButtonElement>("zoom-in").addEventListener("click", () =>
-  view.zoomAbout(renderedCentre(), 1.35),
+  view.zoomAbout(canvasMiddle(), 1.35),
 )
 el<HTMLButtonElement>("zoom-out").addEventListener("click", () =>
-  view.zoomAbout(renderedCentre(), 1 / 1.35),
+  view.zoomAbout(canvasMiddle(), 1 / 1.35),
 )
-el<HTMLButtonElement>("home").addEventListener("click", () => {
-  if (view.accent) view.focus(view.accent)
+el<HTMLButtonElement>("go-to-selected").addEventListener("click", () => {
+  if (view.selected) view.focus(view.selected)
 })
 
 /**
- * Pull the island drawer out, and push it back.
+ * Pull the component side panel out, and push it back.
  *
  * `aria-expanded` holds the state. CSS reads it as well as a screen reader, so the state lives
  * in one place instead of also being a class. app.css slides the panel; nothing here measures
  * or positions it.
  */
-railTab.addEventListener("click", () => {
-  const out = railTab.getAttribute("aria-expanded") === "true"
-  railTab.setAttribute("aria-expanded", String(!out))
-  setRailOut(!out)
+sidePanelTab.addEventListener("click", () => {
+  const out = sidePanelTab.getAttribute("aria-expanded") === "true"
+  sidePanelTab.setAttribute("aria-expanded", String(!out))
+  setSidePanelOpen(!out)
 })
 
 // The markup ships shut, so this only ever opens it. Same shape as `walkToggle.checked` below:
 // the attribute is the state, and storage only says what an earlier session left.
-if (railOut()) railTab.setAttribute("aria-expanded", "true")
+if (sidePanelOpen()) sidePanelTab.setAttribute("aria-expanded", "true")
 
 /**
  * The switch that hands the centre to the camera, and back.
@@ -960,15 +963,15 @@ walkToggle.addEventListener("change", () => {
   setWalkByPan(walkToggle.checked)
 
   // Nothing to undo going the other way, and that is the honest answer rather than an
-  // oversight: a seat is permanent, so what the panning placed stays placed, and the centre
+  // oversight: a placed node stays where it is, so what the panning placed stays placed, and the centre
   // keeps whatever the last frame gave it. Off means the camera stops naming one, not that an
   // earlier centre comes back — nothing recorded one.
   if (!walkToggle.checked) return
 
   // Applied now rather than on the next pan. The box says the middle names the centre. An
   // accent still marking the node clicked would be the control appearing to do nothing.
-  // `claimCentre` rather than the tracker: one application has no flicker to bias against.
-  claimCentre()
+  // `selectNearest` rather than the tracker: one application has no flicker to bias against.
+  selectNearest()
 })
 
 /**
@@ -984,7 +987,7 @@ walkToggle.addEventListener("change", () => {
 curveSlider.min = String(CURVATURE.min)
 curveSlider.max = String(CURVATURE.max)
 curveSlider.value = String(curvature())
-curveRow.hidden = !onGlobe
+curveRow.hidden = !onSphere
 view.curve(curvature())
 
 curveSlider.addEventListener("input", () => {
@@ -992,20 +995,20 @@ curveSlider.addEventListener("input", () => {
   view.curve(curvature())
 })
 
-function renderedCentre(): { x: number; y: number } {
+function canvasMiddle(): { x: number; y: number } {
   return { x: stage.clientWidth / 2, y: stage.clientHeight / 2 }
 }
 
 onThemeChange((palette) => view.restyle(palette))
 
 // A window that changed shape is not a loss: the centre is wherever it was, whether or not the
-// new viewport still shows it. The doorways answer to the shape, and the settle revises those.
-// The middle of the screen moves in world coordinates too, so the walk runs here as well for a
-// reader who has handed the centre to the camera.
+// new viewport still shows it. The off-screen markers answer to the shape, and the settle revises
+// those. The middle of the screen moves in world coordinates too, so the walk runs here as well for
+// a reader who has handed the centre to the camera.
 window.addEventListener("resize", () => {
   view.resize()
   walk()
-  settle()
+  whenIdle()
 })
 
 // Build the legend's dots from the same palette the map draws with.
@@ -1014,7 +1017,7 @@ window.addEventListener("resize", () => {
   const paint = (palette = currentPalette()): void => {
     ramp.replaceChildren()
     ;[
-      [palette.hop[0]!, 13, "neighbour of the centre"],
+      [palette.hop[0]!, 13, "neighbour of the selected node"],
       [palette.hop[2]!, 9, "further away"],
     ].forEach(([colour, size, title]) => {
       const dot = document.createElement("span")
@@ -1037,13 +1040,13 @@ window.addEventListener("resize", () => {
  * ways out that the panel itself offers, and deleting the last one puts the reader back where
  * they started.
  *
- * Keyed on the store's island index, never on what the map has drawn. Deleting the only node
- * on screen empties the map while the store still holds every island nobody has walked to.
+ * Keyed on the store's component index, never on what the map has drawn. Deleting the only node
+ * on screen empties the map while the store still holds every component nobody has walked to.
  * A graph that lost every root stamp shows this panel with nodes still in the store.
- * **Recount the islands** on the transfer page is the repair.
+ * **Recount the components** on the transfer page is the repair.
  */
 function showEmptyPanel(opening: Opening): void {
-  empty.hidden = opening.islands.length > 0
+  empty.hidden = opening.components.length > 0
 }
 
 /**
@@ -1051,16 +1054,16 @@ function showEmptyPanel(opening: Opening): void {
  *
  * That list only. Everything else on the map is what someone walked to, and re-reading that
  * would place nodes nobody visited. A write is the only thing that can make the list wrong
- * without the camera moving, because a join can merge two islands into one. Most writes leave
+ * without the camera moving, because a join can merge two components into one. Most writes leave
  * the components unchanged, and `setFirstPage` detects that and keeps its rows.
  */
-async function refreshIslands(): Promise<void> {
+async function refreshComponents(): Promise<void> {
   try {
     const opening = await fetchOpening()
     showEmptyPanel(opening)
-    islands.setFirstPage(
-      { islands: opening.islands, cursor: opening.islandCursor },
-      opening.islandCount,
+    components.setFirstPage(
+      { components: opening.components, cursor: opening.componentCursor },
+      opening.componentCount,
     )
   } catch {
     // A stale list does not deserve an error state. The next write reads again.
@@ -1091,26 +1094,26 @@ async function boot(): Promise<void> {
 
   const opening = await fetchOpening()
   showEmptyPanel(opening)
-  islands.setFirstPage(
-    { islands: opening.islands, cursor: opening.islandCursor },
-    opening.islandCount,
+  components.setFirstPage(
+    { components: opening.components, cursor: opening.componentCursor },
+    opening.componentCount,
   )
   // Where the map opens: the largest component, and the node that names it. One row gives
-  // both, so the island and the first node on the map share an id.
-  const home = opening.islands[0] ?? null
+  // both, so the component and the first node on the map share an id.
+  const start = opening.components[0] ?? null
 
   // Set once, here. After this the mark follows what the reader clicks. Finding a node's
-  // island takes a read, and a click on an island row is the only move the page can answer
+  // component takes a read, and a click on a component row is the only move the page can answer
   // for on its own.
-  islands.here(home?.id ?? null)
+  components.here(start?.id ?? null)
 
   // A graph with nowhere to start now means one thing only. The opening node is the first row
-  // of the island page, not an id stored somewhere, so it cannot be stale and cannot name a
+  // of the component page, not an id stored somewhere, so it cannot be stale and cannot name a
   // node that is gone. What is left is a graph with no nodes, which a fresh browser profile
   // legitimately has.
   //
   // The join panel is built before this runs, so naming the first node works either way.
-  const root = home ? await startingPoint(home.id) : null
+  const root = start ? await startingPoint(start.id) : null
 
   if (!root) {
     // Nothing to draw. The way in is the transfer page, which can seed a graph. Naming a
@@ -1126,14 +1129,14 @@ async function boot(): Promise<void> {
   view.add([world.get(root.node.id)!], [])
   view.add(absorbed.nodes, absorbed.edges)
   view.focus(root.node.id, false)
-  view.setAccent(root.node.id)
+  view.select(root.node.id)
 
-  // The first frame is the root node and its neighbours, and nothing else. Run the ghost pass
-  // here rather than waiting for the first settle, so a window too small to show the root's
-  // neighbours has a way to reach them from the first frame. On a window that fits, this adds
-  // nothing.
-  view.reviseGhosts()
-  // `render` repaints the island list. It runs after the root is placed, so the island the
+  // The first frame is the root node and its neighbours, and nothing else. Run the off-screen
+  // marker pass here rather than waiting for the first settle, so a window too small to show the
+  // root's neighbours has a way to reach them from the first frame. On a window that fits, this
+  // adds nothing.
+  view.updateMarkers()
+  // `render` repaints the component list. It runs after the root is placed, so the component the
   // root belongs to is marked as visited on the first frame.
   render()
 }

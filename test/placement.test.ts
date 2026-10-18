@@ -1,5 +1,5 @@
 /**
- * Seating geometry and the spatial index, from web/src/placement.ts.
+ * Placement geometry and the spatial index, from web/src/placement.ts.
  *
  * The invariants here are the ones a reader cannot check by looking. Two nodes a pixel apart
  * look wrong; two nodes four pixels inside the separation look fine and are still a bug.
@@ -9,14 +9,14 @@ import { describe, expect, it } from "vitest"
 import {
   NODE_SIZE,
   Occupancy,
-  SEAT_SEP,
+  NODE_SEP,
   SQUEEZE_SEP,
   distance,
   minSpacing,
-  pillsAround,
-  ringSlots,
+  boxesAround,
+  circleSlots,
   rotationFor,
-  seat,
+  freeSpots,
   touches,
   type Point,
   type Slot,
@@ -31,8 +31,8 @@ describe("Occupancy", () => {
   it("reports a spot taken while another node is inside the separation", () => {
     const grid = new Occupancy()
     grid.add({ id: "a", x: 0, y: 0 })
-    expect(grid.isClear(SEAT_SEP - 1, 0)).toBe(false)
-    expect(grid.isClear(SEAT_SEP + 1, 0)).toBe(true)
+    expect(grid.isClear(NODE_SEP - 1, 0)).toBe(false)
+    expect(grid.isClear(NODE_SEP + 1, 0)).toBe(true)
   })
 
   it("finds a neighbour across a cell boundary", () => {
@@ -94,64 +94,64 @@ describe("rotationFor", () => {
   })
 })
 
-describe("seat", () => {
+describe("freeSpots", () => {
   it("returns nothing for a count of zero or less", () => {
-    expect(seat(origin, 0, new Occupancy(), "a")).toEqual([])
-    expect(seat(origin, -3, new Occupancy(), "a")).toEqual([])
+    expect(freeSpots(origin, 0, new Occupancy(), "a")).toEqual([])
+    expect(freeSpots(origin, -3, new Occupancy(), "a")).toEqual([])
   })
 
-  it("seats every node it was asked for, in open space", () => {
-    expect(seat(origin, 8, new Occupancy(), "kavara")).toHaveLength(8)
-    expect(seat(origin, 40, new Occupancy(), "kavara")).toHaveLength(40)
+  it("spots every node it was asked for, in open space", () => {
+    expect(freeSpots(origin, 8, new Occupancy(), "kavara")).toHaveLength(8)
+    expect(freeSpots(origin, 40, new Occupancy(), "kavara")).toHaveLength(40)
   })
 
-  it("never seats two nodes closer than the separation", () => {
+  it("never spots two nodes closer than the separation", () => {
     for (const count of [2, 5, 12, 40]) {
-      const placed = seat(origin, count, new Occupancy(), `seed-${String(count)}`)
-      expect(minSpacing(placed)).toBeGreaterThanOrEqual(SEAT_SEP)
+      const placed = freeSpots(origin, count, new Occupancy(), `seed-${String(count)}`)
+      expect(minSpacing(placed)).toBeGreaterThanOrEqual(NODE_SEP)
     }
   })
 
   it("clears the nodes already in the index", () => {
     const grid = new Occupancy()
-    const placed = seat(origin, 6, grid, "first")
+    const placed = freeSpots(origin, 6, grid, "first")
     for (const [i, point] of placed.entries()) {
       grid.add({ id: `first-${String(i)}`, ...point })
     }
 
-    const second = seat(origin, 6, grid, "second")
+    const second = freeSpots(origin, 6, grid, "second")
     for (const point of second) {
       expect(grid.isClear(point.x, point.y)).toBe(true)
     }
-    expect(minSpacing([...placed, ...second])).toBeGreaterThanOrEqual(SEAT_SEP)
+    expect(minSpacing([...placed, ...second])).toBeGreaterThanOrEqual(NODE_SEP)
   })
 
-  it("takes the same seats for the same seed", () => {
-    expect(seat(origin, 7, new Occupancy(), "kavara")).toEqual(
-      seat(origin, 7, new Occupancy(), "kavara"),
+  it("takes the same spots for the same seed", () => {
+    expect(freeSpots(origin, 7, new Occupancy(), "kavara")).toEqual(
+      freeSpots(origin, 7, new Occupancy(), "kavara"),
     )
   })
 
   it("honours a smaller separation, which is what the second pass asks for", () => {
-    const squeezed = seat(origin, 30, new Occupancy(), "hub", SQUEEZE_SEP)
+    const squeezed = freeSpots(origin, 30, new Occupancy(), "hub", SQUEEZE_SEP)
     expect(squeezed).toHaveLength(30)
     expect(minSpacing(squeezed)).toBeGreaterThanOrEqual(SQUEEZE_SEP)
-    // A tighter separation fits more nodes on the first ring, so the last seat is nearer.
-    const roomy = seat(origin, 30, new Occupancy(), "hub")
+    // A tighter separation fits more nodes on the first ring, so the last free spot is nearer.
+    const roomy = freeSpots(origin, 30, new Occupancy(), "hub")
     const reach = (points: Point[]): number =>
       Math.max(...points.map((p) => distance(origin, p)))
     expect(reach(squeezed)).toBeLessThan(reach(roomy))
   })
 })
 
-describe("pillsAround", () => {
+describe("boxesAround", () => {
   it("counts the boxes that fit around a circle", () => {
-    expect(pillsAround(1000, 100)).toBe(62)
-    expect(pillsAround(104, SLOT.w)).toBe(5)
+    expect(boxesAround(1000, 100)).toBe(62)
+    expect(boxesAround(104, SLOT.w)).toBe(5)
   })
 
   it("offers one slot even on a ring too small for a box", () => {
-    expect(pillsAround(1, 500)).toBe(1)
+    expect(boxesAround(1, 500)).toBe(1)
   })
 })
 
@@ -164,14 +164,14 @@ describe("touches", () => {
   })
 })
 
-describe("ringSlots", () => {
+describe("circleSlots", () => {
   it("returns nothing for a count of zero or less", () => {
-    expect(ringSlots(origin, 0, "a", [], SLOT, 1000)).toEqual([])
+    expect(circleSlots(origin, 0, "a", [], SLOT, 1000)).toEqual([])
   })
 
   it("hands out slots that do not touch each other", () => {
     for (const count of [2, 4, 9, 18]) {
-      const slots = ringSlots(origin, count, `seed-${String(count)}`, [], SLOT, 1200)
+      const slots = circleSlots(origin, count, `seed-${String(count)}`, [], SLOT, 1200)
       expect(slots.length).toBeGreaterThan(0)
       for (let i = 0; i < slots.length; i++) {
         for (let j = i + 1; j < slots.length; j++) {
@@ -182,9 +182,9 @@ describe("ringSlots", () => {
   })
 
   it("clears the slots it was told to avoid", () => {
-    // Seat one plan's slots, then ask for a second plan around the same parent.
-    const first = ringSlots(origin, 6, "first", [], SLOT, 1200)
-    const second = ringSlots(origin, 6, "second", first, SLOT, 1200)
+    // Place one plan's slots, then ask for a second plan around the same parent.
+    const first = circleSlots(origin, 6, "first", [], SLOT, 1200)
+    const second = circleSlots(origin, 6, "second", first, SLOT, 1200)
     for (const a of second) {
       for (const b of first) expect(touches(a, b, SLOT)).toBe(false)
     }
@@ -193,24 +193,24 @@ describe("ringSlots", () => {
   it("still offers the first ring when maxRadius is smaller than it", () => {
     // A viewport too small for the first ring is one where every neighbour is off screen.
     // No slot at all would be worse than a slot outside the viewport.
-    const slots = ringSlots(origin, 40, "tight", [], SLOT, 0)
+    const slots = circleSlots(origin, 40, "tight", [], SLOT, 0)
     expect(slots.length).toBeGreaterThan(0)
-    expect(slots.length).toBeLessThanOrEqual(pillsAround(104, SLOT.w))
+    expect(slots.length).toBeLessThanOrEqual(boxesAround(104, SLOT.w))
   })
 
   it("steps outward for a plan too wide for one ring", () => {
-    const many = ringSlots(origin, 30, "wide", [], SLOT, 5000)
+    const many = circleSlots(origin, 30, "wide", [], SLOT, 5000)
     const reach = many.map((p) => distance(origin, p))
     expect(Math.max(...reach)).toBeGreaterThan(Math.min(...reach) + 1)
   })
 
-  it("places a ghost in a region seat would refuse", () => {
-    // seat returns nothing when there is no room. A ghost has to be placeable anyway.
+  it("places a marker in a region freeSpots would refuse", () => {
+    // `freeSpots` returns nothing when there is no room. An off-screen marker has to be placeable anyway.
     const crowded = new Occupancy()
     for (let i = 0; i < 400; i++) {
       crowded.add({ id: `n${String(i)}`, x: (i % 20) * 30, y: Math.floor(i / 20) * 30 })
     }
-    expect(ringSlots(origin, 3, "ghost", [], SLOT, 600).length).toBeGreaterThan(0)
+    expect(circleSlots(origin, 3, "marker", [], SLOT, 600).length).toBeGreaterThan(0)
   })
 })
 
@@ -232,13 +232,13 @@ describe("minSpacing", () => {
 })
 
 describe("the sizes the separations are built from", () => {
-  it("keeps SEAT_SEP wide enough for two accents", () => {
-    expect(SEAT_SEP).toBeGreaterThan(NODE_SIZE.accent)
+  it("keeps NODE_SEP wide enough for two selectedNodes", () => {
+    expect(NODE_SEP).toBeGreaterThan(NODE_SIZE.selected)
   })
 
-  it("keeps SQUEEZE_SEP wide enough for an accent beside a neighbour", () => {
+  it("keeps SQUEEZE_SEP wide enough for an selected beside a neighbour", () => {
     // The worst case is an accent radius against a neighbour radius: 25 + 17 = 42.
-    expect(SQUEEZE_SEP).toBeGreaterThan(NODE_SIZE.accent / 2 + NODE_SIZE.neighbour / 2)
-    expect(SQUEEZE_SEP).toBeLessThan(SEAT_SEP)
+    expect(SQUEEZE_SEP).toBeGreaterThan(NODE_SIZE.selected / 2 + NODE_SIZE.neighbour / 2)
+    expect(SQUEEZE_SEP).toBeLessThan(NODE_SEP)
   })
 })
