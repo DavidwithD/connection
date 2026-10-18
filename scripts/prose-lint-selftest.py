@@ -41,6 +41,7 @@ CASES: list[tuple[str, str, str, set[str]]] = [
     # L001, both ways.
     ("L001 fires past the budget", "prose", W26 + ".", {"L001"}),
     ("L001 holds at the budget", "prose", W25 + ".", set()),
+    ("a middle dot ends a sentence", "prose", W25 + " · " + W25, set()),
     # L002: an abstract subject, and a concrete one that only looks abstract.
     ("L002 fires on an abstract subject", "prose", "Stillness costs markers.", {"L002"}),
     ("L002 spares an exempt noun", "prose", "The function returns a node.", set()),

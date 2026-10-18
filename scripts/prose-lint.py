@@ -16,8 +16,8 @@ Two findings are measurable and the rest are guesses.
 - `L001` counts the words in a sentence.
 - `L006` matches a term from the [block] list in scripts/plain-terms.txt.
 
-The docs gate runs both over every file and fails on them. The other checks are
-patterns that often go with figurative writing. A regex cannot detect a metaphor.
+The docs gate runs both over every tracked markdown file and fails on them. The
+other checks are patterns that often go with figurative writing. A regex cannot detect a metaphor.
 The writer applies the rule in docs/README.md. This script checks the part a count
 or a word list can settle.
 
@@ -97,7 +97,8 @@ TABLE_ROW = re.compile(r"^\s*\|")
 HEADING = re.compile(r"^\s*#{1,6}\s")
 META = re.compile(r"^\s*\*\*(?:Status|Date|Deciders|Supersed\w*|Refs)\b")
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+")
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+# A middle dot separates the items of a run-in list, as in the commit skill's rules.
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\s+·\s+")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’\-]*")
 
 # One token, whatever is inside: an identifier is not a sentence's worth of words.
@@ -440,7 +441,7 @@ def main() -> int:
     body = (
         f"prose-lint on {path} — docs/README.md \"How it is written\". "
         f"L001 is a word count and L006 is a retired term; the docs gate fails on "
-        f"both. L002-L005, L007 and L008 are guesses; read the sentence and judge. "
+        f"both in markdown. L002-L005, L007 and L008 are guesses; read the sentence and judge. "
         f"No check here sees a metaphor.\n" + "\n".join(report)
     )
     json.dump({"hookSpecificOutput": {

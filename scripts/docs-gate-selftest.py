@@ -184,6 +184,17 @@ for check, (_, code) in DRIFT.items():
     CASES.append(Case(check, "drift", code, "the fact is present and disagrees"))
 
 
+# The prose check reads every markdown file, so it has no bound document. Each case
+# names the file it changes. A finding must name that file too, because untracked
+# notes in the copied tree can raise the same codes.
+LONG = ("This sentence goes on with one word after another until it passes the limit "
+        "that the prose linter sets for a single sentence in a doc.")
+PROSE_CASES = [
+    ("missing", "scripts/prose-lint.py", None, "P000", "the linter is gone"),
+    ("length", "README.md", f"\n{LONG}\n", "P001", "a sentence is over the limit"),
+    ("term", "README.md", "\nThe ghost stands.\n", "P002", "a blocked term is used"),
+]
+
 def run_gate(root: Path, check: str) -> list[dict]:
     """One check against one tree, as findings."""
     proc = subprocess.run(
@@ -258,16 +269,34 @@ def main(argv: list[str]) -> int:
                     f"got {sorted(codes) or 'nothing at all'}"
                 )
 
+        for kind, rel, added, code, note in PROSE_CASES:
+            work = Path(tmp) / f"prose-{kind}"
+            copy_tree(work)
+            target = work / rel
+            if added is None:
+                target.unlink()
+            else:
+                target.write_text(target.read_text(encoding="utf-8") + added,
+                                  encoding="utf-8")
+            hits = {f["code"] for f in run_gate(work, "prose") if f["path"] == rel}
+            label = f"prose/{kind}"
+            if code in hits:
+                if verbose:
+                    print(f"  ok  {label:<24} {code} — {note}")
+            else:
+                failures.append(f"{label}: expected {code} when {note}, "
+                                f"got {sorted(hits) or 'nothing at all'}")
+
     print()
     if failures:
         for line in failures:
             print(f"FAIL {line}")
-        print(f"\nFAIL — {len(CASES)} case(s), {len(failures)} did not hold")
+        print(f"\nFAIL — {len(CASES) + len(PROSE_CASES)} case(s), {len(failures)} did not hold")
         print("\nA check that raises nothing when its fact is gone is a check "
               "reporting PASS for ever. Fix the extractor, not this test.")
         return 1
 
-    print(f"PASS — {len(CASES)} case(s), every bound check still compares")
+    print(f"PASS — {len(CASES) + len(PROSE_CASES)} case(s), every bound check still compares")
     return 0
 
 

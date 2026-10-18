@@ -506,6 +506,71 @@ def check_paths(gate: Gate) -> None:
                                "nothing is there")
 
 
+# ---------------------------------------------------------------------- prose
+
+PROSE_LINT = "scripts/prose-lint.py"
+
+# The two prose-lint codes that are counts. The others are guesses, and a gate
+# that fails on a guess gets switched off.
+PROSE_CODES = {"L001": "P001", "L006": "P002"}
+
+
+def load_prose_lint(gate: Gate):
+    """prose-lint.py as a module. Its name has a dash, so a plain import fails."""
+    import importlib.util
+
+    path = gate.root / PROSE_LINT
+    spec = importlib.util.spec_from_file_location("prose_lint", path)
+    if spec is None or spec.loader is None or not path.exists():
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["prose_lint"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def prose_files(gate: Gate) -> list[str]:
+    """Every tracked markdown file, records included.
+
+    In a work tree this asks git, so an untracked note fails nobody's local run.
+    The pre-commit hook passes a copy of the staged tree, which has no `.git`.
+    Every file in that copy is staged, so the walk is the tracked list there.
+    """
+    if (gate.root / ".git").exists():
+        import subprocess
+
+        out = subprocess.run(["git", "-C", str(gate.root), "ls-files", "-z", "*.md"],
+                             capture_output=True, text=True)
+        if out.returncode == 0:
+            return sorted(f for f in out.stdout.split("\0") if f and gate.exists(f))
+    files = []
+    for path in sorted(gate.root.rglob("*.md")):
+        if any(part in SKIP_DIRS for part in path.parts):
+            continue
+        files.append(str(path.relative_to(gate.root)).replace("\\", "/"))
+    return files
+
+
+def check_prose(gate: Gate) -> None:
+    """No sentence over the word limit, and no blocked term, in any markdown file."""
+    lint = load_prose_lint(gate)
+    if lint is None:
+        gate.error("P000", PROSE_LINT, 1, "the prose linter is missing, so no "
+                                          "markdown file is being checked")
+        return
+    files = prose_files(gate)
+    if not files:
+        gate.empty("P000", README, "markdown files")
+        return
+    for rel in files:
+        text = gate.read(rel)
+        if text is None:
+            continue
+        for code, lineno, why, _ in lint.findings(text, 1, "prose"):
+            if code in PROSE_CODES:
+                gate.error(PROSE_CODES[code], rel, lineno, why)
+
+
 # -------------------------------------------------------------------- reporting
 
 
@@ -515,6 +580,7 @@ CHECKS = [
     ("keys", check_keys),
     ("layout", check_layout),
     ("paths", check_paths),
+    ("prose", check_prose),
 ]
 
 
