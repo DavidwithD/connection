@@ -1,7 +1,7 @@
 /**
  * Split a node's name into lines that fit a width. Pure. No canvas and no DOM.
  *
- * The caller passes `measure`, so the globe measures on its own canvas and a test measures
+ * The caller passes `measure`, so the sphere view measures on its own canvas and a test measures
  * with string length.
  */
 

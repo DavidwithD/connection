@@ -45,7 +45,7 @@ const ok = (pass, what, detail = "") => {
 }
 
 /**
- * What the page is showing: the graph, the receipts, and the state of the drag.
+ * What the page is showing: the graph, the write log entries, and the state of the drag.
  *
  * Two reads rather than one. The probe answers for the map, the DOM answers for the arrow and
  * the panels, and neither can answer the other's half.
@@ -53,16 +53,16 @@ const ok = (pass, what, detail = "") => {
 const drawn = async (page) => {
   const seen = await frame(page)
   if (!seen) return null
-  const chrome = await page.evaluate(() => {
+  const pageState = await page.evaluate(() => {
     // The gradient's ends are the arrow's ends. It is aimed with the shape, so reading it back
     // is reading where the arrow was actually drawn.
-    const ink = document.querySelector("#aim-ink")
-    const box = document.querySelector("#aim")
+    const ink = document.querySelector("#drag-arrow-ink")
+    const box = document.querySelector("#drag-arrow")
     return {
       status: document.querySelector("#status")?.textContent ?? "",
-      receipts: document.querySelectorAll("#receipts .receipt").length,
-      undos: document.querySelectorAll("#receipts .undo").length,
-      warns: document.querySelectorAll('#receipts .receipt[data-state="warn"]').length,
+      logEntries: document.querySelectorAll("#write-log .log-entry").length,
+      undos: document.querySelectorAll("#write-log .undo").length,
+      warns: document.querySelectorAll('#write-log .log-entry[data-state="warn"]').length,
       // The gesture's own state. One class carries both the arrow and the cursor.
       joining: document.body.classList.contains("joining"),
       arrowShown: box ? getComputedStyle(box).display !== "none" : false,
@@ -75,7 +75,7 @@ const drawn = async (page) => {
       head: ink ? `${ink.getAttribute("x2") ?? ""},${ink.getAttribute("y2") ?? ""}` : "",
       tail: ink ? `${ink.getAttribute("x1") ?? ""},${ink.getAttribute("y1") ?? ""}` : "",
       // A shape with no `d` is an arrow that was never drawn, however visible its `svg` is.
-      shaped: Boolean(document.querySelector("#aim-arrow")?.getAttribute("d")),
+      shaped: Boolean(document.querySelector("#drag-arrow-path")?.getAttribute("d")),
       // The page hides the pointer for the length of the drag. A gesture that failed to disarm
       // would leave the reader with no cursor at all.
       cursor: getComputedStyle(document.querySelector("#stage")).cursor,
@@ -83,11 +83,11 @@ const drawn = async (page) => {
   })
   return {
     realEdges: realEdges(seen).length,
-    aimed: seen.aimed ?? "",
+    dropTarget: seen.dropTarget ?? "",
     panning: seen.panning,
     // Where the middle of the window looks, which is the whole of this camera's position.
-    pan: `${String(Math.round(seen.centre.x))},${String(Math.round(seen.centre.y))}`,
-    ...chrome,
+    pan: `${String(Math.round(seen.middle.x))},${String(Math.round(seen.middle.y))}`,
+    ...pageState,
   }
 }
 
@@ -96,25 +96,25 @@ const drawn = async (page) => {
  *
  * The tiers are what make this sound. `setTiers` marks each node the centre holds an edge to as
  * tier 1. So tier 2 and tier 3 are the nodes it holds none to. That is the whole truth only while
- * the centre holds all of its own edges, which is what `centreHasAll` reports.
+ * the centre holds all of its own edges, which is what `selectedHasAll` reports.
  *
  * The key check is the second half. A tier is recomputed when the centre changes. A join made
  * since then leaves a node still marked unjoined, and the map's own lines say so.
  */
 const pickPair = async (page) => {
   const seen = await frame(page)
-  if (!seen?.accent) return null
-  const centre = read(seen).centre
-  if (!centre) return null
-  if ((await reachable(page, [centre]))?.id !== centre.id) return null
+  if (!seen?.selected) return null
+  const selected = read(seen).selected
+  if (!selected) return null
+  if ((await reachable(page, [selected]))?.id !== selected.id) return null
   const far = seen.elements.filter(
-    (one) => one.kind === "node" && one.tier >= 2 && !joined(seen, centre.id, one.id),
+    (one) => one.kind === "node" && one.tier >= 2 && !joined(seen, selected.id, one.id),
   )
   const to = await reachable(page, far)
   if (!to) return null
   return {
-    centreHasAll: !centre.more,
-    a: { id: centre.id, label: centre.label, ...centre.at },
+    selectedHasAll: !selected.more,
+    a: { id: selected.id, label: selected.label, ...selected.at },
     b: { id: to.id, label: to.label, ...to.at },
   }
 }
@@ -129,7 +129,7 @@ const pickJoined = async (page) => {
     const target = by.get(line.b)
     if (!source?.at || !target?.at) continue
     // One end at a time. `reachable` returns the first of a set the pointer can reach. A
-    // single call over the pair would pass a line with one end under a pill.
+    // single call over the pair would pass a line with one end under a label box.
     if ((await reachable(page, [source]))?.id !== source.id) continue
     if ((await reachable(page, [target]))?.id !== target.id) continue
     return {
@@ -157,7 +157,7 @@ async function drag(page, from, to, { shift = true, shot = null } = {}) {
   const halfway = await drawn(page)
   // The arrow exists only while the button is down, so this is the one place to photograph it.
   // Halfway rather than at the end. The head is over open ground here, and under the far node's
-  // own pill by the time the drag arrives.
+  // own label box by the time the drag arrives.
   if (shot) await page.screenshot({ path: `${SHOTS}/${shot}.png` })
   await move(to, { steps: 6 })
   const over = await drawn(page)
@@ -207,8 +207,8 @@ async function main() {
   // screen is joined to the centre already, so there is no pair for a drag to make. Walking
   // one step puts a second ring on the map, and the ring left behind is where a far end comes
   // from.
-  console.log("\n0. walk one step, so two rings are on the map")
-  const step = await reachable(page, read(await frame(page)).ring)
+  console.log("\n0. walk one step, so two circles are on the map")
+  const step = await reachable(page, read(await frame(page)).neighbours)
   ok(!!step, "found a neighbour to stand on", step ? step.label : "none clickable")
   if (!step) {
     await browser.close()
@@ -234,7 +234,7 @@ async function main() {
     await browser.close()
     process.exit(1)
   }
-  ok(pair.centreHasAll, "the centre holds all of its edges, so the tiers can be trusted")
+  ok(pair.selectedHasAll, "the selected node holds all of its edges, so the tiers can be trusted")
   const held = await drag(page, pair.a, pair.b, { shot: "drag-join-0-arrow" })
   ok(held.halfway.joining, "the gesture is in flight", `body.joining=${String(held.halfway.joining)}`)
   ok(held.halfway.arrowShown, "the arrow is drawn", `head at ${held.halfway.head}`)
@@ -250,7 +250,7 @@ async function main() {
     "the head follows the cursor",
     `${held.halfway.head} → ${held.over.head}`,
   )
-  ok(held.over.aimed === pair.b.id, "the far node is marked", held.over.aimed || "nothing marked")
+  ok(held.over.dropTarget === pair.b.id, "the far node is marked", held.over.dropTarget || "nothing marked")
   ok(!held.halfway.panning, "panning is off while the button is held")
 
   const joined = await drawn(page)
@@ -260,7 +260,7 @@ async function main() {
     `${before.realEdges} → ${joined.realEdges}`,
   )
   ok(/^joined /.test(joined.status), "the status says so", joined.status)
-  ok(joined.undos === 1, "the receipt carries an undo", `${joined.undos} undo button(s)`)
+  ok(joined.undos === 1, "the entry carries an undo", `${joined.undos} undo button(s)`)
   ok(!joined.joining && !joined.arrowShown, "the arrow went with the release")
   ok(joined.panning, "panning came back")
   ok(joined.cursor === "grab", "and so did the pointer", joined.cursor)
@@ -268,7 +268,7 @@ async function main() {
 
   // ---- undo --------------------------------------------------------------------------
   console.log("\n2. undo it")
-  await page.locator("#receipts .undo").first().click()
+  await page.locator("#write-log .undo").first().click()
   await page.waitForTimeout(800)
   const undone = await drawn(page)
   ok(
@@ -291,7 +291,7 @@ async function main() {
   ok(missed.halfway.joining, "the arrow was drawn on the way out")
   const after = await drawn(page)
   ok(after.realEdges === undone.realEdges, "nothing was written", `${undone.realEdges} lines, unchanged`)
-  ok(after.receipts === undone.receipts, "no receipt was opened", `${after.receipts} receipt(s)`)
+  ok(after.logEntries === undone.logEntries, "no entry was opened", `${after.logEntries} entry(s)`)
   ok(after.panning, "panning came back")
 
   // ---- a pair the graph already holds ------------------------------------------------
@@ -300,7 +300,7 @@ async function main() {
   ok(!!twice, "found a drawn pair", twice ? `${twice.a.label} — ${twice.b.label}` : "none")
   await drag(page, twice.a, twice.b)
   const refused = await drawn(page)
-  ok(refused.warns === 1, "the receipt reports a refusal", `${refused.warns} warn(s)`)
+  ok(refused.warns === 1, "the entry reports a refusal", `${refused.warns} warn(s)`)
   ok(/already joined/.test(refused.status), "the graph's own sentence", refused.status)
   ok(refused.realEdges === after.realEdges, "no second line", `${refused.realEdges} lines`)
 

@@ -22,11 +22,11 @@ one shows which kind you have.
 - *Given a node, show everything it connects to* — not a sample, and not silently fewer than
   the store says it has.
 - *Given something I can see, take me to it and show what it connects to.*
-- *Given a connection to something too far away to draw, still show me that it exists, whose
-  connection it is, and take me to the other end when I ask.*
+- *Given a connection to something too far away to draw, still show me that it exists and
+  whose connection it is. Take me to the other end when I ask.*
 - *Given a place I have already walked, leave it exactly where it was.*
 - *Given a node whose connections were not all read, say so rather than looking complete.*
-- *Given a graph too large to draw, keep working* — the answers above stay true at any point
+- *Given a graph too large to draw, keep working.* The answers above stay true at any point
   during a walk, not only at the start.
 
 ## How anyone would tell it worked
@@ -34,9 +34,10 @@ one shows which kind you have.
 - Count what is drawn around the node in the middle. It matches the count the store reports
   for that node, or that node is visibly marked as having more.
 - Nothing that has been drawn ever moves on its own. Not on arrival, not while loading, not
-  on resize. A ghost crossing to the node it stands in for
-  ([ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md)) is the answer to a
-  click, and it dissolves on landing.
+  on resize. The one exception follows a click. The clicked off-screen marker crosses to the
+  node it stands for
+  ([ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md)). It fades out when it
+  arrives.
 - Every connection of the node in the middle can be followed in one gesture.
 - Arriving somewhere new does not leave you looking at an empty screen while it loads.
 - Two people walking different routes through the same graph get different pictures, and

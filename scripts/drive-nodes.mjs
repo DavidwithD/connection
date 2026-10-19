@@ -47,6 +47,7 @@ const versionOne = () =>
     req.onerror = () => no(req.error)
     req.onupgradeneeded = () => {
       const db = req.result
+      // The names version 1 used. Version 3 renamed both.
       const nodes = db.createObjectStore("nodes", { keyPath: "labelKey" })
       nodes.createIndex("byIsland", ["islandSize", "labelKey"])
       nodes.createIndex("byParent", "parent")
@@ -79,7 +80,14 @@ const storedNodes = () =>
       const all = db.transaction("nodes").objectStore("nodes").getAll()
       all.onsuccess = () => {
         db.close()
-        ok(all.result.map((node) => ({ id: node.labelKey, created: node.created })))
+        ok(
+          all.result.map((node) => ({
+            id: node.labelKey,
+            created: node.created,
+            componentSize: node.componentSize,
+            hasIslandSize: "islandSize" in node,
+          })),
+        )
       }
       all.onerror = () => no(all.error)
     }
@@ -104,7 +112,7 @@ const datedPair = ([early, late]) =>
           label,
           degree: 0,
           parent: label,
-          islandSize: 1,
+          componentSize: 1,
           created,
         })
       }
@@ -200,17 +208,22 @@ async function main() {
   await page.waitForSelector("#list-view .rows > li")
 
   const upgraded = await page.evaluate(storedNodes)
-  const stamps = new Set(upgraded.map((node) => node.created))
+  const upgradeDates = new Set(upgraded.map((node) => node.created))
   console.log(
     `0 upgrade: ${String(upgraded.length)} version 1 nodes, ` +
-      `now dated ${new Date([...stamps][0]).toISOString().slice(0, 10)}`,
+      `now dated ${new Date([...upgradeDates][0]).toISOString().slice(0, 10)}`,
   )
   check(upgraded.length === 3, "the upgrade kept every node")
   check(
     upgraded.every((node) => typeof node.created === "number"),
     "every node came out with a date",
   )
-  check(stamps.size === 1, "they all share the one stamp")
+  check(upgradeDates.size === 1, "they all share one upgrade date")
+  check(
+    upgraded.every((node) => !node.hasIslandSize) &&
+      upgraded.filter((node) => node.componentSize).length === 2,
+    "both roots moved islandSize to componentSize",
+  )
   check((await names()).length === 3, "the page lists them")
   await shot("0-upgraded")
 

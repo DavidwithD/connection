@@ -15,7 +15,7 @@
  * Two things make it flaky if they are skipped, and both are the page being right rather than
  * the script being unlucky. The camera has to be still, because a `viewport` event closes the
  * menu on purpose. And the point aimed at has to be a point where the line is really on top:
- * a pill or a panel in front of it takes the click, exactly as it would from a reader.
+ * a label box or a panel in front of it takes the click, exactly as it would from a reader.
  *
  * A canvas holds no element per line, so both of those are asked through probe.mjs.
  */
@@ -53,7 +53,7 @@ const ok = (pass, what, detail = "") => {
 }
 
 /**
- * What the map is drawing right now, read off the renderer's own probe and the page's chrome.
+ * What the map is drawing right now, read off the renderer's own probe and the page's controls.
  *
  * Two reads rather than one. The probe answers for the map, the DOM answers for the panels
  * around it, and neither can answer the other's half.
@@ -62,44 +62,44 @@ const drawn = async (page) => {
   const seen = await frame(page)
   if (!seen) return null
   const it = read(seen)
-  const chrome = await page.evaluate(() => ({
+  const pageState = await page.evaluate(() => ({
     status: document.querySelector("#status")?.textContent ?? "",
-    undos: document.querySelectorAll("#receipts .undo").length,
+    undos: document.querySelectorAll("#write-log .undo").length,
     menuOpen: !document.querySelector("#map-menu")?.hidden,
     menuRow: document.querySelector("#map-remove")?.textContent ?? "",
   }))
   return {
-    centre: seen.accent,
-    centreLabel: it.centre?.label ?? null,
+    selected: seen.selected,
+    selectedLabel: it.selected?.label ?? null,
     zoom: Number(seen.zoom.toFixed(2)),
-    ring: it.ring.length,
-    // Past the horizon by any amount, which is the globe's own answer to "off screen".
-    offScreen: it.ring.filter((node) => node.past > 0).length,
+    neighbours: it.neighbours.length,
+    // Past the visible limit by any amount, which is the sphere view's own answer to "off screen".
+    offScreen: it.neighbours.filter((node) => node.past > 0).length,
     edges: seen.lines.length,
     realEdges: realEdges(seen).length,
-    ghostLeads: seen.lines.filter((line) => line.kind === "ghost").length,
-    ...chrome,
+    markerLines: seen.lines.filter((line) => line.kind === "marker").length,
+    ...pageState,
   }
 }
 
 /**
  * Right-click one drawn line of a given kind, and report the pair it joins.
  *
- * Aims where the line is actually on top. A pill can cover a line's midpoint, and the page
+ * Aims where the line is actually on top. A label box can cover a line's midpoint, and the page
  * hands a right-click to whatever is in front — which is what a reader sees too. So every
  * candidate point is put to the probe first, and the first one the probe answers with this
  * line is the one clicked.
  *
- * Under `dry` nothing is clicked. That is for the leg looking for a camera where a ghost's
- * lead can be reached at all.
+ * Under `dry` nothing is clicked. That is for the leg looking for a camera where an off-screen
+ * marker's lead can be reached at all.
  */
 const rightClickEdge = async (page, kind, dry = false) => {
   const seen = await frame(page)
-  if (!seen?.accent) return null
-  const centre = seen.accent
-  const touches = (line) => line.a === centre || line.b === centre
+  if (!seen?.selected) return null
+  const selected = seen.selected
+  const touches = (line) => line.a === selected || line.b === selected
   const pick = seen.lines.filter((line) => {
-    if (kind === "ghost") return line.kind === "ghost" && touches(line)
+    if (kind === "marker") return line.kind === "marker" && touches(line)
     if (kind === "away") return line.kind === "edge" && !touches(line)
     return line.kind === "edge" && touches(line)
   })
@@ -123,15 +123,15 @@ const rightClickEdge = async (page, kind, dry = false) => {
 
   // Nothing on any of these lines is in front anywhere along it. Aim at the first candidate
   // anyway and let the report say what was under the pointer.
-  const aimed = points[found < 0 ? 0 : found]
-  const { line, at } = aimed
+  const dropTarget = points[found < 0 ? 0 : found]
+  const { line, at } = dropTarget
   const there = answers[found < 0 ? 0 : found]
   if (!dry) await clickOn(page, at, { button: "right" })
   return {
     clear: Boolean(there?.clear),
     source: line.a,
     target: line.b,
-    ghost: line.kind === "ghost",
+    marker: line.kind === "marker",
     at: `${String(Math.round(at.x))},${String(Math.round(at.y))}`,
     inWindow: Boolean(there?.inWindow),
     under: there?.under ?? "nothing",
@@ -175,19 +175,19 @@ async function main() {
   await page.waitForTimeout(600)
 
   // ---- a line into the centre -------------------------------------------------------
-  console.log("\n1. right-click a line into the centre")
+  console.log("\n1. right-click a line into the selected")
   await still(page)
   const before = await drawn(page)
-  const aimed = await rightClickEdge(page, "line")
+  const dropTarget = await rightClickEdge(page, "line")
   await page.waitForTimeout(200)
   const opened = await drawn(page)
-  ok(!!aimed, "found a line at the centre", aimed ? `${aimed.source} — ${aimed.target}` : "none drawn")
+  ok(!!dropTarget, "found a line at the selected", dropTarget ? `${dropTarget.source} — ${dropTarget.target}` : "none drawn")
   ok(opened.menuOpen, "the menu opened", opened.menuRow)
   ok(/^part .+ and .+/.test(opened.menuRow), "the row offers a part", opened.menuRow)
   ok(
-    opened.menuRow.includes(before.centreLabel),
-    "the centre is named first",
-    `centre is ${before.centreLabel}`,
+    opened.menuRow.includes(before.selectedLabel),
+    "the selected is named first",
+    `selected is ${before.selectedLabel}`,
   )
   await page.screenshot({ path: `${SHOTS}/part-1-menu.png` })
 
@@ -196,30 +196,31 @@ async function main() {
   const parted = await drawn(page)
   ok(parted.realEdges === before.realEdges - 1, "one line went", `${before.realEdges} → ${parted.realEdges}`)
   ok(/parted /.test(parted.status), "the status says so", parted.status)
-  ok(parted.undos === 1, "the receipt carries an undo", `${parted.undos} undo button(s)`)
+  ok(parted.undos === 1, "the entry carries an undo", `${parted.undos} undo button(s)`)
   await page.screenshot({ path: `${SHOTS}/part-2-parted.png` })
 
   // ---- undo -------------------------------------------------------------------------
   console.log("\n2. undo it")
-  await page.locator("#receipts .undo").first().click()
+  await page.locator("#write-log .undo").first().click()
   await page.waitForTimeout(700)
   const back = await drawn(page)
   ok(back.realEdges === before.realEdges, "the line came back", `${parted.realEdges} → ${back.realEdges}`)
   ok(back.undos === 0, "the undo button is spent", `${back.undos} left`)
 
-  // ---- a ghost's dashed lead ---------------------------------------------------------
-  console.log("\n3. right-click a ghost's dashed lead")
-  // A ghost stands for a neighbour the surface has turned away from. Two things have to be
-  // true before one is reachable, and neither is true on the map this opened.
+  // ---- an off-screen marker's dashed lead
+  // ---------------------------------------------------------
+  console.log("\n3. right-click a marker's dashed lead")
+  // An off-screen marker stands for a neighbour the surface has turned away from. Two things have
+  // to be true before one is reachable, and neither is true on the map this opened.
   //
-  // The camera has to be off the centre. `GHOST_MARGIN` is a length in screen pixels, so on a
+  // The camera has to be off the centre. `MARKER_MARGIN` is a length in screen pixels, so on a
   // curved surface it is an angle, and a zoom alone never crosses it.
   //
-  // The centre has to hold a wide neighbourhood. Its doorway slots sit in world space around
-  // it, so a tight ring leaves every one of them past the limb. Walking out is what widens
-  // the neighbourhood.
+  // The centre has to hold a wide neighbourhood. Its off-screen marker slots sit in world space
+  // around it, so a tight ring leaves every one of them past the visible limit. Walking out is what
+  // widens the neighbourhood.
   for (let step = 0; step < 3; step++) {
-    const next = await reachable(page, read(await frame(page)).ring)
+    const next = await reachable(page, read(await frame(page)).neighbours)
     if (!next) break
     await clickOn(page, next.at)
     await page.waitForTimeout(900)
@@ -235,65 +236,65 @@ async function main() {
     await page.waitForTimeout(120)
     await still(page)
     const seen = await drawn(page)
-    climb.push(seen.ghostLeads)
-    if (!seen.ghostLeads) continue
-    const found = await rightClickEdge(page, "ghost", true)
+    climb.push(seen.markerLines)
+    if (!seen.markerLines) continue
+    const found = await rightClickEdge(page, "marker", true)
     if (found?.clear) nudges = step + 1
   }
-  console.log(`  leads after each nudge: ${climb.join(" -> ")}`)
+  console.log(`  connectorLines after each nudge: ${climb.join(" -> ")}`)
   ok(
     nudges > 0,
-    "a camera where a ghost's lead can be clicked",
+    "a camera where a marker's lead can be clicked",
     nudges ? `${String(nudges)} nudge(s)` : "none in twelve",
   )
   const zoomed = await drawn(page)
   ok(
-    zoomed.ghostLeads > 0,
-    "ghosts are standing",
-    `${zoomed.ghostLeads} lead(s) · zoom ${zoomed.zoom} · ring ${zoomed.ring} · ${zoomed.offScreen} off screen`,
+    zoomed.markerLines > 0,
+    "markers are standing",
+    `${zoomed.markerLines} lead(s) · zoom ${zoomed.zoom} · neighbours ${zoomed.neighbours} · ${zoomed.offScreen} off screen`,
   )
-  if (!zoomed.ghostLeads) {
-    console.log("  (no ghosts to aim at — skipping 3 and 4)")
+  if (!zoomed.markerLines) {
+    console.log("  (no markers to click — skipping 3 and 4)")
     await browser.close()
     process.exit(failures ? 1 : 0)
   }
   await still(page)
-  const ghostHit = await rightClickEdge(page, "ghost")
+  const markerHit = await rightClickEdge(page, "marker")
   await page.waitForTimeout(200)
-  const ghostMenu = await drawn(page)
-  ok(!!ghostHit, "found a ghost lead")
-  ok(ghostMenu.menuOpen, "the menu opened on it", ghostMenu.menuRow)
-  ok(/^part .+ and .+/.test(ghostMenu.menuRow), "the row offers a part", ghostMenu.menuRow)
-  await page.screenshot({ path: `${SHOTS}/part-3-ghost-menu.png` })
+  const markerMenu = await drawn(page)
+  ok(!!markerHit, "found a marker lead")
+  ok(markerMenu.menuOpen, "the menu opened on it", markerMenu.menuRow)
+  ok(/^part .+ and .+/.test(markerMenu.menuRow), "the row offers a part", markerMenu.menuRow)
+  await page.screenshot({ path: `${SHOTS}/part-3-marker-menu.png` })
 
   await page.locator("#map-remove").click()
   await page.waitForTimeout(900)
-  const ghostGone = await drawn(page)
+  const markerGone = await drawn(page)
   ok(
-    ghostGone.ghostLeads === zoomed.ghostLeads - 1,
-    "the ghost and its lead went with the edge",
-    `${zoomed.ghostLeads} → ${ghostGone.ghostLeads}`,
+    markerGone.markerLines === zoomed.markerLines - 1,
+    "the marker and its lead went with the edge",
+    `${zoomed.markerLines} → ${markerGone.markerLines}`,
   )
-  ok(/parted /.test(ghostGone.status), "the status says so", ghostGone.status)
-  await page.screenshot({ path: `${SHOTS}/part-4-ghost-parted.png` })
+  ok(/parted /.test(markerGone.status), "the status says so", markerGone.status)
+  await page.screenshot({ path: `${SHOTS}/part-4-marker-parted.png` })
 
-  console.log("\n4. undo the ghost's edge")
-  await page.locator("#receipts .undo").first().click()
+  console.log("\n4. undo the marker's edge")
+  await page.locator("#write-log .undo").first().click()
   await page.waitForTimeout(900)
-  const ghostBack = await drawn(page)
+  const markerBack = await drawn(page)
   ok(
-    ghostBack.ghostLeads === zoomed.ghostLeads,
-    "the ghost came back with the edge",
-    `${ghostGone.ghostLeads} → ${ghostBack.ghostLeads}`,
+    markerBack.markerLines === zoomed.markerLines,
+    "the marker came back with the edge",
+    `${markerGone.markerLines} → ${markerBack.markerLines}`,
   )
 
   // ---- a line away from the centre ---------------------------------------------------
-  console.log("\n5. right-click a line that misses the centre")
-  // The leg above left the camera off its centre with doorways standing. Clicking a neighbour
-  // that is drawn puts the mark on a node in view, and the zoom-out then brings its
+  console.log("\n5. right-click a line that misses the selected")
+  // The leg above left the camera off its centre with off-screen markers standing. Clicking a
+  // neighbour that is drawn puts the mark on a node in view, and the zoom-out then brings its
   // neighbourhood on screen. A line that misses the centre needs both.
   await still(page)
-  const step = await reachable(page, read(await frame(page)).ring)
+  const step = await reachable(page, read(await frame(page)).neighbours)
   ok(!!step, "found a neighbour to stand on", step ? step.label : "none clickable")
   if (step) await clickOn(page, step.at)
   await still(page)
@@ -305,7 +306,7 @@ async function main() {
   const away = await rightClickEdge(page, "away")
   await page.waitForTimeout(200)
   const quiet = await drawn(page)
-  ok(!!away, "found a line away from the centre")
+  ok(!!away, "found a line away from the selected")
   ok(!quiet.menuOpen, "nothing opened", quiet.menuRow)
 
   // ---- the menu on a still camera, then a reload --------------------------------------
@@ -315,12 +316,12 @@ async function main() {
   await still(page)
   // Put the centre back in the middle of the window. After the zoom it can sit under the
   // status line, and no part of its lines is then clickable.
-  await page.locator("#home").click()
+  await page.locator("#go-to-selected").click()
   await still(page)
   const last = await rightClickEdge(page, "line")
   await page.waitForTimeout(300)
   const lastMenu = await drawn(page)
-  ok(!!last?.clear, "found a clickable line at the centre again", last ? `${last.source} — ${last.target}` : "none")
+  ok(!!last?.clear, "found a clickable line at the selected again", last ? `${last.source} — ${last.target}` : "none")
   ok(lastMenu.menuOpen, "the menu stayed open on a still camera", lastMenu.menuRow)
   if (!lastMenu.menuOpen) {
     await browser.close()

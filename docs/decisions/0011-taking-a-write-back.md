@@ -31,25 +31,25 @@ Every write can be reversed, by the operation that mirrors it.
   then track the degree, and a hub would exceed what one can hold — a different decision,
   made silently.
 - **A five-second window.** What was asked for. At the rate the panel is built for, it is
-  gone before the next name is typed; thirty is long enough to notice.
+  gone before the next name is typed. Thirty is long enough to notice.
 - **Guarding creation more heavily instead.** Cheaper, and it slows the common act to guard
   the rare one.
 
 ## Consequences
-`World` can now forget a node, which it could not before. Seated-once survives because
-forgetting is not moving — but the id must never return at a different spot, so only a node
-genuinely gone from the store may be forgotten.
+`World` can now forget a node. A node is still placed once, since forgetting does not move
+it. The id must never return at a different spot, so only a node genuinely gone from the
+store may be forgotten.
 
-`MapView` gains its first subtraction, and it must undo whichever shape `add` chose: a short
-edge is one element, a long one is two stubs and two leads.
+`MapView` gains its first removal. It must undo whichever shape `add` chose. A short edge is
+one element, a long one two stubs and two connector lines.
 
 An undo is two more writes on the same hot items, so undoing costs what doing did.
 
-The source of a run is never undone, even when the panel created it, so undoing the first
-write can leave it behind with no edges.
+The source of a run is never undone, even when the panel created it. Undoing the first write
+can leave it with no edges.
 
 ## Assumptions and unknowns
-- **Assumed thirty seconds is enough.** Unmeasured. A receipt dropped by the cap goes
+- **Assumed thirty seconds is enough.** Unmeasured. A write log entry dropped by the cap goes
   sooner, and nothing records that it did.
 - **Assumed nobody undoes what somebody else is reading.** A held neighbourhood can now
   describe a parted edge, not only miss an added one.
@@ -58,5 +58,5 @@ write can leave it behind with no edges.
 
 ## Revisit when
 - A node needs deleting along with its edges, or a hub cannot be removed at all.
-- Receipts are lost to the cap often enough that an undo is missed.
+- Write log entries are lost to the cap often enough that an undo is missed.
 - Two browsers undo the same write and one is cancelled.

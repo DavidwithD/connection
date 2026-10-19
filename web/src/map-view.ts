@@ -2,8 +2,8 @@
  * The Cytoscape renderer. Elements are only ever added, and no layout engine runs.
  *
  * Nodes are coloured in four tiers by hop distance from the accent. The tiers are recomputed
- * when the accent changes, and again when a read adds neighbours to it. Ghosts are the one
- * thing here that depends on the camera.
+ * when the accent changes, and again when a read adds neighbours to it. Off-screen markers are the
+ * one thing here that depends on the camera.
  */
 import cytoscape, {
   type BoundingBox12,
@@ -15,20 +15,20 @@ import cytoscape, {
   type StylesheetJson,
 } from "cytoscape"
 import {
-  CENTRE_TEXT,
-  DISSOLVE_MS,
-  FLIGHT_MAX,
-  FLIGHT_MIN,
-  FLIGHT_SPEED,
-  GHOST_MARGIN,
-  PILL_FONT,
-  PILL_HALO,
-  PILL_PAD,
-  RING_TEXT,
+  SELECTED_TEXT,
+  FADE_MS,
+  MOVE_MAX_MS,
+  MOVE_MIN_MS,
+  MOVE_SPEED,
+  MARKER_MARGIN,
+  LABEL_FONT,
+  LABEL_OUTLINE,
+  LABEL_PAD,
+  NEIGHBOUR_TEXT,
   SLOT_GAP,
   STUB_REACH,
-  ghostId,
-  ghostTarget,
+  markerId,
+  markerTarget,
   type MapEvents,
   type MapSurface,
 } from "./map.js"
@@ -53,48 +53,49 @@ const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)")
 const EASING = "cubic-bezier(0.4, 0, 0.2, 1)" as Css.TransitionTimingFunction
 
 /**
- * A pill takes both its dimensions from its label, and Cytoscape adds `PILL_PAD` to each
+ * A label box takes both its dimensions from its label, and Cytoscape adds `LABEL_PAD` to each
  * (`nodeWidth = node.width() + 2 * padding`, in `drawing-nodes.mjs`). So the stylesheet below
  * writes it as a length, and `slotBox` writes it as a number.
  */
-const PAD = `${String(PILL_PAD)}px`
+const PAD = `${String(LABEL_PAD)}px`
 
 /**
  * `z-index` accepts a `data()` mapper at runtime. Cytoscape's `style/parse.mjs` accepts a
  * mapper for any property without checking its type. Its typings allow only a literal
  * number, so the cast describes what the library does.
  */
-const RANKED_Z = "data(lift)" as unknown as number
+const RANKED_Z = "data(zRank)" as unknown as number
 
 /**
- * The z-index range for a neighbour's name: above the distant nodes and the backdrop, below
- * a ghost and the centre. The values around this range are set in `buildStyle`.
+ * The z-index range for a neighbour's name: above the distant nodes and the dimmed nodes, below
+ * an off-screen marker and the centre. The values around this range are set in `buildStyle`.
  *
  * Within the range, names are ranked by degree. Two names overlap because they sit at the
  * same radius, so distance cannot break the tie. Degree already decides which neighbours get
- * the closest positions when room runs out, in `seatAndLink` in world.ts, so ranking by
+ * the closest positions when room runs out, in `placeAndLink` in world.ts, so ranking by
  * degree here applies the same rule twice rather than adding a new one.
  */
-const RING_Z = { top: 24, bottom: 10 } as const
+const NEIGHBOUR_Z = { top: 24, bottom: 10 } as const
 
 /**
- * The z-index range for a ghost: above the neighbours, below the centre.
+ * The z-index range for an off-screen marker: above the neighbours, below the centre.
  *
- * Ranked by degree, like `RING_Z`, and it matters more here. Two overlapping names cost
- * legibility. Two overlapping ghosts cost the lower one its click, because the topmost
+ * Ranked by degree, like `NEIGHBOUR_Z`, and it matters more here. Two overlapping names cost
+ * legibility. Two overlapping off-screen markers cost the lower one its click, because the topmost
  * element takes the tap. Which one that is has to follow from something visible rather than
  * from the order the elements were added.
  */
-const GHOST_Z = { top: 29, bottom: 26 } as const
+const MARKER_Z = { top: 29, bottom: 26 } as const
 
 /**
  * The z-index of the node under the pointer: one above the top of the ring's band, one below
- * the bottom of a ghost's.
+ * the bottom of an off-screen marker's.
  *
  * Above the ring, because a name not readable over the names always drawn is not worth showing.
- * Below a ghost and below the centre, because this pill is wider than the disc it replaces and
- * the topmost element takes the tap. A ghost's tap is a flight and the centre's is the
- * clipboard. `RING_Z` and `GHOST_Z` leave exactly this one value between them.
+ * Below an off-screen marker and below the centre, because this label box is wider than the disc it
+ * replaces and the topmost element takes the tap. An off-screen marker's tap is a flight and the
+ * centre's is the clipboard. `NEIGHBOUR_Z` and `MARKER_Z` leave exactly this one value between
+ * them.
  */
 const HOVER_Z = 25
 
@@ -107,14 +108,14 @@ let measurer: CanvasRenderingContext2D | null = null
 /**
  * Measure how wide a name draws, in world units.
  *
- * A ghost's slot has to be reserved before the element exists, because a ghost never moves
- * once placed. So it cannot be created and then measured. Cytoscape sizes a pill from its
- * label (`width: "label"`), so this measures the same string in the same font. The caller
- * adds the pill's padding and halo.
+ * An off-screen marker's slot has to be reserved before the element exists, because an off-screen
+ * marker never moves once placed. So it cannot be created and then measured. Cytoscape sizes a
+ * label box from its label (`width: "label"`), so this measures the same string in the same font.
+ * The caller adds the label box's padding and label outline.
  */
 function nameWidth(label: string): number {
   measurer ??= document.createElement("canvas").getContext("2d")!
-  measurer.font = `${String(RING_TEXT.weight)} ${String(RING_TEXT.size)}px ${PILL_FONT}`
+  measurer.font = `${String(NEIGHBOUR_TEXT.weight)} ${String(NEIGHBOUR_TEXT.size)}px ${LABEL_FONT}`
   return measurer.measureText(label).width
 }
 
@@ -127,35 +128,38 @@ function nameWidth(label: string): number {
  * explains why a name-shaped id needs one.
  */
 const stubId = (key: string, owner: string): string => `s${NUL}${key}${NUL}${owner}`
-const leadId = (stub: string): string => `e${NUL}${stub}`
+const lineId = (stub: string): string => `e${NUL}${stub}`
 
-/** A ghost on the map: its element id, the centre that created it, and the node it names. */
-interface Ghost {
-  ghost: string
-  centre: string
+/**
+ * An off-screen marker on the map: its element id, the centre that created it, and the node it
+ * names.
+ */
+interface OffscreenMarker {
+  marker: string
+  selected: string
   target: string
 }
 
 /**
- * The ghost positions for one centre node, held for as long as it is the centre.
+ * The off-screen marker positions for one centre node, held for as long as it is the centre.
  *
  * The positions are computed once and then only assigned, never reassigned. `at` is only
- * added to, so a ghost never moves. A neighbour that arrives mid-visit takes an unused
- * position rather than another ghost's, and one that scrolls out of view and back finds its
- * own still reserved. `slotsFor` maintains this and explains why.
+ * added to, so an off-screen marker never moves. A neighbour that arrives mid-visit takes an unused
+ * position rather than another off-screen marker's, and one that scrolls out of view and back finds
+ * its own still reserved. `slotsFor` maintains this and explains why.
  */
-interface Doorways {
-  centre: string
+interface SlotPlan {
+  selected: string
   /** Every position this centre offers, in the order they are assigned. */
   pool: Point[]
-  /** The position each neighbour holds. Only added to, so a ghost never moves. */
+  /** The position each neighbour holds. Only added to, so an off-screen marker never moves. */
   at: Map<string, Point>
 }
 
 function buildStyle(p: Palette): StylesheetJson {
   return [
     // The default node: a small circle with no label. Only the centre and its neighbours
-    // are labelled, and a labelled node draws as a pill. See the rules below.
+    // are labelled, and a labelled node draws as a label box. See the rules below.
     {
       selector: "node",
       style: {
@@ -163,11 +167,11 @@ function buildStyle(p: Palette): StylesheetJson {
         width: NODE_SIZE.resting,
         height: NODE_SIZE.resting,
         label: "",
-        "font-family": PILL_FONT,
+        "font-family": LABEL_FONT,
         "font-size": 11,
         // A text colour token, never the node's own colour.
         color: p.textSecondary,
-        // A name is drawn inside its pill, so centre it on both axes.
+        // A name is drawn inside its label box, so centre it on both axes.
         "text-valign": "center",
         "text-halign": "center",
         "border-width": 0,
@@ -186,7 +190,7 @@ function buildStyle(p: Palette): StylesheetJson {
         opacity: 0.55,
       },
     },
-    // A neighbour of the centre. It draws as its name on a filled pill.
+    // A neighbour of the centre. It draws as its name on a filled label box.
     {
       selector: "node[tier = 1]",
       style: {
@@ -195,20 +199,20 @@ function buildStyle(p: Palette): StylesheetJson {
         height: "label",
         padding: PAD,
         "background-color": p.surface,
-        // Nearly opaque, so where two pills overlap the front one is readable.
+        // Nearly opaque, so where two label boxes overlap the front one is readable.
         "background-opacity": 0.92,
         label: "data(label)",
         color: p.hop[0]!,
-        "font-size": RING_TEXT.size,
-        "font-weight": RING_TEXT.weight,
-        "outline-width": PILL_HALO,
+        "font-size": NEIGHBOUR_TEXT.size,
+        "font-weight": NEIGHBOUR_TEXT.weight,
+        "outline-width": LABEL_OUTLINE,
         "outline-color": p.surface,
-        "z-index": RING_Z.bottom,
+        "z-index": NEIGHBOUR_Z.bottom,
       },
     },
     // The ranked z-index, set once `setTiers` has ranked them. A separate rule, so a
     // neighbour that is not ranked yet still sits above the distant nodes rather than at 0.
-    { selector: "node[tier = 1][?lift]", style: { "z-index": RANKED_Z } },
+    { selector: "node[tier = 1][?zRank]", style: { "z-index": RANKED_Z } },
     // A node near the centre but not connected to it. It drops its label and most of its
     // contrast, so the centre's neighbours can be read over it.
     {
@@ -216,7 +220,7 @@ function buildStyle(p: Palette): StylesheetJson {
       style: { opacity: 0.22, label: "", "z-index": 0 },
     },
     { selector: "edge[dim = 1]", style: { opacity: 0.12 } },
-    // The centre: the same pill, filled with the accent. It is the loudest thing on screen.
+    // The centre: the same label box, filled with the accent. It is the loudest thing on screen.
     {
       selector: "node[tier = 0]",
       style: {
@@ -227,36 +231,36 @@ function buildStyle(p: Palette): StylesheetJson {
         "background-color": p.accent,
         "background-opacity": 1,
         label: "data(label)",
-        "font-size": CENTRE_TEXT.size,
-        "font-weight": CENTRE_TEXT.weight,
+        "font-size": SELECTED_TEXT.size,
+        "font-weight": SELECTED_TEXT.weight,
         color: p.inkOnAccent,
         "border-width": 3,
-        "border-color": p.accentRing,
+        "border-color": p.selectedOutline,
         "z-index": 30,
       },
     },
-    { selector: "edge[accent = 1]", style: { "line-color": p.edgeActive, opacity: 0.9, width: 2 } },
+    { selector: "edge[selected = 1]", style: { "line-color": p.edgeActive, opacity: 0.9, width: 2 } },
     // "This node has unread neighbours" is shown as a border style, not a colour, so it
     // still reads for someone who cannot tell two ramp steps apart.
     //
-    // A thin border rather than an outline. A pill's perimeter is over twice a circle's, and
-    // this appears on nearly every drawn node. Finer than the ghost's dash, so the two marks
-    // are not confused.
+    // A thin border rather than an outline. A label box's perimeter is over twice a circle's, and
+    // this appears on nearly every drawn node. Finer than the off-screen marker's dash, so the two
+    // marks are not confused.
     {
       selector: "node[?more]",
       style: {
         "border-width": 1,
-        "border-color": p.frontierRing,
+        "border-color": p.unreadOutline,
         "border-style": "dashed",
         "border-dash-pattern": [1, 3],
         "border-opacity": 0.55,
       },
     },
-    // A ghost: a neighbour of the centre whose real position is off screen. Hollow and
+    // An off-screen marker: a neighbour of the centre whose real position is off screen. Hollow and
     // dashed, so it is not mistaken for the node itself. The node exists once, elsewhere on
-    // the map, and while the ghost is shown it is off screen.
+    // the map, and while the off-screen marker is shown it is off screen.
     {
-      selector: "node[?ghost]",
+      selector: "node[?marker]",
       style: {
         shape: "round-rectangle",
         "background-opacity": 0,
@@ -267,23 +271,24 @@ function buildStyle(p: Palette): StylesheetJson {
         "border-color": p.hop[0]!,
         "border-style": "dashed",
         "border-opacity": 1,
-        "outline-width": PILL_HALO,
+        "outline-width": LABEL_OUTLINE,
         "outline-color": p.surface,
         label: "data(label)",
         color: p.textSecondary,
-        "font-size": RING_TEXT.size,
-        "font-weight": RING_TEXT.weight,
-        "z-index": GHOST_Z.bottom,
+        "font-size": NEIGHBOUR_TEXT.size,
+        "font-weight": NEIGHBOUR_TEXT.weight,
+        "z-index": MARKER_Z.bottom,
       },
     },
-    // The ranked z-index, set once `rankGhosts` has run. A separate rule for the same reason
-    // as the neighbour rule above: a ghost created mid-pass still sits above the neighbours.
-    { selector: "node[?ghost][?lift]", style: { "z-index": RANKED_Z } },
-    // A ghost's edge is dashed, because the real edge may still be drawn as a solid line. At
-    // a close zoom a neighbour off screen keeps a line running to the edge of the viewport.
-    // That line shows the direction. This one shows where to click to get there.
+    // The ranked z-index, set once `rankMarkers` has run. A separate rule for the same reason
+    // as the neighbour rule above: an off-screen marker created mid-pass still sits above the
+    // neighbours.
+    { selector: "node[?marker][?zRank]", style: { "z-index": RANKED_Z } },
+    // An off-screen marker's edge is dashed, because the real edge may still be drawn as a solid
+    // line. At a close zoom a neighbour off screen keeps a line running to the edge of the
+    // viewport. That line shows the direction. This one shows where to click to get there.
     {
-      selector: "edge[?ghost]",
+      selector: "edge[?marker]",
       style: { "line-color": p.edgeActive, "line-style": "dashed", opacity: 0.9, width: 2 },
     },
     {
@@ -310,10 +315,10 @@ function buildStyle(p: Palette): StylesheetJson {
     { selector: "node.loading", style: { "border-width": 3, "border-style": "solid", "border-color": p.accent, "border-opacity": 1 } },
     // The node under the pointer draws as its name, the way a ring node does. Scoped to the
     // nodes that draw as discs: the centre and the ring are already named, and naming one twice
-    // says nothing. A ghost carries no `tier`, which this comparison cannot match, and a stub
-    // sets `events: "no"`, so neither reaches here.
+    // says nothing. An off-screen marker carries no `tier`, which this comparison cannot match, and
+    // a stub sets `events: "no"`, so neither reaches here.
     //
-    // Last but for `.hidden`, so it beats the base rule's blank label and the backdrop's
+    // Last but for `.hidden`, so it beats the base rule's blank label and the dimmed nodes'
     // dimming. It sets no border property, so the frontier dash and `loading` both survive.
     {
       selector: "node[?hover][tier >= 2]",
@@ -324,20 +329,20 @@ function buildStyle(p: Palette): StylesheetJson {
         padding: PAD,
         label: "data(label)",
         "background-color": p.surface,
-        // Opaque, unlike a ring pill's 0.92. Two ring pills overlap and the loser should stay
-        // partly visible. There is only ever one of these, and legibility is its whole job.
+        // Opaque, unlike a ring label box's 0.92. Two ring label boxes overlap and the loser should
+        // stay partly visible. There is only ever one of these, and legibility is its whole job.
         "background-opacity": 1,
         // The page's own ink, not `p.hop[0]`. The ring's ink says "a neighbour of the centre",
         // and this node is not one. It is also the pair validated against the surface.
         color: p.textPrimary,
-        "font-size": RING_TEXT.size,
-        "font-weight": RING_TEXT.weight,
-        "outline-width": PILL_HALO,
+        "font-size": NEIGHBOUR_TEXT.size,
+        "font-weight": NEIGHBOUR_TEXT.weight,
+        "outline-width": LABEL_OUTLINE,
         "outline-color": p.surface,
-        // The backdrop's 0.22 multiplies the label as well as the fill.
+        // The dimmed nodes' 0.22 multiplies the label as well as the fill.
         opacity: 1,
         // The fill would otherwise cross-fade from the disc's hop colour while the box snaps.
-        // That shows a tinted pill for the length of the base rule's transition. This covers
+        // That shows a tinted label box for the length of the base rule's transition. This covers
         // the way in only: leaving, the base rule governs again, and its fade runs on a disc
         // rather than on a name.
         "transition-property": "none",
@@ -349,10 +354,10 @@ function buildStyle(p: Palette): StylesheetJson {
     // node the release would take, and nothing more.
     //
     // The outline rather than the border, because the border is spoken for at three tiers: the
-    // centre's ring, the frontier dash, and `loading`. It replaces the halo on a pill for as
-    // long as the button is held, which is a louder mark in the same place.
+    // centre's ring, the frontier dash, and `loading`. It replaces the label outline on a label box
+    // for as long as the button is held, which is a louder mark in the same place.
     {
-      selector: "node[?aim]",
+      selector: "node[?dropTarget]",
       style: {
         "outline-width": 3,
         "outline-color": p.accent,
@@ -360,8 +365,8 @@ function buildStyle(p: Palette): StylesheetJson {
         "outline-offset": 1,
       },
     },
-    // Hidden rather than removed. A stub the centre replaced with a ghost comes back when
-    // the centre moves on, and rebuilding it would mean recounting `stubbed`.
+    // Hidden rather than removed. A stub the centre replaced with an off-screen marker comes back
+    // when the centre moves on, and rebuilding it would mean recounting `stubbed`.
     { selector: ".hidden", style: { display: "none" } },
   ]
 }
@@ -379,18 +384,21 @@ export class MapView implements MapSurface {
    * across a generic parameter. Nothing else touches the map, so `on` is the whole proof.
    */
   private readonly listeners = new Map<keyof MapEvents, unknown[]>()
-  private accentId: string | null = null
+  private selectedId: string | null = null
   private stubbed = 0
   /** True while the camera is flying. Nothing may take the accent until it lands. */
-  private flying = false
+  private animating = false
   /** The node whose name the pointer is holding open, or null. */
   private hovered: string | null = null
   /** The node a drag would join to, or null. */
-  private aimed: string | null = null
-  /** The ghosts the current centre created, and the node each one stands in for. */
-  private ghosts: Ghost[] = []
-  /** Ghost positions for the current centre. Built on the first pass, then only extended. */
-  private doorways: Doorways | null = null
+  private dropTarget: string | null = null
+  /** The off-screen markers the current centre created, and the node each one stands in for. */
+  private markers: OffscreenMarker[] = []
+  /**
+   * Off-screen marker positions for the current centre. Built on the first pass, then only
+   * extended.
+   */
+  private slotPlan: SlotPlan | null = null
 
   constructor(
     container: HTMLElement,
@@ -549,7 +557,7 @@ export class MapView implements MapSurface {
       // Not during a flight: the camera is already going somewhere, and a pan would land it
       // where neither asked for. Not while panning is switched off either — that is how a
       // gesture keeps the drag to itself. See drag-join.ts.
-      if (this.flying || !this.cy.userPanningEnabled()) return
+      if (this.animating || !this.cy.userPanningEnabled()) return
       this.cy.panBy({ x: original.clientX - last.x, y: original.clientY - last.y })
       last = { x: original.clientX, y: original.clientY }
     })
@@ -568,7 +576,7 @@ export class MapView implements MapSurface {
   }
 
   /** World coordinates of the middle of the viewport. */
-  centre(): Point {
+  middle(): Point {
     const box = this.cy.extent()
     return { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 }
   }
@@ -594,18 +602,18 @@ export class MapView implements MapSurface {
    * stub node removes its lead with it. Both forms are tried, because which one was drawn
    * depended on a distance that may have changed since.
    *
-   * Ghosts are removed first when a node they stand for is going. A ghost holds its target's
-   * id, and one pointing at a node that no longer exists would survive every later
-   * `clearGhosts`.
+   * Off-screen markers are removed first when a node they stand for is going. An off-screen marker
+   * holds its target's id, and one pointing at a node that no longer exists would survive every
+   * later `clearMarkers`.
    *
-   * The test is against the slot plan, not the ghosts currently shown, because the plan is
-   * the larger set: a slot is held for a neighbour whose ghost is hidden. Rebuilding the plan
-   * also lets the remaining slots use the space the removal just freed.
+   * The test is against the slot plan, not the off-screen markers currently shown, because the plan
+   * is the larger set: a slot is held for a neighbour whose off-screen marker is hidden. Rebuilding
+   * the plan also lets the remaining slots use the space the removal just freed.
    */
   drop(nodeIds: readonly string[], edges: readonly [string, string][]): void {
-    const plan = this.doorways
-    if (plan && nodeIds.some((id) => id === plan.centre || plan.at.has(id))) {
-      this.clearGhosts()
+    const plan = this.slotPlan
+    if (plan && nodeIds.some((id) => id === plan.selected || plan.at.has(id))) {
+      this.clearMarkers()
     }
 
     this.cy.batch(() => {
@@ -626,7 +634,7 @@ export class MapView implements MapSurface {
       for (const id of nodeIds) this.cy.$id(id).remove()
       // An accent pointing at a deleted node would keep the map marking it until the camera
       // moved. Clear it here. The caller picks a new one.
-      if (this.accentId && nodeIds.includes(this.accentId)) this.accentId = null
+      if (this.selectedId && nodeIds.includes(this.selectedId)) this.selectedId = null
 
       // Each surviving end of a removed edge may have unread neighbours again.
       for (const [a, b] of edges) {
@@ -642,7 +650,7 @@ export class MapView implements MapSurface {
    * Change the name a node draws, and nothing else.
    *
    * For a rename that kept its key, where the id is the same node and only the spelling
-   * moved. A pill takes both dimensions from its label, so Cytoscape resizes it on this
+   * moved. A label box takes both dimensions from its label, so Cytoscape resizes it on this
    * write. Position, tier and edges are untouched.
    */
   relabel(id: string, label: string): void {
@@ -656,8 +664,8 @@ export class MapView implements MapSurface {
     // A node can arrive while its parent is already the centre. It has to be created in the
     // right tier. Waiting for the next accent change would draw the centre's own neighbour
     // as a distant node.
-    const accent = this.accentId
-    const ring = accent ? new Set(this.world.neighbours(accent)) : null
+    const selected = this.selectedId
+    const neighbourList = selected ? new Set(this.world.neighbours(selected)) : null
 
     for (const node of nodes) {
       elements.push({
@@ -666,7 +674,7 @@ export class MapView implements MapSurface {
           id: node.id,
           label: node.label,
           degree: node.degree,
-          tier: node.id === accent ? 0 : ring?.has(node.id) ? 1 : 2,
+          tier: node.id === selected ? 0 : neighbourList?.has(node.id) ? 1 : 2,
           more: this.world.missing(node.id) > 0,
         },
         position: { x: node.x, y: node.y },
@@ -699,7 +707,7 @@ export class MapView implements MapSurface {
         })
         elements.push({
           group: "edges",
-          data: { id: leadId(stub), source: owner, target: stub, stub: true },
+          data: { id: lineId(stub), source: owner, target: stub, stub: true },
         })
       }
       this.stubbed++
@@ -714,19 +722,19 @@ export class MapView implements MapSurface {
         }
       }
       // Edges reaching the centre are the centre's edges, and are drawn as such.
-      if (accent) {
-        this.cy.$id(accent).connectedEdges().data("accent", 1)
+      if (selected) {
+        this.cy.$id(selected).connectedEdges().data("selected", 1)
         // A node already on the map when this read landed was given a tier before it was
-        // known to be a neighbour of the centre. Only `setAccent` recomputes tiers, and it
+        // known to be a neighbour of the centre. Only `select` recomputes tiers, and it
         // does not run until the accent moves, so promote it here. This is
         // O(degree + nearby nodes), once per read rather than once per frame.
-        this.setTiers(accent, true)
+        this.setTiers(selected, true)
       }
     })
-    // No ghost pass here, on purpose. A read can leave new nodes off screen with no ghost
-    // standing in for them, but this also runs for a late placement, and creating elements
-    // here would put that work on a pan's frame budget. Ghosts are only created on a settled
-    // camera, and main.ts schedules a settle when a read lands.
+    // No off-screen marker pass here, on purpose. A read can leave new nodes off screen with no
+    // off-screen marker standing in for them, but this also runs for a late placement, and creating
+    // elements here would put that work on a pan's frame budget. Off-screen markers are only
+    // created on a settled camera, and main.ts schedules a settle when a read lands.
   }
 
   /**
@@ -740,7 +748,7 @@ export class MapView implements MapSurface {
    * Long edges are excluded. A neighbour reached by two stubs is far enough that using it
    * would dim half the map for one node.
    */
-  private ringReach(id: string): number {
+  private neighbourReach(id: string): number {
     let reach = 0
     for (const other of this.world.neighbours(id)) {
       const span = this.world.span(id, other)
@@ -752,27 +760,27 @@ export class MapView implements MapSurface {
   /**
    * The nodes the centre crowds: close enough to be in the way, but not joined to it.
    *
-   * A radius test, not a corridor test. Corridor membership changes as the accent drifts,
+   * A radius test, not a corridor test. Corridor membership changes as the accent moves,
    * which would flicker nodes in and out during a pan.
    */
-  private backdropOf(id: string): string[] {
-    const centre = this.world.get(id)
-    const reach = this.ringReach(id)
-    if (!centre || reach <= 0) return []
+  private dimmedOf(id: string): string[] {
+    const selected = this.world.get(id)
+    const reach = this.neighbourReach(id)
+    if (!selected || reach <= 0) return []
     const spared = new Set([id, ...this.world.neighbours(id)])
     return this.world
-      .nodesWithin(centre, reach)
+      .nodesWithin(selected, reach)
       .filter((node) => !spared.has(node.id))
       .map((node) => node.id)
   }
 
   /**
-   * The centre's neighbours, ordered by who should get a ghost first.
+   * The centre's neighbours, ordered by who should get an off-screen marker first.
    *
    * Neighbours with no drawn line first. A neighbour off screen whose edge is drawn still
    * shows the reader which way the connection goes. One drawn as two stubs shows almost
-   * nothing, so a ghost is worth more there. `add` decided which pairs got a line, and this
-   * asks the map rather than recomputing it.
+   * nothing, so an off-screen marker is worth more there. `add` decided which pairs got a line, and
+   * this asks the map rather than recomputing it.
    *
    * Then nearest first. Those are the most likely to be worth walking to, and the ones
    * `Explorer` may already have read. Degree breaks a tie, as it does for the paint order,
@@ -785,13 +793,13 @@ export class MapView implements MapSurface {
    *
    * This does not depend on the camera, so two neighbours never swap order during a pan.
    * Which of them is eligible does change, and `slotsFor` explains why that cannot move a
-   * ghost that is already shown.
+   * off-screen marker that is already shown.
    */
-  private ghostable(known: readonly string[], centre: string): string[] {
+  private markerOrder(known: readonly string[], selected: string): string[] {
     const ranked = known.map((other) => ({
       id: other,
-      unlined: this.cy.$id(edgeKey(centre, other)).empty() ? 0 : 1,
-      span: this.world.span(centre, other),
+      unlined: this.cy.$id(edgeKey(selected, other)).empty() ? 0 : 1,
+      span: this.world.span(selected, other),
       degree: this.world.get(other)?.degree ?? 0,
     }))
     ranked.sort(
@@ -809,8 +817,8 @@ export class MapView implements MapSurface {
    * some part of it is on screen.
    *
    * The box, not the position, because a neighbour draws as its name. A position just past
-   * the edge can still have half its label visible, and a ghost for it would show the same
-   * name twice.
+   * the edge can still have half its label visible, and an off-screen marker for it would show the
+   * same name twice.
    *
    * The largest of the four axis gaps, not the distance to a corner. Negative on all four
    * axes is what overlapping the viewport means, and a positive value is how far one axis
@@ -820,20 +828,20 @@ export class MapView implements MapSurface {
     const node = this.cy.$id(id)
     // Cytoscape gives an empty collection a box at the origin, which would read as on screen
     // whenever the origin is. There is no node here, so return the value that creates no
-    // ghost.
+    // off-screen marker.
     if (node.empty()) return -Infinity
     const box = node.boundingBox()
     return Math.max(view.x1 - box.x2, box.x1 - view.x2, view.y1 - box.y2, box.y1 - view.y2)
   }
 
   /**
-   * Where each of a centre's ghosts stands. Built once per centre, then only extended.
+   * Where each of a centre's off-screen markers stands. Built once per centre, then only extended.
    *
-   * The slots cannot be recomputed on each pass. `seat` spreads what it is given evenly, so
-   * the same neighbours in a different number come back on different bearings. And a ghost
-   * does not occupy the grid, so asking for one slot twice returns the same point twice and
-   * the second ghost lands on the first. Either way, a set that changed with the camera would
-   * move ghosts that are already on screen, and nothing on this map moves.
+   * The slots cannot be recomputed on each pass. `freeSpots` spreads what it is given evenly, so
+   * the same neighbours in a different number come back on different bearings. And an off-screen
+   * marker does not occupy the grid, so asking for one slot twice returns the same point twice and
+   * the second off-screen marker lands on the first. Either way, a set that changed with the camera
+   * would move off-screen markers that are already on screen, and nothing on this map moves.
    *
    * The pool is sized from the degree the store reports, not from the neighbours drawn so
    * far, so a read that lands later finds a slot waiting instead of shifting what is already
@@ -842,46 +850,47 @@ export class MapView implements MapSurface {
    *
    * `reach` is read here only, on the pass that builds the plan, for the same reason. It sets
    * how far out the outermost ring can sit, and a reach that followed the zoom would move
-   * ghosts already shown. So a visit is measured once, at the zoom it started at.
+   * off-screen markers already shown. So a visit is measured once, at the zoom it started at.
    *
-   * Built here rather than in `setAccent`, so `seat` runs with the rest of the ghost work on a
-   * settled camera. Naming a centre is a click's worth of work; cutting a plan is not.
+   * Built here rather than in `select`, so `freeSpots` runs with the rest of the off-screen marker
+   * work on a settled camera. Naming a centre is a click's worth of work; cutting a plan is not.
    */
   private slotsFor(
-    centre: string,
+    selected: string,
     known: readonly string[],
     reach: number,
     outside: ReadonlyMap<string, number>,
     margin: number,
   ): ReadonlyMap<string, Point> {
-    let plan = this.doorways
-    if (!plan || plan.centre !== centre) {
-      const room = Math.max(known.length, this.world.get(centre)?.degree ?? 0)
+    let plan = this.slotPlan
+    if (!plan || plan.selected !== selected) {
+      const room = Math.max(known.length, this.world.get(selected)?.degree ?? 0)
       // Slots are sized for the widest name known now. The degree covers a neighbour that
       // arrives later, but a name that has not arrived cannot be measured, so a longer one
       // will overhang its slot.
       plan = {
-        centre,
-        pool: this.world.slotsAround(centre, room, this.slotBox(known), reach),
+        selected,
+        pool: this.world.slotsAround(selected, room, this.slotBox(known), reach),
         at: new Map(),
       }
-      this.doorways = plan
+      this.slotPlan = plan
     }
 
-    // A slot is claimed only by a neighbour past the margin, meaning one about to get a ghost.
-    // Assigning a slot to every neighbour up front would spend the pool on names already in
+    // A slot is claimed only by a neighbour past the margin, meaning one about to get an off-screen
+    // marker. Assigning a slot to every neighbour up front would spend the pool on names already in
     // view: a hub has more neighbours than the rings have room for.
     //
     // This depends on the camera, and that is safe because a claim is never released. The
     // camera decides who receives a free slot. It cannot move or revoke a slot already held,
     // so a neighbour that goes out of view and comes back finds its own waiting, and a pan
-    // never moves a ghost on screen. `ghostable` orders the claimants among themselves.
+    // never moves an off-screen marker on screen. `markerOrder` orders the claimants among
+    // themselves.
     //
     // The guard is on a slot being left, not on the neighbourhood having grown, because the
     // answer now depends on the camera. Once the pool is fully assigned there is nothing to
     // do, so the sort only runs while slots remain.
     if (plan.at.size < plan.pool.length) {
-      for (const target of this.ghostable(known, centre)) {
+      for (const target of this.markerOrder(known, selected)) {
         if (plan.at.has(target) || (outside.get(target) ?? -Infinity) <= margin) continue
         // The lowest slot not yet assigned, because none is ever released.
         const at = plan.pool[plan.at.size]
@@ -897,7 +906,7 @@ export class MapView implements MapSurface {
    * One size for the whole plan, not one per neighbour, because any neighbour may take any
    * slot. The ranking decides who gets which, and it changes as reads land.
    *
-   * The height comes from the font size, not from a measurement. A pill is one line, so its
+   * The height comes from the font size, not from a measurement. A label box is one line, so its
    * height is the font size plus the padding, which is what Cytoscape computes.
    */
   private slotBox(ids: readonly string[]): Slot {
@@ -906,110 +915,113 @@ export class MapView implements MapSurface {
       const label = this.world.get(id)?.label
       if (label) widest = Math.max(widest, nameWidth(label))
     }
-    const around = 2 * PILL_PAD + 2 * PILL_HALO + SLOT_GAP
-    return { w: widest + around, h: RING_TEXT.size + around }
+    const around = 2 * LABEL_PAD + 2 * LABEL_OUTLINE + SLOT_GAP
+    return { w: widest + around, h: NEIGHBOUR_TEXT.size + around }
   }
 
   /**
-   * Set the paint order of the ghosts on screen, by degree. This is the same rule `setTiers`
-   * uses for the neighbours, applied to ghosts for the reason given at `GHOST_Z`.
+   * Set the paint order of the off-screen markers on screen, by degree. This is the same rule
+   * `setTiers` uses for the neighbours, applied to off-screen markers for the reason given at
+   * `MARKER_Z`.
    *
-   * Recomputed whenever the set changes, not fixed when a ghost is created. The rank is a
-   * position within the set, so one ghost leaving changes it for the rest. Setting `lift`
-   * only restyles, so nothing moves.
+   * Recomputed whenever the set changes, not fixed when an off-screen marker is created. The rank
+   * is a position within the set, so one off-screen marker leaving changes it for the rest. Setting
+   * `zRank` only restyles, so nothing moves.
    */
-  private rankGhosts(standing: readonly Ghost[]): void {
+  private rankMarkers(standing: readonly OffscreenMarker[]): void {
     const ranked = [...standing].sort(
       (a, b) =>
         (this.world.get(b.target)?.degree ?? 0) - (this.world.get(a.target)?.degree ?? 0) ||
         (a.target < b.target ? -1 : 1),
     )
-    const band = GHOST_Z.top - GHOST_Z.bottom
-    ranked.forEach((ghost, i) => {
-      const lift =
+    const range = MARKER_Z.top - MARKER_Z.bottom
+    ranked.forEach((marker, i) => {
+      const zRank =
         ranked.length > 1
-          ? GHOST_Z.top - Math.round((i / (ranked.length - 1)) * band)
-          : GHOST_Z.top
-      this.cy.$id(ghost.ghost).data("lift", lift)
+          ? MARKER_Z.top - Math.round((i / (ranked.length - 1)) * range)
+          : MARKER_Z.top
+      this.cy.$id(marker.marker).data("zRank", zRank)
     })
   }
 
   /** The stub at one end of a long edge, together with its lead. */
   private stubAt(owner: string, other: string) {
     const stub = stubId(edgeKey(owner, other), owner)
-    return this.cy.$id(stub).union(this.cy.$id(leadId(stub)))
+    return this.cy.$id(stub).union(this.cy.$id(lineId(stub)))
   }
 
   /**
-   * Create a ghost for every neighbour that is off screen, and remove every ghost whose
-   * neighbour has come into view.
+   * Create an off-screen marker for every neighbour that is off screen, and remove every off-screen
+   * marker whose neighbour has come into view.
    *
-   * Idempotent, and run on a settled camera rather than per frame. A ghost is an element, and
-   * elements appearing and disappearing during a fast pan would flicker.
+   * Idempotent, and run on a settled camera rather than per frame. An off-screen marker is an
+   * element, and elements appearing and disappearing during a fast pan would flicker.
    *
-   * The two tests are deliberately not opposites. A ghost is removed as soon as any part of
-   * its target is visible, and created only once the target is `GHOST_MARGIN` past the edge.
-   * One pass can therefore never both remove and create a ghost for the same neighbour, and
-   * a name is never readable at its own position and shown as a ghost at the same time.
+   * The two tests are deliberately not opposites. An off-screen marker is removed as soon as any
+   * part of its target is visible, and created only once the target is `MARKER_MARGIN` past the
+   * edge. One pass can therefore never both remove and create an off-screen marker for the same
+   * neighbour, and a name is never readable at its own position and shown as an off-screen marker
+   * at the same time.
    *
    * Runs whether or not the centre is itself on screen. A pan carries the centre off the edge
-   * and its doorways with it now that neither answers to the camera, and skipping the pass for
-   * a picture nobody is looking at is the obvious saving — but a neighbour can come back into
-   * view while the centre is still outside it, and the pass that did not run is the one that
-   * would have taken that ghost down. Measuring regardless is what the invariant above costs.
+   * and its off-screen markers with it now that neither answers to the camera, and skipping the
+   * pass for a picture nobody is looking at is the obvious saving — but a neighbour can come back
+   * into view while the centre is still outside it, and the pass that did not run is the one that
+   * would have taken that off-screen marker down. Measuring regardless is what the invariant above
+   * costs.
    *
-   * Nothing is written to the occupancy grid — a ghost holds no ground, which is also what
-   * stops `nearestTo` ever returning one and making a ghost the centre.
+   * Nothing is written to the occupancy grid — an off-screen marker holds no ground, which is
+   * also what stops `nearestTo` ever returning one and making an off-screen marker the centre.
    */
-  reviseGhosts(): void {
-    const centre = this.accentId
-    if (!centre || this.flying) return
+  updateMarkers(): void {
+    const selected = this.selectedId
+    if (!selected || this.animating) return
 
-    const known = this.world.neighbours(centre)
+    const known = this.world.neighbours(selected)
     const view = this.cy.extent()
-    const margin = GHOST_MARGIN / this.cy.zoom()
+    const margin = MARKER_MARGIN / this.cy.zoom()
     // Measure before opening the batch. A box sized from a label needs the style pass, and a
     // batch defers that until the outermost batch closes. Measure every neighbour, not only
     // the ones holding a slot, because `slotsFor` chooses from these.
     const outside = new Map<string, number>()
     for (const target of known) outside.set(target, this.outsideBy(target, view))
-    // How far out a slot may sit: half the viewport's smaller side. A ghost further out than
-    // this is not worth creating. `slotsFor` reads this only on the pass that builds the
+    // How far out a slot may sit: half the viewport's smaller side. An off-screen marker further
+    // out than this is not worth creating. `slotsFor` reads this only on the pass that builds the
     // plan, and explains why.
     const reach = Math.min(view.x2 - view.x1, view.y2 - view.y1) / 2
-    const slots = this.slotsFor(centre, known, reach, outside, margin)
+    const slots = this.slotsFor(selected, known, reach, outside, margin)
 
     const neighbours = new Set(known)
     const standing = new Set<string>()
-    const down: Ghost[] = []
-    for (const ghost of this.ghosts) {
-      // A ghost whose target is no longer a neighbour is removed too. Undoing a join removes
-      // the edge and keeps both nodes, so nothing else would remove it.
-      const gap = outside.get(ghost.target) ?? -Infinity
-      if (neighbours.has(ghost.target) && gap > 0) standing.add(ghost.target)
-      else down.push(ghost)
+    const down: OffscreenMarker[] = []
+    for (const marker of this.markers) {
+      // An off-screen marker whose target is no longer a neighbour is removed too. Undoing a join
+      // removes the edge and keeps both nodes, so nothing else would remove it.
+      const gap = outside.get(marker.target) ?? -Infinity
+      if (neighbours.has(marker.target) && gap > 0) standing.add(marker.target)
+      else down.push(marker)
     }
 
-    const up: Ghost[] = []
+    const up: OffscreenMarker[] = []
     const elements: ElementDefinition[] = []
     for (const [target, at] of slots) {
       // The plan keeps a slot for a node that is no longer a neighbour, because it is only
-      // ever added to. Without this test the loop above would remove that ghost and this one
-      // would recreate it, showing an edge that no longer exists.
+      // ever added to. Without this test the loop above would remove that off-screen marker and
+      // this one would recreate it, showing an edge that no longer exists.
       if (!neighbours.has(target)) continue
       if (standing.has(target) || (outside.get(target) ?? -Infinity) <= margin) continue
       const node = this.world.get(target)
       if (!node) continue
-      const ghost = ghostId(centre, target)
-      up.push({ ghost, centre, target })
+      const marker = markerId(selected, target)
+      up.push({ marker, selected, target })
       elements.push({
         group: "nodes",
-        data: { id: ghost, label: node.label, ghost: true },
+        data: { id: marker, label: node.label, marker: true },
         position: { x: at.x, y: at.y },
       })
       elements.push({
         group: "edges",
-        data: { id: leadId(ghost), source: centre, target: ghost, ghost: true },
+        data: { id: lineId(marker), source: selected, target: marker, marker: true },
       })
     }
 
@@ -1017,34 +1029,34 @@ export class MapView implements MapSurface {
     // batch, no style pass, no redraw.
     if (!down.length && !up.length) return
 
-    const after = [...this.ghosts.filter((ghost) => standing.has(ghost.target)), ...up]
+    const after = [...this.markers.filter((marker) => standing.has(marker.target)), ...up]
     this.cy.batch(() => {
-      for (const ghost of down) this.lower(ghost)
-      // Hide the long edge's stub at this end. The ghost says the same thing more clearly. A
-      // short edge has no stub, and its line stays: the line shows where the neighbour
-      // actually is, which a ghost cannot.
-      for (const ghost of up) this.stubAt(centre, ghost.target).addClass("hidden")
+      for (const marker of down) this.lower(marker)
+      // Hide the long edge's stub at this end. The off-screen marker says the same thing more
+      // clearly. A short edge has no stub, and its line stays: the line shows where the neighbour
+      // actually is, which an off-screen marker cannot.
+      for (const marker of up) this.stubAt(selected, marker.target).addClass("hidden")
       this.cy.add(elements)
-      this.rankGhosts(after)
+      this.rankMarkers(after)
     })
-    this.ghosts = after
+    this.markers = after
   }
 
-  /** Remove one ghost and show the stub it replaced. */
-  private lower(ghost: Ghost): void {
-    this.stubAt(ghost.centre, ghost.target).removeClass("hidden")
-    this.cy.$id(ghost.ghost).remove()
+  /** Remove one off-screen marker and show the stub it replaced. */
+  private lower(marker: OffscreenMarker): void {
+    this.stubAt(marker.selected, marker.target).removeClass("hidden")
+    this.cy.$id(marker.marker).remove()
   }
 
-  /** Remove every ghost and discard the slot plan. */
-  private clearGhosts(): void {
-    // Before the early return, because a plan outlives its ghosts. A centre whose neighbours
-    // are all on screen has a plan with no slots assigned, and a stale plan surviving an
+  /** Remove every off-screen marker and discard the slot plan. */
+  private clearMarkers(): void {
+    // Before the early return, because a plan outlives its off-screen markers. A centre whose
+    // neighbours are all on screen has a plan with no slots assigned, and a stale plan surviving an
     // accent change is the one way the slots come out wrong.
-    this.doorways = null
-    if (!this.ghosts.length) return
-    for (const ghost of this.ghosts) this.lower(ghost)
-    this.ghosts = []
+    this.slotPlan = null
+    if (!this.markers.length) return
+    for (const marker of this.markers) this.lower(marker)
+    this.markers = []
   }
 
   private setTiers(id: string, active: boolean): void {
@@ -1052,27 +1064,27 @@ export class MapView implements MapSurface {
     node.data("tier", active ? 0 : 2)
     const neighbours = this.world.neighbours(id)
     if (active) {
-      // Spread across the `RING_Z` range rather than numbered one by one. A hub's neighbours
+      // Spread across the `NEIGHBOUR_Z` range rather than numbered one by one. A hub's neighbours
       // would otherwise run past the bottom of the range and stack in an arbitrary order.
       const ranked = [...neighbours].sort(
         (a, b) => (this.world.get(b)?.degree ?? 0) - (this.world.get(a)?.degree ?? 0),
       )
-      const band = RING_Z.top - RING_Z.bottom
+      const range = NEIGHBOUR_Z.top - NEIGHBOUR_Z.bottom
       ranked.forEach((other, i) => {
-        const lift =
+        const zRank =
           ranked.length > 1
-            ? RING_Z.top - Math.round((i / (ranked.length - 1)) * band)
-            : RING_Z.top
-        this.cy.$id(other).data({ tier: 1, lift })
+            ? NEIGHBOUR_Z.top - Math.round((i / (ranked.length - 1)) * range)
+            : NEIGHBOUR_Z.top
+        this.cy.$id(other).data({ tier: 1, zRank })
       })
     } else {
       for (const other of neighbours) this.cy.$id(other).data("tier", 2)
     }
-    node.connectedEdges().data("accent", active ? 1 : 0)
-    for (const other of this.backdropOf(id)) {
-      const backdrop = this.cy.$id(other)
-      backdrop.data("tier", active ? 3 : 2)
-      backdrop.connectedEdges().data("dim", active ? 1 : 0)
+    node.connectedEdges().data("selected", active ? 1 : 0)
+    for (const other of this.dimmedOf(id)) {
+      const dimmed = this.cy.$id(other)
+      dimmed.data("tier", active ? 3 : 2)
+      dimmed.connectedEdges().data("dim", active ? 1 : 0)
     }
   }
 
@@ -1080,13 +1092,13 @@ export class MapView implements MapSurface {
    * Make a node the accent and demote the previous one. It touches only the two
    * neighbourhoods involved, so it stays cheap during a pan.
    */
-  setAccent(id: string): boolean {
-    if (id === this.accentId || this.cy.$id(id).empty()) return false
-    const previous = this.accentId
-    this.accentId = id
+  select(id: string): boolean {
+    if (id === this.selectedId || this.cy.$id(id).empty()) return false
+    const previous = this.selectedId
+    this.selectedId = id
 
     this.cy.batch(() => {
-      this.clearGhosts()
+      this.clearMarkers()
       // Clear the old tiers before setting the new ones. A node in both neighbourhoods then
       // ends up promoted rather than demoted.
       if (previous) this.setTiers(previous, false)
@@ -1095,7 +1107,7 @@ export class MapView implements MapSurface {
 
     // A hovered node promoted to the centre or its ring has left the hover rule's scope. The
     // flag draws nothing at those two tiers, so dropping it here costs no mark. It stops the
-    // node drawing as a hovered pill when it demotes again with the pointer elsewhere.
+    // node drawing as a hovered label box when it demotes again with the pointer elsewhere.
     // Cytoscape will not drop it: the pointer crossed no element, so the element it last
     // reported was never rewritten. Reading the tier back covers both tiers without repeating
     // `setTiers`'s neighbour list.
@@ -1103,13 +1115,13 @@ export class MapView implements MapSurface {
     return true
   }
 
-  /** True while a ghost is flying. The accent must not move until it lands. */
-  get inFlight(): boolean {
-    return this.flying
+  /** True while an off-screen marker is flying. The accent must not move until it lands. */
+  get cameraMoving(): boolean {
+    return this.animating
   }
 
-  get accent(): string | null {
-    return this.accentId
+  get selected(): string | null {
+    return this.selectedId
   }
 
   loading(id: string, active: boolean): void {
@@ -1147,11 +1159,11 @@ export class MapView implements MapSurface {
    * scoped to a tier. Either end of a drag may be any node drawn, the centre and its ring
    * included. So the mark has to draw wherever the pointer lands.
    */
-  aim(id: string | null): void {
-    if (id === this.aimed) return
-    if (this.aimed) this.cy.$id(this.aimed).data("aim", false)
-    this.aimed = id
-    if (id) this.cy.$id(id).data("aim", true)
+  markDropTarget(id: string | null): void {
+    if (id === this.dropTarget) return
+    if (this.dropTarget) this.cy.$id(this.dropTarget).data("dropTarget", false)
+    this.dropTarget = id
+    if (id) this.cy.$id(id).data("dropTarget", true)
   }
 
   /**
@@ -1162,13 +1174,13 @@ export class MapView implements MapSurface {
    * the two clamps stop both extremes.
    *
    * Zero when the OS asks for reduced motion. The camera then cuts to the destination and
-   * the ghost fades where it lands. The fade is kept: a fade is the right replacement for a
-   * movement.
+   * the off-screen marker fades where it lands. The fade is kept: a fade is the right replacement
+   * for a movement.
    */
-  private flightTime(from: Point, to: Point): number {
+  private moveTime(from: Point, to: Point): number {
     if (REDUCED_MOTION.matches) return 0
     const pixels = Math.hypot(to.x - from.x, to.y - from.y) * this.cy.zoom()
-    return Math.min(FLIGHT_MAX, Math.max(FLIGHT_MIN, pixels / FLIGHT_SPEED))
+    return Math.min(MOVE_MAX_MS, Math.max(MOVE_MIN_MS, pixels / MOVE_SPEED))
   }
 
   /** Move the camera so a node sits in the middle of the screen. */
@@ -1181,16 +1193,17 @@ export class MapView implements MapSurface {
     }
     this.cy.animate(
       { center: { eles: this.cy.$id(id) } },
-      { duration: this.flightTime(this.centre(), node), easing: EASING },
+      { duration: this.moveTime(this.middle(), node), easing: EASING },
     )
   }
 
   /**
-   * Fly to the node a ghost stands in for, and fade the ghost out on arrival.
+   * Fly to the node an off-screen marker stands in for, and fade the off-screen marker out on
+   * arrival.
    *
-   * The ghost is not removed on click. It moves. If it disappeared as soon as its centre
-   * stopped being the centre, the thing the reader clicked would be gone by the second
-   * frame. So the accent is held for the duration and the ghost moves to the real node,
+   * The off-screen marker is not removed on click. It moves. If it disappeared as soon as its
+   * centre stopped being the centre, the thing the reader clicked would be gone by the second
+   * frame. So the accent is held for the duration and the off-screen marker moves to the real node,
    * arriving as the camera finishes centring it.
    *
    * This is the one place anything on the map moves. `autolock` normally makes every
@@ -1198,45 +1211,45 @@ export class MapView implements MapSurface {
    * flight and back on afterwards. `autoungrabify` is left on throughout, so nothing the
    * reader does can move a node.
    */
-  flyTo(ghost: string, onArrive: (target: string) => void): boolean {
-    const target = ghostTarget(ghost)
+  moveToMarker(marker: string, onArrive: (target: string) => void): boolean {
+    const target = markerTarget(marker)
     const node = target ? this.world.get(target) : null
-    const flier = this.cy.$id(ghost) as NodeSingular
-    if (!target || !node || this.flying || flier.empty()) return false
+    const markerMove = this.cy.$id(marker) as NodeSingular
+    if (!target || !node || this.animating || markerMove.empty()) return false
 
-    const from = this.ghosts.find((g) => g.ghost === ghost)?.centre ?? null
-    const duration = this.flightTime(flier.position(), node)
-    this.flying = true
+    const from = this.markers.find((g) => g.marker === marker)?.selected ?? null
+    const duration = this.moveTime(markerMove.position(), node)
+    this.animating = true
     this.cy.autolock(false)
 
-    // Fade out the other ghosts. They belong to the centre being left behind.
-    for (const other of this.ghosts) {
-      if (other.ghost === ghost) continue
-      this.cy.$id(other.ghost).animate({ style: { opacity: 0 } }, { duration: 260 })
+    // Fade out the other off-screen markers. They belong to the centre being left behind.
+    for (const other of this.markers) {
+      if (other.marker === marker) continue
+      this.cy.$id(other.marker).animate({ style: { opacity: 0 } }, { duration: 260 })
     }
 
     this.cy.animate({ center: { eles: this.cy.$id(target) } }, { duration, easing: EASING })
-    flier
+    markerMove
       .animate({ position: { x: node.x, y: node.y } }, { duration, easing: EASING })
-      .animate({ style: { opacity: 0 } }, { duration: DISSOLVE_MS })
+      .animate({ style: { opacity: 0 } }, { duration: FADE_MS })
 
     // Two moments, not one. The destination becomes the accent as the camera lands, and the
-    // ghost fades out over the next 320ms. Waiting for the fade would leave the map naming
-    // the node the reader started from.
+    // off-screen marker fades out over the next 320ms. Waiting for the fade would leave the map
+    // naming the node the reader started from.
     setTimeout(() => {
       this.cy.autolock(true)
-      this.flying = false
-      // Take the flying ghost out of the list. `setAccent` removes the others, but this one
-      // is still fading and outlives them. Its removal is scheduled before anything that
+      this.animating = false
+      // Take the flying off-screen marker out of the list. `select` removes the others, but this
+      // one is still fading and outlives them. Its removal is scheduled before anything that
       // could throw, so it cannot be left on the map.
-      this.ghosts = this.ghosts.filter((g) => g.ghost !== ghost)
-      // Remove the element, not the id. Ghosts come and go as the camera moves, so walking
-      // straight back can create a new ghost with this same id before the fade finishes, and
-      // removing by id would delete that one instead.
-      setTimeout(() => flier.remove(), DISSOLVE_MS)
+      this.markers = this.markers.filter((g) => g.marker !== marker)
+      // Remove the element, not the id. Off-screen markers come and go as the camera moves, so
+      // walking straight back can create a new off-screen marker with this same id before the fade
+      // finishes, and removing by id would delete that one instead.
+      setTimeout(() => markerMove.remove(), FADE_MS)
       if (from) this.stubAt(from, target).removeClass("hidden")
-      this.setAccent(target)
-      this.reviseGhosts()
+      this.select(target)
+      this.updateMarkers()
       onArrive(target)
     }, duration)
     return true

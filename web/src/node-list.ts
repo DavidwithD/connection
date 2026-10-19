@@ -30,7 +30,7 @@ export interface Walk {
   /** The row open in the list, or null when none is. */
   open: string | null
   /** The nodes walked into, first clicked first. Empty means the list is showing. */
-  trail: NodeMeta[]
+  cardStack: NodeMeta[]
 }
 
 /**
@@ -91,15 +91,15 @@ export function pageHolding(rows: readonly NodeMeta[], id: string, size: number)
  * goes on top.
  */
 export function walkTo(now: Walk, node: NodeMeta, page: readonly NodeMeta[]): Walk {
-  if (now.trail.length === 0) {
-    if (page.some((row) => row.id === node.id)) return { open: node.id, trail: [] }
+  if (now.cardStack.length === 0) {
+    if (page.some((row) => row.id === node.id)) return { open: node.id, cardStack: [] }
     const from = page.find((row) => row.id === now.open)
-    return { open: now.open, trail: from ? [from, node] : [node] }
+    return { open: now.open, cardStack: from ? [from, node] : [node] }
   }
 
-  const at = now.trail.findIndex((card) => card.id === node.id)
-  const trail = at >= 0 ? now.trail.slice(0, at + 1) : [...now.trail, node]
-  return { open: now.open, trail }
+  const at = now.cardStack.findIndex((card) => card.id === node.id)
+  const cardStack = at >= 0 ? now.cardStack.slice(0, at + 1) : [...now.cardStack, node]
+  return { open: now.open, cardStack }
 }
 
 /**
@@ -110,15 +110,15 @@ export function walkTo(now: Walk, node: NodeMeta, page: readonly NodeMeta[]): Wa
  * nothing.
  */
 export function backTo(now: Walk, depth: number): Walk {
-  const card = now.trail[depth]
-  if (!card || depth === now.trail.length - 1) return now
-  if (depth === 0) return { open: card.id, trail: [] }
-  return { open: now.open, trail: now.trail.slice(0, depth + 1) }
+  const card = now.cardStack[depth]
+  if (!card || depth === now.cardStack.length - 1) return now
+  if (depth === 0) return { open: card.id, cardStack: [] }
+  return { open: now.open, cardStack: now.cardStack.slice(0, depth + 1) }
 }
 
 /** The node whose neighbours belong on screen: the top card, or the open row. */
 export function owner(now: Walk, rows: readonly NodeMeta[]): NodeMeta | null {
-  if (now.trail.length) return now.trail[now.trail.length - 1] ?? null
+  if (now.cardStack.length) return now.cardStack[now.cardStack.length - 1] ?? null
   return rows.find((row) => row.id === now.open) ?? null
 }
 

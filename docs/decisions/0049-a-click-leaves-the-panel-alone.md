@@ -5,7 +5,7 @@
 **Deciders:** David HL
 
 ## Context
-[0036](0036-a-click-that-writes-nothing.md) let a click on the centre fill the
+[0036](0036-a-click-that-writes-nothing.md) let a click on the selected node fill the
 [panel](0013-one-box-that-grows-into-an-edge.md). The name went into the near input. The caret
 went into the far input.
 
@@ -18,14 +18,14 @@ values.
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
-| The centre's click | Copies the name, and nothing else | [0039](0039-any-nodes-name-on-the-clipboard.md) keeps the clipboard. |
+| The selected node's click | Copies the name, and nothing else | [0039](0039-any-nodes-name-on-the-clipboard.md) keeps the clipboard. |
 | The caret | Stays on the map | The arrow keys keep panning. |
-| A name in the panel | Typed, pasted, or a receipt's name button | Each one starts in the panel. The reader sees the name land. |
+| A name in the panel | Typed, pasted, or a write log entry's name button | Each one starts in the panel. The reader sees the name arrive. |
 | A join by mouse | Shift-drag | [0038](0038-a-drag-that-joins-two-nodes.md) covers it. |
 
-The receipt's name button stays. The reader clicks it inside the panel, next to the inputs it
-fills. The centre's click happened on the map, and the panel at the top of the page changed
-out of view.
+The write log entry's name button stays. The reader clicks it inside the panel, next to the
+inputs it fills. The click on the selected node happened on the map, and the panel at the top
+of the page changed out of view.
 
 This record replaces three parts of 0036. The first is the sentence under its Decision
 heading. The second is its rows on where the name lands and where the caret goes. The third is
@@ -36,13 +36,14 @@ edge. An edge comes from a key, or from the drag in 0038.
 
 ## Alternatives considered
 - **Keep 0036.** The click goes on arming a pair the reader may not see.
-- **Fill the panel only with a held key.** A second gesture to learn, and shift-drag already joins.
-- **Remove the receipt's name button too.** Then every name in the panel is typed or pasted.
+- **Fill the panel only with a held key.** A second gesture to learn, and shift-drag already
+  joins.
+- **Remove the write log entry's name button too.** Then every name in the panel is typed or pasted.
   The button is the one way back to a node the reader just wrote, and the click happens
   where its result shows.
 
 ## Consequences
-A name reaches the panel by typing, by paste, or from a receipt's name button. A reader who
+A name reaches the panel by typing, by paste, or from a write log entry's name button. A reader who
 used the click to load a name now pastes it, since the click copied it.
 
 The cost is one more step per name. A path built by clicking now needs a paste or a drag for
@@ -53,5 +54,5 @@ each node.
   the click again.
 
 ## Revisit when
-- An issue lands that asks for a click to load a name into the panel.
+- An issue arrives that asks for a click to load a name into the panel.
 - A second reader builds a path by hand and reports the paste as the slow step.

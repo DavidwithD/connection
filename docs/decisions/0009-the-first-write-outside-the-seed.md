@@ -9,11 +9,11 @@ Until this, the only writer built the whole graph at once, on
 [0007](0007-a-table-for-the-graph.md)'s table. Joining two nodes that already exist is the
 first change that touches a graph somebody is reading.
 
-It lands on an invariant. A reader weighs the edges it got back against the `degree` on the
-node's meta item, and that is how it decides whether it has seen everything (`repo.ts`). The
-whole map is drawn from the comparison: a node with more behind it is marked, and a finished
-one is not. An edge that arrives without its count, or a count raised twice, makes the store
-misdescribe itself.
+The join has to keep an invariant. A reader compares the edges it got back with the `degree`
+on the node's meta item. That comparison is how it decides whether it has seen everything
+(`repo.ts`). The whole map is drawn from it: a node with more behind it is marked, and a
+finished one is not. An edge that arrives without its count, or a count raised twice, makes
+the store misdescribe itself.
 
 ## Decision
 One edge is one transaction. Five operations, all of them or none.
@@ -27,8 +27,8 @@ One edge is one transaction. Five operations, all of them or none.
 | Which condition failed | Reported as a sentence | The cancellation names a position, not a cause. |
 
 ## Alternatives considered
-- **Four plain writes.** Cheaper, and available without a transaction. It is also exactly
-  the drift the seed already paid for once, when edges outlived the counts that described
+- **Four plain writes.** Cheaper, and available without a transaction. It also allows the
+  mismatch the seed already caused once. Then, edges outlived the counts that described
   them.
 - **Counting edges at read time instead of storing a degree.** No invariant left to break.
   It also destroys the only signal that says a node has more graph behind it, because a
@@ -45,7 +45,7 @@ The recorded starting point goes stale. It names the best-connected node as the 
 it, and joining edges can make that untrue with nothing to recompute it.
 
 Holding a reply is no longer free of risk. A neighbourhood fetched ahead of a walk can
-describe a graph that changed underneath it, which nothing had to account for while the
+describe a graph that changed after the fetch. Nothing had to account for that while the
 store was only ever read.
 
 ## Assumptions and unknowns

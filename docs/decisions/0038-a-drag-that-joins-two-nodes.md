@@ -5,10 +5,10 @@
 **Deciders:** David HL
 
 ## Context
-[0036](0036-a-click-that-writes-nothing.md) took the write off the centre click, and the
-keyboard has been the only way to an edge since. The map already writes: it deletes a node, and
-it parts a pair ([0031](0031-parting-an-edge-from-the-map.md)). An edge is the write it has no
-gesture for.
+[0036](0036-a-click-that-writes-nothing.md) took the write off a click on the selected
+node. Since then the keyboard has been the only way to write an edge. The map already
+writes: it deletes a node, and it parts a pair ([0031](0031-parting-an-edge-from-the-map.md)).
+An edge is the write it has no gesture for.
 
 [building-a-graph.md](../requirements/building-a-graph.md) asks that two nodes a reader can see
 be joined. Both names are typed into the panel instead, while one sits under the pointer.
@@ -22,10 +22,10 @@ Hold shift, drag from one node to another, and the two are joined.
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
 | What holds the state | The mouse button | Press, drag, release. No mode is left. |
-| Either end | Any node drawn, or a ghost as the node it names | The rule [`ended`](../../web/src/main.ts) already follows. |
+| Either end | Any node drawn, or an off-screen marker as the node it names | The rule [`ended`](../../web/src/main.ts) already follows. |
 | A release over nothing | Writes nothing | The reader let go over no node. |
 | The write | On the release, carrying an undo | Nothing is destroyed, so an undo is enough. |
-| The arrow | Over the map, not an element on it | No position on the map may change. |
+| The arrow | Over the map, outside its elements | No position on the map may change. |
 | The panel | Untouched | The gesture shows its own pair. |
 
 ## Alternatives considered
@@ -33,7 +33,7 @@ Hold shift, drag from one node to another, and the two are joined.
   node. It announces itself, and the panel could hold the first name while it waits. The cost
   is a mode: a second row in a menu built for one, and a rule for every click while it is
   armed.
-- **A menu row that fills the panel.** The first name lands in an end and the second is typed.
+- **A menu row that fills the panel.** The first name goes in an end and the second is typed.
   That is the click 0036 already gives, reached by a longer route.
 - **Leaving 0036 as it stands.** A mouse then walks the graph without ever building it.
 

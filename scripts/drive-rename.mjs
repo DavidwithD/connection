@@ -48,7 +48,7 @@ const ok = (pass, what, detail = "") => {
 }
 
 /**
- * What the map is drawing right now, read off the renderer's own probe and the page's chrome.
+ * What the map is drawing right now, read off the renderer's own probe and the page's controls.
  *
  * Two reads rather than one. The probe answers for the map, the DOM answers for the panels
  * around it, and neither can answer the other's half.
@@ -57,9 +57,9 @@ const drawn = async (page) => {
   const seen = await frame(page)
   if (!seen) return null
   const it = read(seen)
-  const chrome = await page.evaluate(() => ({
+  const pageState = await page.evaluate(() => ({
     status: document.querySelector("#status")?.textContent ?? "",
-    undos: document.querySelectorAll("#receipts .undo").length,
+    undos: document.querySelectorAll("#write-log .undo").length,
     menuOpen: !document.querySelector("#map-menu")?.hidden,
     editRow: document.querySelector("#map-rename")?.textContent ?? "",
     boxOpen: !document.querySelector("#map-edit")?.hidden,
@@ -68,24 +68,24 @@ const drawn = async (page) => {
     armed: document.querySelector("#map-update")?.disabled === false,
   }))
   return {
-    centre: seen.accent,
-    centreLabel: it.centre?.label ?? null,
-    ring: it.ring.length,
+    selected: seen.selected,
+    selectedLabel: it.selected?.label ?? null,
+    neighbours: it.neighbours.length,
     // Every neighbour's degree, by name, so a rename that re-added edges is visible.
-    ringDegrees: Object.fromEntries(it.ring.map((node) => [node.id, node.degree])),
+    neighbourDegrees: Object.fromEntries(it.neighbours.map((node) => [node.id, node.degree])),
     realEdges: realEdges(seen).length,
-    ...chrome,
+    ...pageState,
   }
 }
 
-/** Right-click the centre pill, where the probe says it is drawn. */
-const rightClickCentre = async (page) => {
+/** Right-click the centre label box, where the probe says it is drawn. */
+const rightClickSelected = async (page) => {
   const seen = await frame(page)
-  const centre = seen?.elements.find((one) => one.id === seen.accent)
-  if (!centre?.at) return null
-  const under = await hit(page, centre.at)
-  await clickOn(page, centre.at, { button: "right" })
-  return { id: centre.id, label: centre.label, under: under?.under ?? "nothing" }
+  const selected = seen?.elements.find((one) => one.id === seen.selected)
+  if (!selected?.at) return null
+  const under = await hit(page, selected.at)
+  await clickOn(page, selected.at, { button: "right" })
+  return { id: selected.id, label: selected.label, under: under?.under ?? "nothing" }
 }
 
 /** Type a name into the box and wait for the row to settle on a verdict. */
@@ -129,15 +129,15 @@ async function main() {
   await page.waitForTimeout(600)
 
   // ---- the menu offers an edit ------------------------------------------------------
-  console.log("\n1. right-click the centre")
+  console.log("\n1. right-click the selected")
   await still(page)
   const before = await drawn(page)
-  const landed = await rightClickCentre(page)
+  const landed = await rightClickSelected(page)
   await page.waitForTimeout(200)
   const opened = await drawn(page)
-  ok(!!landed, "found the centre", landed ? `${landed.label} (${landed.under})` : "none drawn")
+  ok(!!landed, "found the selected", landed ? `${landed.label} (${landed.under})` : "none drawn")
   ok(opened.menuOpen, "the menu opened", opened.editRow)
-  ok(opened.editRow === `edit ${before.centreLabel}`, "the edit row names it", opened.editRow)
+  ok(opened.editRow === `edit ${before.selectedLabel}`, "the edit row names it", opened.editRow)
   ok(!opened.boxOpen, "the box is not open yet", `boxOpen=${String(opened.boxOpen)}`)
   await page.screenshot({ path: `${SHOTS}/rename-1-menu.png` })
 
@@ -148,7 +148,7 @@ async function main() {
   const box = await drawn(page)
   ok(box.boxOpen, "the box opened")
   ok(
-    (await page.locator("#map-name").inputValue()) === before.centreLabel,
+    (await page.locator("#map-name").inputValue()) === before.selectedLabel,
     "seeded with the current name",
     await page.locator("#map-name").inputValue(),
   )
@@ -156,11 +156,11 @@ async function main() {
 
   // ---- the verdict ------------------------------------------------------------------
   console.log("\n3. the verdict on three kinds of name")
-  const taken = await type(page, Object.keys(before.ringDegrees)[0] ?? "vere")
+  const taken = await type(page, Object.keys(before.neighbourDegrees)[0] ?? "vere")
   ok(taken.verdict === "is taken", "a neighbour's name is refused", taken.verdict)
   ok(!taken.armed, "and fires nothing", `armed=${String(taken.armed)}`)
 
-  const self = await type(page, before.centreLabel.toUpperCase())
+  const self = await type(page, before.selectedLabel.toUpperCase())
   ok(self.armed, "its own name in another case is allowed", `verdict=${self.verdict}`)
 
   const free = await type(page, "Qethran Hollow")
@@ -173,33 +173,33 @@ async function main() {
   await page.locator("#map-name").press("Enter")
   await page.waitForTimeout(900)
   const after = await drawn(page)
-  ok(after.centreLabel === "Qethran Hollow", "the centre wears the new name", after.centreLabel)
-  ok(after.centre === "qethran hollow", "and is keyed by it", String(after.centre))
+  ok(after.selectedLabel === "Qethran Hollow", "the selected wears the new name", after.selectedLabel)
+  ok(after.selected === "qethran hollow", "and is keyed by it", String(after.selected))
   ok(!after.menuOpen, "the menu closed")
   ok(after.realEdges === before.realEdges, "every edge survived", `${before.realEdges} → ${after.realEdges}`)
   ok(/renamed /.test(after.status), "the status says so", after.status)
-  ok(after.undos === 1, "the receipt carries an undo", `${after.undos} undo button(s)`)
+  ok(after.undos === 1, "the entry carries an undo", `${after.undos} undo button(s)`)
 
-  const moved = Object.entries(before.ringDegrees).filter(
-    ([id, d]) => after.ringDegrees[id] !== undefined && after.ringDegrees[id] !== d,
+  const moved = Object.entries(before.neighbourDegrees).filter(
+    ([id, d]) => after.neighbourDegrees[id] !== undefined && after.neighbourDegrees[id] !== d,
   )
   ok(moved.length === 0, "no neighbour's degree moved", moved.map(([id]) => id).join(", ") || "none")
   await page.screenshot({ path: `${SHOTS}/rename-3-done.png` })
 
   // ---- the way back -----------------------------------------------------------------
   console.log("\n5. undo")
-  await page.locator("#receipts .undo").first().click()
+  await page.locator("#write-log .undo").first().click()
   await page.waitForTimeout(900)
   const undone = await drawn(page)
-  ok(undone.centreLabel === before.centreLabel, "the old name is back", undone.centreLabel)
-  ok(undone.centre === before.centre, "under its old key", String(undone.centre))
+  ok(undone.selectedLabel === before.selectedLabel, "the old name is back", undone.selectedLabel)
+  ok(undone.selected === before.selected, "under its old key", String(undone.selected))
   ok(undone.realEdges === before.realEdges, "with every edge", `${before.realEdges} → ${undone.realEdges}`)
   ok(/undid renaming/.test(undone.status), "the status says so", undone.status)
 
   // ---- a camera move closes an edit in progress ---------------------------------------
   console.log("\n6. move the camera while the box is open")
   await still(page)
-  await rightClickCentre(page)
+  await rightClickSelected(page)
   await page.waitForTimeout(200)
   await page.locator("#map-rename").click()
   await page.locator("#map-name").fill("Never Written")
@@ -216,18 +216,18 @@ async function main() {
   await page.waitForTimeout(400)
   const stirred = await drawn(page)
   ok(!stirred.menuOpen, "the camera move closed the menu")
-  ok(stirred.centreLabel === before.centreLabel, "and wrote nothing", stirred.centreLabel)
+  ok(stirred.selectedLabel === before.selectedLabel, "and wrote nothing", stirred.selectedLabel)
 
   // ---- rename again, so the reload below has something to find ------------------------
   console.log("\n7. rename once more")
   await still(page)
-  await rightClickCentre(page)
+  await rightClickSelected(page)
   await page.waitForTimeout(200)
   await page.locator("#map-rename").click()
   await type(page, "Qethran Hollow")
   await page.locator("#map-name").press("Enter")
   await page.waitForTimeout(900)
-  ok((await drawn(page)).centre === "qethran hollow", "renamed again")
+  ok((await drawn(page)).selected === "qethran hollow", "renamed again")
 
   // ---- it is really in the store ----------------------------------------------------
   console.log("\n8. reload")

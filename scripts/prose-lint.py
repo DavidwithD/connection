@@ -11,12 +11,18 @@ the reader to skip the whole report.
 
 Also runs standalone for testing: prose-lint.py FILE... reads whole files.
 
-One finding is measurable and the rest are guesses. A sentence's length is a
-count, so `L001` is certain. Everything else here is a pattern that correlates
-with figurative writing, reported under "check" because a metaphor cannot be
-detected by regex at all: "A doorway loses its click" is five words of clean
-grammar. The rule in docs/README.md is enforced by whoever is writing. This
-catches the part arithmetic can settle.
+Two findings are measurable and the rest are guesses.
+
+- `L001` counts the words in a sentence.
+- `L006` matches a term from the [block] list in scripts/plain-terms.txt.
+
+The docs gate runs both over every tracked markdown file and fails on them. The
+other checks are patterns that often go with figurative writing. A regex cannot detect a metaphor.
+The writer applies the rule in docs/README.md. This script checks the part a count
+or a word list can settle.
+
+Headings and table cells are read for terms. Only paragraphs, list items and
+headings are read for the sentence checks.
 """
 
 from __future__ import annotations
@@ -24,15 +30,15 @@ from __future__ import annotations
 import json
 import re
 import sys
+from pathlib import Path
 
 MAX_WORDS = 25
 
 # Nouns that read as subjects without naming an actor. Suffixes, plus the ones
 # this repo has actually reached for.
 ABSTRACT_SUFFIX = re.compile(r"(?:ness|ity|ance|ence|ment|tion|sion|ship|ism)$", re.I)
-# Figurative wherever they appear. This repo's own nouns stay out of it: "the
-# glide" is a camera animation and "the drift" is a setting, so flagging either
-# would report the vocabulary the records are written in.
+# Figurative wherever they appear. The repo's old figurative nouns are in
+# scripts/plain-terms.txt, and L006 reports those.
 ABSTRACT_TELLS = {"stillness", "rhythm", "cadence", "silence", "elegance"}
 # Pronouns and quantifiers that are abstract by nature and fine as subjects.
 SUBJECT_OK = {
@@ -48,6 +54,7 @@ SUBJECT_EXEMPT = {
     "position", "transaction", "selection", "option", "version", "extension",
     "convention", "description", "definition", "documentation", "application",
     "relationship", "component", "element", "argument", "document", "statement",
+    "decision",
     "comment", "increment", "environment", "requirement", "attachment",
     "capability", "capabilities", "identity", "entity", "priority", "quantity",
     "quality", "majority", "minority", "security", "utility", "visibility",
@@ -65,6 +72,20 @@ PERSONIFIED = {
     "chooses", "choose", "prefers", "prefer", "believes", "believe", "knows",
     "know", "cares", "care", "hopes", "hope", "lies", "waits", "wait",
 }
+# Nouns for parts of the page and gestures. Code or a person acts on these. A
+# sentence that makes one the actor hides who did the work: "a click fills the
+# panel" means a click handler in main.ts fills it.
+UI_NOUNS = {
+    "click", "clicks", "drag", "drags", "box", "boxes", "panel", "panels", "map",
+    "input", "inputs", "caret", "page", "pages", "camera", "gesture", "gestures",
+    "button", "buttons", "menu", "menus", "pan", "press", "release", "list", "row",
+    "rows", "tab", "pointer", "slider",
+}
+# Verbs that make one of those nouns an agent. PERSONIFIED is added to these.
+AGENT_VERBS = PERSONIFIED | {
+    "takes", "keeps", "leaves", "fills", "answers", "tells", "says", "owns",
+    "stands", "names", "refuses", "gives", "needs", "lets", "hears", "sees",
+}
 PERSON_SUBJECT = {
     "reader", "readers", "somebody", "nobody", "anybody", "everybody",
     "someone", "no", "person", "people", "author", "maintainer", "caller",
@@ -76,7 +97,8 @@ TABLE_ROW = re.compile(r"^\s*\|")
 HEADING = re.compile(r"^\s*#{1,6}\s")
 META = re.compile(r"^\s*\*\*(?:Status|Date|Deciders|Supersed\w*|Refs)\b")
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+")
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+# A middle dot separates the items of a run-in list, as in the commit skill's rules.
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\s+·\s+")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’\-]*")
 
 # One token, whatever is inside: an identifier is not a sentence's worth of words.
@@ -99,19 +121,44 @@ def plain(line: str) -> str:
     return line
 
 
+def front_matter(text: str) -> int:
+    """How many lines of YAML front matter open the file, or 0.
+
+    A skill's `description` is trigger text for a model, and a list of phrases is
+    its job. The sentence checks skip it. The term check still reads it.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return 0
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return i + 1
+    return 0
+
+
 def prose_lines(text: str, base: int = 1) -> list[tuple[int, str]]:
-    """Numbered prose lines, with code, tables, headings and metadata dropped."""
+    """Numbered prose lines, with code, tables and metadata dropped.
+
+    A heading is kept, with its hashes removed and a full stop added. The full
+    stop makes the sentence split keep it apart from the paragraph after it.
+    """
     out: list[tuple[int, str]] = []
     in_fence = False
+    skip = front_matter(text)
     for offset, raw in enumerate(text.splitlines()):
+        if offset < skip:
+            continue
         if FENCE.match(raw):
             in_fence = not in_fence
             continue
-        if in_fence or TABLE_ROW.match(raw) or HEADING.match(raw) or META.match(raw):
+        if in_fence or TABLE_ROW.match(raw) or META.match(raw):
             continue
         body = plain(raw).strip()
-        if body:
-            out.append((base + offset, body))
+        if not body:
+            continue
+        if HEADING.match(raw):
+            body = HEADING.sub("", plain(raw)).strip().rstrip(".") + "."
+        out.append((base + offset, body))
     return out
 
 
@@ -123,6 +170,85 @@ def comment_lines(text: str, base: int = 1) -> list[tuple[int, str]]:
         if m and m.group(1).strip():
             out.append((base + offset, plain(m.group(1)).strip()))
     return out
+
+
+def term_lines(text: str, base: int, source: str) -> list[tuple[int, str]]:
+    """Every line that can hold a term: prose, headings and table cells.
+
+    A code span is removed first. An identifier in backticks names code, and the
+    final sweep over the code covers identifiers.
+    """
+    if source == "code":
+        return comment_lines(text, base)
+    out: list[tuple[int, str]] = []
+    in_fence = False
+    for offset, raw in enumerate(text.splitlines()):
+        if FENCE.match(raw):
+            in_fence = not in_fence
+            continue
+        if in_fence or META.match(raw):
+            continue
+        body = plain(raw).strip()
+        if body:
+            out.append((base + offset, body))
+    return out
+
+
+TERMS_FILE = Path(__file__).resolve().parent / "plain-terms.txt"
+
+
+def load_terms(path: Path = TERMS_FILE) -> tuple[dict[str, str], dict[str, str], set[str]]:
+    """The [block] and [check] terms, each mapped to its replacement, and [keep]."""
+    block: dict[str, str] = {}
+    check: dict[str, str] = {}
+    keep: set[str] = set()
+    section = ""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return block, check, keep
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1]
+            continue
+        if section == "keep":
+            keep.add(line)
+            continue
+        forms, _, instead = line.partition(":")
+        target = block if section == "block" else check if section == "check" else None
+        if target is None:
+            continue
+        for form in forms.split(","):
+            if form.strip():
+                target[form.strip().lower()] = instead.strip()
+    return block, check, keep
+
+
+BLOCK_TERMS, CHECK_TERMS, KEEP_TERMS = load_terms()
+TERM_WORD = re.compile(r"(?<![\w-])[A-Za-z]+(?![\w])")
+
+
+def term_findings(line: str) -> list[tuple[str, str]]:
+    """L006 and L008 for one line, once per distinct word."""
+    found: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for m in TERM_WORD.finditer(line):
+        word = m.group(0)
+        low = word.lower()
+        if word in KEEP_TERMS or low in seen:
+            continue
+        if low in BLOCK_TERMS:
+            seen.add(low)
+            found.append(("L006", f"“{word}” is a retired term — use "
+                                  f"“{BLOCK_TERMS[low]}” (docs/glossary.md)"))
+        elif low in CHECK_TERMS:
+            seen.add(low)
+            found.append(("L008", f"“{word}” may be a retired term — if it is "
+                                  f"figurative, use “{CHECK_TERMS[low]}”"))
+    return found
 
 
 def units(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
@@ -193,20 +319,55 @@ def check(sentence: str) -> list[tuple[str, str]]:
         if verbs and not abstract and not passive:
             found.append(("L005", f"“{sorted(verbs)[0]}” gives “{subject}” a will "
                                   "of its own"))
+        # L007 looks at every UI noun, not only the first word. "On a click, the
+        # panel keeps its values" makes the panel the actor in its second clause.
+        for at, token in enumerate(tokens):
+            if token not in UI_NOUNS:
+                continue
+            after = tokens[at + 1:at + 3]
+            if {"is", "are", "was", "were", "be", "been"} & set(after[:1]):
+                continue
+            agent = [w for w in after[:1] if w in AGENT_VERBS]
+            if agent and not (token == subject and "L005" in {c for c, _ in found}):
+                found.append(("L007", f"“{token} {agent[0]}” makes a part of the page "
+                                      "the actor — name the code or the person"))
+                break
     return found
 
 
-def lint(text: str, base: int, source: str) -> list[str]:
+# A heading is a label, so the guesses about abstract subjects and aphorisms do
+# not apply to it. Length, terms and a page part as the actor still do.
+HEADING_CODES = {"L001", "L006", "L007", "L008"}
+
+
+def findings(text: str, base: int, source: str) -> list[tuple[str, int, str, str]]:
+    """Every finding, as (code, line, why, quote)."""
     lines = comment_lines(text, base) if source == "code" else prose_lines(text, base)
-    report: list[str] = []
+    headings = set()
+    if source != "code":
+        headings = {base + i for i, raw in enumerate(text.splitlines()) if HEADING.match(raw)}
+    out: list[tuple[str, int, str, str]] = []
     for lineno, unit in units(lines):
         for sentence in SENTENCE_SPLIT.split(unit):
             sentence = sentence.strip()
             if not sentence:
                 continue
             for code, why in check(sentence):
-                quote = sentence if len(sentence) <= 70 else sentence[:67] + "…"
-                report.append(f"  {code}  line {lineno}  {why}\n        “{quote}”")
+                if lineno in headings and code not in HEADING_CODES:
+                    continue
+                out.append((code, lineno, why, sentence))
+    for lineno, line in term_lines(text, base, source):
+        for code, why in term_findings(line):
+            out.append((code, lineno, why, line))
+    out.sort(key=lambda f: (f[1], f[0]))
+    return out
+
+
+def lint(text: str, base: int, source: str) -> list[str]:
+    report: list[str] = []
+    for code, lineno, why, sentence in findings(text, base, source):
+        quote = sentence if len(sentence) <= 70 else sentence[:67] + "…"
+        report.append(f"  {code}  line {lineno}  {why}\n        “{quote}”")
     return report
 
 
@@ -279,8 +440,9 @@ def main() -> int:
 
     body = (
         f"prose-lint on {path} — docs/README.md \"How it is written\". "
-        f"L001 is a word count. L002-L005 are guesses; read the sentence and "
-        f"judge. No check here sees a metaphor.\n" + "\n".join(report)
+        f"L001 is a word count and L006 is a retired term; the docs gate fails on "
+        f"both in markdown. L002-L005, L007 and L008 are guesses; read the sentence and judge. "
+        f"No check here sees a metaphor.\n" + "\n".join(report)
     )
     json.dump({"hookSpecificOutput": {
         "hookEventName": "PostToolUse",

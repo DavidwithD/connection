@@ -1,7 +1,7 @@
 /** The public interface of the store. Every page reads and writes the graph through this. */
 export type {
-  IslandMeta,
-  IslandPage,
+  ComponentMeta,
+  ComponentPage,
   LoadPlan,
   Neighbourhood,
   NodeMeta,
@@ -11,7 +11,7 @@ export type {
 export { Missing, Refused } from "./refused.js"
 export { Unavailable, persist, whenEvicted } from "./db.js"
 
-export { MAX_LIST_NODES, fetchIslands, readAllNodes,
+export { MAX_LIST_NODES, fetchComponents, readAllNodes,
   readNeighbourhood as fetchNeighbourhood, readOpening as fetchOpening, readNode,
   searchLabels } from "./read.js"
 export { createNode, deleteNode, deleteNodeWithEdges, renameNode } from "./write.js"

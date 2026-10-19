@@ -7,7 +7,7 @@
  *   node scripts/drive-map.mjs --head  # watch it happen
  *
  * The suite in test/ opens no browser. This script opens one, for changes whose whole result
- * is visual. A typecheck cannot tell you an island landed on top of the graph it was supposed
+ * is visual. A typecheck cannot tell you a component landed on top of the graph it was supposed
  * to be clear of.
  *
  * Uses the Chrome already on the machine (`channel: "chrome"`) rather than downloading a
@@ -36,11 +36,11 @@ const shot = async (page, name) => {
   console.log(`  📷 ${SHOTS}/${name}.png`)
 }
 
-/** Where the island drawer is, read off the thing itself rather than off the click. */
-const drawer = (page) =>
+/** Where the component side panel is, read off the thing itself rather than off the click. */
+const sidePanel = (page) =>
   page.evaluate(() => {
-    const tab = document.querySelector("#rail-tab")
-    const panel = document.querySelector("#islands")
+    const tab = document.querySelector("#side-panel-tab")
+    const panel = document.querySelector("#components")
     // Decoded from the matrix rather than compared against "none": the turn is animated, so
     // a read taken on the click lands mid-rotation and every string comparison is a coin toss.
     const turn = getComputedStyle(document.querySelector(".chevron")).transform
@@ -97,9 +97,9 @@ async function main() {
   )
   await shot(page, "1-landed")
 
-  // A ghost stands for a neighbour of the centre while that neighbour is off screen, so the
-  // camera is the only thing that can be asked whether it is right. A canvas holds no element
-  // per node, so the answer comes from the probe globe-view.ts registers on its container.
+  // An off-screen marker stands for a neighbour of the centre while that neighbour is off screen,
+  // so the camera is the only thing that can be asked whether it is right. A canvas holds no
+  // element per node, so the answer comes from the probe sphere-view.ts registers on its container.
   const drawn = async (page) => {
     const seen = await frame(page)
     if (!seen) return null
@@ -107,43 +107,45 @@ async function main() {
     return {
       zoom: seen.zoom.toFixed(2),
       // The ring is every neighbour of the centre, whatever its distance. How many of them
-      // have left the screen is the population the doorways are drawn from — reported rather
-      // than asserted on, because the threshold for raising one is a margin past the horizon
-      // and this script does not know it. A neighbour a few degrees out is correctly bare.
-      ring: it.ring.length,
-      offScreen: it.ring.filter((node) => node.past > 0).length,
+      // have left the screen is the population the off-screen markers are drawn from — reported
+      // rather than asserted on, because the threshold for raising one is a margin past the visible
+      // limit and this script does not know it. A neighbour a few degrees out is correctly bare.
+      neighbours: it.neighbours.length,
+      offScreen: it.neighbours.filter((node) => node.past > 0).length,
       collisions: it.collisions,
       // Whether the centre is in the frame at all. A pan no longer hands the mark to whatever
-      // it passes, so the doorways can be out of sight with the centre they belong to — which
-      // is what makes the warning below a judgement about the picture rather than about one
+      // it passes, so the off-screen markers can be out of sight with the centre they belong to —
+      // which is what makes the warning below a judgement about the picture rather than about one
       // element.
-      centreShown: it.centreShown,
-      // How many rings the doorways spread over, which is the thing a single circle could not
-      // do. Distance from the centre, bucketed to the nearest ten so that two slots on one
+      selectedShown: it.selectedShown,
+      // How many rings the off-screen markers spread over, which is the thing a single circle could
+      // not do. Distance from the centre, bucketed to the nearest ten so that two slots on one
       // ring count once whatever rounding did to them.
-      rings: new Set(
-        it.ghosts.map((ghost) =>
-          it.centre
-            ? Math.round(Math.hypot(ghost.x - it.centre.x, ghost.y - it.centre.y) / 10)
+      circles: new Set(
+        it.markers.map((marker) =>
+          it.selected
+            ? Math.round(Math.hypot(marker.x - it.selected.x, marker.y - it.selected.y) / 10)
             : 0,
         ),
       ).size,
-      // A doorway is a way out only while the line to it is drawn. `reviseGhosts` raises one
-      // lead per ghost, and lowering a ghost takes its lead with it. A ghost without one is
-      // that pairing having come apart.
-      leads: it.ghosts.filter((ghost) =>
-        seen.lines.some((line) => line.kind === "ghost" && line.b === ghost.id),
+      // An off-screen marker is a way out only while the line to it is drawn. `updateMarkers`
+      // raises one lead per off-screen marker, and lowering an off-screen marker takes its lead
+      // with it. An off-screen marker without one is that pairing having come apart.
+      connectorLines: it.markers.filter((marker) =>
+        seen.lines.some((line) => line.kind === "marker" && line.b === marker.id),
       ).length,
-      standing: it.ghosts.map((ghost) => ({
-        label: ghost.label,
+      standing: it.markers.map((marker) => ({
+        label: marker.label,
         // The world position, because that is where the slot was cut and nothing on this map
-        // moves. A camera that came back to where it was would hide a doorway that had not.
-        at: `${String(Math.round(ghost.x))},${String(Math.round(ghost.y))}`,
-        // A doorway nobody can see is no doorway. Its slot comes from `seat`, which walks
-        // outward past whatever is seated and knows nothing about the viewport.
-        shown: ghost.at !== null,
+        // moves. A camera that came back to where it was would hide an off-screen marker that had
+        // not.
+        at: `${String(Math.round(marker.x))},${String(Math.round(marker.y))}`,
+        // An off-screen marker nobody can see is no off-screen marker. Its slot comes from
+        // `freeSpots`, which walks outward past whatever is placed and knows nothing about the
+        // viewport.
+        shown: marker.at !== null,
         // The invariant, and the whole reason the rule reads the camera: never both.
-        twin: (it.targetOf(ghost.id)?.past ?? 1) <= 0,
+        twin: (it.targetOf(marker.id)?.past ?? 1) <= 0,
       })),
     }
   }
@@ -152,24 +154,24 @@ async function main() {
     if (!seen) return console.log(`  ${what}: no map on the page`)
     const hidden = seen.standing.filter((g) => !g.shown).map((g) => g.label)
     const both = seen.standing.filter((g) => g.twin).map((g) => g.label)
-    // A doorway out of frame is a fault only while the centre is in it. Panned away from, the
-    // centre takes its rings along, and every doorway being out of sight is the picture working
-    // as decided rather than a slot that missed the viewport.
-    const stranded = seen.centreShown ? hidden : []
+    // An off-screen marker out of frame is a fault only while the centre is in it. Panned away
+    // from, the centre takes its rings along, and every off-screen marker being out of sight is the
+    // picture working as decided rather than a slot that missed the viewport.
+    const stranded = seen.selectedShown ? hidden : []
     console.log(
-      `  ${what}: zoom ${seen.zoom} · ring ${String(seen.ring)}` +
+      `  ${what}: zoom ${seen.zoom} · neighbours ${String(seen.neighbours)}` +
         ` · ${String(seen.offScreen)} off screen` +
-        ` · ${String(seen.standing.length)} standing in over ${String(seen.rings)} ring(s)` +
-        (seen.centreShown ? "" : " · centre out of frame") +
-        (seen.leads === seen.standing.length ? "" : " · ⚠ a doorway has no line to it") +
+        ` · ${String(seen.standing.length)} standing in over ${String(seen.circles)} circle(s)` +
+        (seen.selectedShown ? "" : " · selected out of frame") +
+        (seen.connectorLines === seen.standing.length ? "" : " · ⚠ a marker has no line to it") +
         (both.length ? ` · ⚠ drawn twice: ${both.join(", ")}` : "") +
         (stranded.length ? ` · ⚠ raised off screen: ${stranded.join(", ")}` : "") +
-        (seen.collisions ? ` · ⚠ ${String(seen.collisions)} overlapping doorway pair(s)` : ""),
+        (seen.collisions ? ` · ⚠ ${String(seen.collisions)} overlapping marker pair(s)` : ""),
     )
     return seen
   }
 
-  // Zoomed out, every neighbour is legible at its own seat and nothing should be standing in
+  // Zoomed out, every neighbour is legible at its own position and nothing should be standing in
   // for one. This is the picture the rule exists for: a stand-in beside the node it stands for
   // is the same name twice, and the map stops being a drawing of the graph.
   const zoom = async (button, times) => {
@@ -184,8 +186,8 @@ async function main() {
   report("zoomed out", await drawn(page))
   await shot(page, "2-zoomed-out")
 
-  // Zoomed in, more of the map is off screen and less of it is legible. Doorways do not come
-  // up here on this centre. `GHOST_MARGIN` is a length in screen pixels, so on a curved
+  // Zoomed in, more of the map is off screen and less of it is legible. Off-screen markers do not
+  // come up here on this centre. `MARKER_MARGIN` is a length in screen pixels, so on a curved
   // surface it is an angle. A ring this tight never crosses it, however far the map is
   // zoomed. What raises one is the camera leaving the centre, which the pan below does.
   await zoom("zoom-in", 9)
@@ -203,10 +205,10 @@ async function main() {
   )
   await page.waitForTimeout(600)
 
-  // Pan a full screen off the centre, which is what raises the doorways read below.
+  // Pan a full screen off the centre, which is what raises the off-screen markers read below.
   //
   // By key rather than by drag, for the reason the nudge check above gives: a press cannot land
-  // on a node and glide the map somewhere on its own. A press is `NUDGE` in main.ts, so enough
+  // on a node and move the camera somewhere on its own. A press is `NUDGE` in main.ts, so enough
   // of them to carry the viewport past its own width — and spaced under the settle they
   // provoke, so the run costs the one revision at the end of it rather than one per press.
   {
@@ -221,21 +223,21 @@ async function main() {
 
     // A nudge and the nudge back have to land on the same picture. Any viewport rule flips a
     // node sitting on the edge unless the two thresholds are apart, and any re-derived slot
-    // walks the ghosts already standing around the ring. Read here rather than at the zoom
-    // above, because this is where the doorways are standing.
+    // walks the off-screen markers already standing around the ring. Read here rather than at the
+    // zoom above, because this is where the off-screen markers are standing.
     if (away?.standing.length) {
       const was = away.standing.map((g) => `${g.label}@${g.at}`).sort()
       // Not clicked first, deliberately: the handler is on the window and only stands aside
-      // for a text box, and a click on the stage could land on a node and glide the map
+      // for a text box, and a click on the stage could land on a node and move the camera
       // somewhere else, which would read as the ring having moved when nothing here moved it.
       for (const key of ["ArrowRight", "ArrowLeft"]) {
         await page.keyboard.press(key)
         await page.waitForTimeout(300)
       }
       const now = (await drawn(page))?.standing.map((g) => `${g.label}@${g.at}`).sort() ?? []
-      // Every doorway standing before the nudge has to be in the same place after it. The set
-      // may grow: the two thresholds are not opposites, so a neighbour that crossed the margin
-      // on the way out keeps its doorway until it is back in view.
+      // Every off-screen marker standing before the nudge has to be in the same place after it. The
+      // set may grow: the two thresholds are not opposites, so a neighbour that crossed the margin
+      // on the way out keeps its off-screen marker until it is back in view.
       const gone = was.filter((one) => !now.includes(one))
       console.log(
         `  nudge and back: ${String(was.length)} → ${String(now.length)} standing` +
@@ -243,45 +245,45 @@ async function main() {
       )
     }
 
-    // Recentre, which is the way back to a centre the panning left behind — and it puts the
+    // Go to selected, which is the way back to a centre the panning left behind — and it puts the
     // camera where the legs below expect it.
-    await page.locator("#home").click()
+    await page.locator("#go-to-selected").click()
     await page.waitForTimeout(600)
   }
 
-  // The drawer ships shut, so open it before reading a row. The tab is not drawn at all when
-  // the store holds no islands, which is the other reason this leg can be skipped.
-  const tab = page.locator("#rail-tab")
+  // The side panel ships shut, so open it before reading a row. The tab is not drawn at all when
+  // the store holds no components, which is the other reason this leg can be skipped.
+  const tab = page.locator("#side-panel-tab")
   const listed = await tab.isVisible()
-  console.log(`  islands tab: ${listed}`)
+  console.log(`  components tab: ${listed}`)
 
   if (listed) {
     await tab.click()
     await page.waitForTimeout(250)
-    console.log(`  drawer: ${await drawer(page)}`)
+    console.log(`  sidePanel: ${await sidePanel(page)}`)
 
-    const names = await page.locator("#islands .island-name").allTextContents()
-    const offMap = await page.locator("#islands .island.off-map .island-name").allTextContents()
-    const here = await page.locator("#islands .island[aria-current] .island-name").textContent()
-    console.log(`  islands: ${names.join(", ")}`)
+    const names = await page.locator("#components .component-name").allTextContents()
+    const offMap = await page.locator("#components .component.off-map .component-name").allTextContents()
+    const here = await page.locator("#components .component[aria-current] .component-name").textContent()
+    console.log(`  components: ${names.join(", ")}`)
     console.log(`  standing in: ${here ?? "—"} · off the map: ${offMap.length}/${names.length}`)
 
-    // A short window, for the two checks that need more rows than the box holds. The drawer
-    // grows with its rows, so the seeded ten islands fit any ordinary window. 260px is where
+    // A short window, for the two checks that need more rows than the box holds. The side panel
+    // grows with its rows, so the seeded ten components fit any ordinary window. 260px is where
     // they stop fitting. Restored before the shots below.
     await page.setViewportSize({ width: 1440, height: 260 })
     await page.waitForTimeout(300)
 
-    // The list has no scrollbar. So the two questions are whether it fills the drawer, and
+    // The list has no scrollbar. So the two questions are whether it fills the side panel, and
     // whether the fade that replaced the bar is drawn while rows sit past the fold.
     const fit = await page.evaluate(() => {
-      const list = document.querySelector("#islands-list")
-      const row = document.querySelector("#islands li")
+      const list = document.querySelector("#components-list")
+      const row = document.querySelector("#components li")
       return {
         row: row?.getBoundingClientRect().height ?? 0,
         shown: list?.clientHeight ?? 0,
         needed: list?.scrollHeight ?? 0,
-        fade: document.querySelector("#islands")?.dataset.more === "true",
+        fade: document.querySelector("#components")?.dataset.more === "true",
       }
     })
     console.log(
@@ -295,36 +297,36 @@ async function main() {
     // The list is a page of an unbounded thing, so the two questions are whether it says so
     // and whether scrolling gets the rest. Scrolled rather than clicked: coming into view is
     // what asks for the next page, and a click would prove the fallback instead.
-    console.log(`  heading says: "${(await page.locator("#islands-count").textContent()) || "—"}"`)
-    if (await page.locator(".island-more").count()) {
+    console.log(`  heading says: "${(await page.locator("#components-count").textContent()) || "—"}"`)
+    if (await page.locator(".component-more").count()) {
       const before = names.length
       for (let page_ = 0; page_ < 3; page_++) {
         await page.evaluate(() => {
-          const list = document.querySelector("#islands ul")
+          const list = document.querySelector("#components ul")
           list.scrollTop = list.scrollHeight
         })
         await page.waitForTimeout(600)
       }
-      const grown = await page.locator("#islands .island").count()
+      const grown = await page.locator("#components .component").count()
       console.log(
         `  scrolled for more: ${before} rows → ${grown}` +
-          ` · heading now "${(await page.locator("#islands-count").textContent()) || "—"}"` +
+          ` · heading now "${(await page.locator("#components-count").textContent()) || "—"}"` +
           (grown > before ? "" : " — ⚠ nothing loaded"),
       )
       // Back to the top, so what follows is not reading rows three pages down.
       await page.evaluate(() => {
-        document.querySelector("#islands ul").scrollTop = 0
+        document.querySelector("#components ul").scrollTop = 0
       })
     }
 
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.waitForTimeout(300)
 
-    // The one that costs something: an island off the map is seated by the click, in water,
-    // and stays seated. Anything already on the map is only the camera moving.
+    // The one that costs something: a component off the map is placed by the click, in open space,
+    // and stays placed. Anything already on the map is only the camera moving.
     const target = offMap[0]
     if (target) {
-      await page.locator("#islands .island.off-map").first().click()
+      await page.locator("#components .component.off-map").first().click()
 
       // The flight is a camera animation, so read after the camera has stopped rather than a
       // beat after the click.
@@ -333,7 +335,7 @@ async function main() {
       await shot(page, "5-crossed")
 
       // The row is the point: it stays, it is the marked one now, and it is no longer dim.
-      const row = page.locator("#islands .island", { hasText: target }).first()
+      const row = page.locator("#components .component", { hasText: target }).first()
       console.log(
         `  its row after crossing: listed=${await row.isVisible()}` +
           ` marked=${(await row.getAttribute("aria-current")) === "true"}` +
@@ -342,15 +344,15 @@ async function main() {
 
       // And back, which is the whole reason the row stayed. A click on any row draws the ring
       // around what it lands on. So the check is that the row was not dim before the click,
-      // which says no island was set down to get there.
+      // which says no component was set down to get there.
       if (here) {
-        const back = page.locator("#islands .island", { hasText: here }).first()
+        const back = page.locator("#components .component", { hasText: here }).first()
         const dim = (await back.getAttribute("class"))?.includes("off-map")
         await back.click()
         await still(page)
         console.log(
           `  back to ${here}` +
-            (dim ? " — ⚠ its row was dim, so that click seated an island" : " — already on the map"),
+            (dim ? " — ⚠ its row was dim, so that click placed a component" : " — already on the map"),
         )
       }
       await shot(page, "6-back")
@@ -370,9 +372,9 @@ async function main() {
       // A row that is already on screen at that offset. Clicking one out of view would scroll
       // the list to it, correctly, and the check would be measuring the wrong thing.
       const target = await page.evaluate(() => {
-        const list = document.querySelector("#islands ul")
+        const list = document.querySelector("#components ul")
         list.scrollTop = Math.floor(list.scrollHeight / 2)
-        const rows = [...list.querySelectorAll(".island")]
+        const rows = [...list.querySelectorAll(".component")]
         const box = list.getBoundingClientRect()
         const seen = rows.find((row) => {
           const at = row.getBoundingClientRect()
@@ -380,9 +382,9 @@ async function main() {
         })
         return { at: list.scrollTop, row: rows.indexOf(seen), name: seen?.textContent ?? "" }
       })
-      await page.locator("#islands .island").nth(target.row).click()
+      await page.locator("#components .component").nth(target.row).click()
       await page.waitForTimeout(400)
-      const after = await page.evaluate(() => document.querySelector("#islands ul").scrollTop)
+      const after = await page.evaluate(() => document.querySelector("#components ul").scrollTop)
       console.log(
         `  scroll across a jump: row ${String(target.row)} (${target.name}) at ` +
           `${target.at}px → ${after}px` +
@@ -398,7 +400,7 @@ async function main() {
     // Past the 160ms slide and the chevron's own turn, so what is read is where they settled
     // and not where they happened to be on the way.
     await page.waitForTimeout(300)
-    console.log(`  shut: ${await drawer(page)}`)
+    console.log(`  shut: ${await sidePanel(page)}`)
     await shot(page, "7-shut")
     await tab.click()
     await page.waitForTimeout(250)
@@ -438,7 +440,7 @@ async function main() {
   // window says whether they clear each other: #ends and #controls are sized by whatever the
   // font stack does with their text, and that is not in the stylesheet.
   //
-  // #status is in the list and usually absent from it. The pill is drawn only while the tone
+  // #status is in the list and usually absent from it. The label box is drawn only while the tone
   // is busy or error, so this leg sees it only when a read is still in flight.
   for (const [name, size] of [
     ["7-short", { width: 900, height: 500 }],
@@ -446,8 +448,8 @@ async function main() {
   ]) {
     await page.setViewportSize(size)
     await page.waitForTimeout(200)
-    const chrome = await page.evaluate(() => {
-      const boxes = ["ends", "controls", "guide-toggle", "status", "rail-tab", "islands"]
+    const pageState = await page.evaluate(() => {
+      const boxes = ["ends", "controls", "guide-toggle", "status", "side-panel-tab", "components"]
         .map((id) => document.getElementById(id))
         // Not `offsetParent`: it is null on a fixed box, and every box here is fixed.
         .filter((el) => el?.getClientRects().length && getComputedStyle(el).visibility !== "hidden")
@@ -458,10 +460,10 @@ async function main() {
       boxes.forEach((a, i) => {
         for (const b of boxes.slice(i + 1)) if (hits(a, b)) over.push(`${a.id}×${b.id}`)
       })
-      const list = document.querySelector("#islands-list")
-      // Measured off a row rather than divided by a constant. --island-row used to state the
-      // height; the drawer's own cap replaced it, so the only source left is a drawn row.
-      const row = document.querySelector("#islands li")?.getBoundingClientRect().height
+      const list = document.querySelector("#components-list")
+      // Measured off a row rather than divided by a constant. --component-row used to state the
+      // height; the side panel's own cap replaced it, so the only source left is a drawn row.
+      const row = document.querySelector("#components li")?.getBoundingClientRect().height
       return {
         shown: boxes.map((b) => b.id).join(" + ") || "nothing",
         overlapping: over,
@@ -472,10 +474,10 @@ async function main() {
       }
     })
     console.log(
-      `  ${String(size.width)}×${String(size.height)}: ${chrome.shown}` +
-        ` · ${String(chrome.rows)} island rows` +
-        (chrome.overlapping.length ? ` · ⚠ overlap: ${chrome.overlapping.join(", ")}` : "") +
-        (chrome.spills.length ? ` · ⚠ off the window: ${chrome.spills.join(", ")}` : ""),
+      `  ${String(size.width)}×${String(size.height)}: ${pageState.shown}` +
+        ` · ${String(pageState.rows)} component rows` +
+        (pageState.overlapping.length ? ` · ⚠ overlap: ${pageState.overlapping.join(", ")}` : "") +
+        (pageState.spills.length ? ` · ⚠ off the window: ${pageState.spills.join(", ")}` : ""),
     )
     await shot(page, name)
   }

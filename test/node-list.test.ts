@@ -135,27 +135,27 @@ describe("paging", () => {
 })
 
 describe("where a click on a neighbour leaves the page", () => {
-  const list: Walk = { open: "kavara", trail: [] }
+  const list: Walk = { open: "kavara", cardStack: [] }
   const away: NodeMeta = { id: "vessarin", label: "Vessarin", degree: 3 }
 
   it("opens a neighbour that is on this page, in place", () => {
     const next = walkTo(list, THREE[1]!, THREE)
-    expect(next).toEqual({ open: "miselin", trail: [] })
+    expect(next).toEqual({ open: "miselin", cardStack: [] })
   })
 
   it("starts the stack under a neighbour that is not on this page", () => {
     const next = walkTo(list, away, THREE)
-    expect(labels(next.trail)).toEqual(["Kavara", "Vessarin"])
+    expect(labels(next.cardStack)).toEqual(["Kavara", "Vessarin"])
   })
 
   it("starts the stack with the neighbour alone when no row is open", () => {
-    const next = walkTo({ open: null, trail: [] }, away, THREE)
-    expect(labels(next.trail)).toEqual(["Vessarin"])
+    const next = walkTo({ open: null, cardStack: [] }, away, THREE)
+    expect(labels(next.cardStack)).toEqual(["Vessarin"])
   })
 
   it("puts an unseen neighbour on top of the stack", () => {
-    const deep: Walk = { open: "kavara", trail: [THREE[0]!, away] }
-    expect(labels(walkTo(deep, THREE[2]!, []).trail)).toEqual([
+    const deep: Walk = { open: "kavara", cardStack: [THREE[0]!, away] }
+    expect(labels(walkTo(deep, THREE[2]!, []).cardStack)).toEqual([
       "Kavara",
       "Vessarin",
       "Thorne",
@@ -163,23 +163,23 @@ describe("where a click on a neighbour leaves the page", () => {
   })
 
   it("cuts the stack back to a neighbour already in it", () => {
-    const deep: Walk = { open: "kavara", trail: [THREE[0]!, away, THREE[2]!] }
-    expect(labels(walkTo(deep, away, []).trail)).toEqual(["Kavara", "Vessarin"])
+    const deep: Walk = { open: "kavara", cardStack: [THREE[0]!, away, THREE[2]!] }
+    expect(labels(walkTo(deep, away, []).cardStack)).toEqual(["Kavara", "Vessarin"])
   })
 })
 
 describe("where a click on a card leaves the page", () => {
   const deep: Walk = {
     open: "kavara",
-    trail: [THREE[0]!, { id: "vessarin", label: "Vessarin", degree: 3 }, THREE[2]!],
+    cardStack: [THREE[0]!, { id: "vessarin", label: "Vessarin", degree: 3 }, THREE[2]!],
   }
 
   it("goes back to the list on the first card, with that node open", () => {
-    expect(backTo(deep, 0)).toEqual({ open: "kavara", trail: [] })
+    expect(backTo(deep, 0)).toEqual({ open: "kavara", cardStack: [] })
   })
 
   it("cuts to a card in the middle", () => {
-    expect(labels(backTo(deep, 1).trail)).toEqual(["Kavara", "Vessarin"])
+    expect(labels(backTo(deep, 1).cardStack)).toEqual(["Kavara", "Vessarin"])
   })
 
   it("does nothing on the top card, which is where the reader is", () => {
@@ -190,15 +190,15 @@ describe("where a click on a card leaves the page", () => {
 
 describe("whose neighbours belong on screen", () => {
   it("names the top card while the stack is showing", () => {
-    const deep: Walk = { open: "kavara", trail: [THREE[0]!, THREE[2]!] }
+    const deep: Walk = { open: "kavara", cardStack: [THREE[0]!, THREE[2]!] }
     expect(owner(deep, THREE)?.label).toBe("Thorne")
   })
 
   it("names the open row while the list is showing", () => {
-    expect(owner({ open: "miselin", trail: [] }, THREE)?.label).toBe("Miselin")
+    expect(owner({ open: "miselin", cardStack: [] }, THREE)?.label).toBe("Miselin")
   })
 
   it("names nothing when no row is open", () => {
-    expect(owner({ open: null, trail: [] }, THREE)).toBeNull()
+    expect(owner({ open: null, cardStack: [] }, THREE)).toBeNull()
   })
 })

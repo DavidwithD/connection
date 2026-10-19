@@ -3,7 +3,7 @@
  *
  * The ids here belong to the generator and never reach the store. A node is keyed by its
  * name, so the caller maps them across. They exist because the three passes address nodes by
- * position: an island is a contiguous range of ids.
+ * position: a component is a contiguous range of ids.
  */
 import { edgeKey } from "./keys.js"
 
@@ -31,37 +31,37 @@ export interface GenerateOptions {
   /** The top degree. One hub reaches this exactly. The others land between it and `k`. */
   hubK?: number
   /** How many components to split the nodes across. One gives a connected graph. */
-  islands?: number
+  components?: number
 }
 
 /**
- * Split `n` nodes across `islands` components. Each share is half the one before it.
+ * Split `n` nodes across `components` components. Each share is half the one before it.
  *
  * The shares must sum to exactly `n`, so the rounding difference is taken from the largest
- * islands. That always terminates: the smallest total the rounding can produce is one node
- * per island, and `generate` has already refused more islands than nodes.
+ * components. That always terminates: the smallest total the rounding can produce is one node
+ * per component, and `generate` has already refused more components than nodes.
  */
-export function shares(n: number, islands: number): number[] {
-  const weights = Array.from({ length: islands }, (_, i) => 0.5 ** i)
+export function shares(n: number, components: number): number[] {
+  const weights = Array.from({ length: components }, (_, i) => 0.5 ** i)
   const total = weights.reduce((sum, weight) => sum + weight, 0)
   const sizes = weights.map((weight) => Math.max(1, Math.round((n * weight) / total)))
 
-  let drift = n - sizes.reduce((sum, size) => sum + size, 0)
-  if (drift > 0) sizes[0]! += drift
-  for (let i = 0; drift < 0 && i < sizes.length; i++) {
-    const take = Math.min(sizes[i]! - 1, -drift)
+  let excess = n - sizes.reduce((sum, size) => sum + size, 0)
+  if (excess > 0) sizes[0]! += excess
+  for (let i = 0; excess < 0 && i < sizes.length; i++) {
+    const take = Math.min(sizes[i]! - 1, -excess)
     sizes[i]! -= take
-    drift += take
+    excess += take
   }
   return sizes
 }
 
 /**
- * The lattice reach inside one island, which is not always the reach that was asked for.
+ * The lattice reach inside one component, which is not always the reach that was asked for.
  *
  * A ring needs more nodes than it has neighbours. A `k` of 10 needs at least six nodes to
- * mean anything, and the smallest share above is a pair. So the reach is whatever the island
- * can hold. An island of one node gets no edges, correctly: its only candidate neighbour is
+ * mean anything, and the smallest share above is a pair. So the reach is whatever the component
+ * can hold. A component of one node gets no edges, correctly: its only candidate neighbour is
  * itself.
  */
 const reachIn = (size: number, want: number): number =>
@@ -119,24 +119,24 @@ export function generate({
   seed,
   hubs = 0,
   hubK = 0,
-  islands = 1,
+  components = 1,
 }: GenerateOptions): GeneratedGraph {
   if (n < 4) throw new Error("n must be at least 4")
-  if (islands < 1) throw new Error("islands must be at least one")
-  if (islands > n) throw new Error("islands must not exceed n")
+  if (components < 1) throw new Error("components must be at least one")
+  if (components > n) throw new Error("components must not exceed n")
   const half = Math.max(1, Math.floor(k / 2))
   if (hubs >= n) throw new Error("hubs must be below n")
 
-  // Islands are contiguous id ranges. Finding a node's island is then arithmetic rather than
-  // a lookup, and the ids in one island read consecutively. Every edge below stays inside one
+  // Components are contiguous id ranges. Finding a node's component is then arithmetic rather than
+  // a lookup, and the ids in one component read consecutively. Every edge below stays inside one
   // range: the lattice, the rewiring and the hub pass each have their own way of crossing an
-  // island boundary, and an island joined to another is one the page cannot show as separate.
-  const sizes = shares(n, islands)
+  // component boundary, and a component joined to another is one the page cannot show as separate.
+  const sizes = shares(n, components)
   const starts: number[] = []
   for (let at = 0, i = 0; i < sizes.length; at += sizes[i]!, i++) starts.push(at)
-  // The map opens on the largest island, so that is the one `k` has to mean something for.
+  // The map opens on the largest component, so that is the one `k` has to mean something for.
   // The smaller ones use whatever reach they can hold. See `reachIn`.
-  if (half * 2 >= sizes[0]!) throw new Error("k must be well below the largest island")
+  if (half * 2 >= sizes[0]!) throw new Error("k must be well below the largest component")
 
   // Two independent random streams. With one stream, a change to how labels are drawn would
   // shift every later draw, so editing the name list would silently rewire the graph. That
@@ -173,11 +173,11 @@ export function generate({
     return true
   }
 
-  // One ring per island. The modulus is the island's size, not the graph's. That is what
-  // keeps the islands apart: a ring that wrapped at `n` would close through the next island
+  // One ring per component. The modulus is the component's size, not the graph's. That is what
+  // keeps the components apart: a ring that wrapped at `n` would close through the next component
   // and join the two.
-  sizes.forEach((size, island) => {
-    const start = starts[island]!
+  sizes.forEach((size, component) => {
+    const start = starts[component]!
     const reach = reachIn(size, half)
     for (let i = 0; i < size; i++) {
       for (let j = 1; j <= reach; j++) add(start + i, start + ((i + j) % size))
@@ -187,8 +187,8 @@ export function generate({
   // Rewire one end of each lattice edge with probability p. Retries are bounded. A rewire
   // that fails leaves the lattice edge in place, which is the standard behaviour and cannot
   // disconnect the ring.
-  sizes.forEach((size, island) => {
-    const start = starts[island]!
+  sizes.forEach((size, component) => {
+    const start = starts[component]!
     const reach = reachIn(size, half)
     for (let i = 0; i < size; i++) {
       for (let j = 1; j <= reach; j++) {
@@ -196,7 +196,7 @@ export function generate({
         const from = start + i
         const old = start + ((i + j) % size)
         for (let attempt = 0; attempt < 16; attempt++) {
-          // Pick the new end inside this island. A shortcut then shortens a path that
+          // Pick the new end inside this component. A shortcut then shortens a path that
           // already exists, instead of joining two components that must stay apart.
           const to = start + Math.floor(rand() * size)
           if (to === from) continue
@@ -211,14 +211,14 @@ export function generate({
 
   // Hubs. Every edge a hub gains is paid for by one removed elsewhere, so the total edge
   // count does not change. Two kinds of donor are rejected: a node already at the ring's
-  // minimum degree, and any node already made a hub. Both ends stay in the hub's own island.
+  // minimum degree, and any node already made a hub. Both ends stay in the hub's own component.
   if (hubs > 0 && hubK > k) {
     const chosen = new Set<number>()
-    // A lookup table for which island each node is in. Built once, because the hub pass asks
+    // A lookup table for which component each node is in. Built once, because the hub pass asks
     // thousands of times.
-    const islandOf = new Array<number>(n)
-    sizes.forEach((size, island) => {
-      for (let i = 0; i < size; i++) islandOf[starts[island]! + i] = island
+    const componentOf = new Array<number>(n)
+    sizes.forEach((size, component) => {
+      for (let i = 0; i < size; i++) componentOf[starts[component]! + i] = component
     })
 
     for (let h = 0; h < hubs; h++) {
@@ -232,8 +232,8 @@ export function generate({
       }
       if (hub < 0) break
       chosen.add(hub)
-      const home = islandOf[hub]!
-      const floor = reachIn(sizes[home]!, half) + 1
+      const hubComponent = componentOf[hub]!
+      const floor = reachIn(sizes[hubComponent]!, half) + 1
 
       // The first hub is driven to `hubK` exactly, so the top of the degree range is where
       // the caller asked for it. The rest are spread from just above where plain rewiring
@@ -246,10 +246,10 @@ export function generate({
         adjacency[hub]!.size < target && attempt < 64 * hubK;
         attempt++
       ) {
-        // Draw the other end from the hub's own island. Picking across the whole graph and
-        // rejecting the misses would waste most attempts once the island is small, and a
-        // small island is exactly the one whose few edges must not be taken away.
-        const v = starts[home]! + Math.floor(rand() * sizes[home]!)
+        // Draw the other end from the hub's own component. Picking across the whole graph and
+        // rejecting the misses would waste most attempts once the component is small, and a
+        // small component is exactly the one whose few edges must not be taken away.
+        const v = starts[hubComponent]! + Math.floor(rand() * sizes[hubComponent]!)
         if (v === hub || adjacency[v]!.has(hub)) continue
         const donors = [...adjacency[v]!].filter(
           (w) => w !== hub && !chosen.has(w) && adjacency[w]!.size > floor,

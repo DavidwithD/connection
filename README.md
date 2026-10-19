@@ -1,22 +1,21 @@
 # connection
 
-> **`connection` is a working placeholder, not a chosen name.** It collides with the
+> **`connection` is a working placeholder name.** It collides with the
 > ordinary noun in prose ("the connection layer") and with plenty of existing products.
-> Settling it later means touching the repo directory, the package name, and any
-> published domain — so it gets more expensive after the first published artifact.
+> Choosing a name later means touching the repo directory, the package name, and any
+> published domain. The cost grows after the first published artifact.
 
 A graph you pan around like a map, stored in the browser. TypeScript, Vite, Cytoscape, and
 the browser's own IndexedDB. No server, no account, and nothing to install but npm packages.
 
-**What this page is for.** Getting the project running, and the reference tables you need
-while it is. Everything here is either something you want before you can use the repo at
-all — prerequisites, commands — or a table the [docs gate](docs/checks.md) holds the code to,
-so that a rename cannot quietly falsify it.
+**What this page is for.** It gets the project running, and it holds the reference tables
+you need while it runs. Part of it is what you need before you can use the repo at all:
+prerequisites and commands. The rest is tables the [docs gate](docs/checks.md) compares with
+the code. A rename that makes a table wrong fails the gate.
 
-Anything that explains how the thing works, why it works that way, or how to drive it lives
-under [docs/](docs/) and is linked from the foot of this page. The test is the reader: this
-page is for somebody who has just cloned the repo, and it stops where their questions stop
-being about setup.
+Pages that explain how the project works, why, or how to drive it are under [docs/](docs/).
+The foot of this page links them. This page is for somebody who has just cloned the repo.
+It stops where their questions stop being about setup.
 
 [![CI](https://github.com/DavidwithD/connection/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidwithD/connection/actions/workflows/ci.yml)
 
@@ -41,7 +40,8 @@ npm run web             # all three pages at :5173
 
 A fresh browser holds no graph. The map says so and points at
 [/transfer.html](web/transfer.html), where **Seed a demo graph** gives you something to walk
-around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.md).
+around. [docs/using-the-demo.md](docs/using-the-demo.md) explains how to drive all three
+pages.
 
 ## Commands
 
@@ -63,8 +63,8 @@ around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.
 | `npm run drive:drag-join` | Drive the shift-drag that joins two nodes, and check what it wrote |
 | `npm run drive:rename` | Drive the rename, and check the edges and degrees survived it |
 | `npm run drive:nodes` | Drive the node list: the controls, the walk, and a row's edit, join and delete |
-| `npm run drive:globe` | Drive the globe renderer at `/?globe`, and photograph what it draws |
-| `npm run drive:long-names` | Drive names longer than a pill on the globe, and check how they are cut |
+| `npm run drive:sphere` | Drive the sphere view at `/?sphere`, and photograph what it draws |
+| `npm run drive:long-names` | Drive names too long for a label box in the sphere view, and check the cut |
 | `npm run preinstall` | Runs on every install. Refuses one from an npm that would rewrite the lock |
 | `npm run hooks:install` | Install the pre-commit hook that runs both gates on the staged tree |
 
@@ -73,15 +73,15 @@ around. Driving all three pages is [docs/using-the-demo.md](docs/using-the-demo.
 In the browser profile you opened the page with, and nowhere else.
 
 **Clearing site data destroys it.** A different browser, a different profile or a private
-window is a different graph, and the browser may evict it under storage pressure — the page
-asks it not to at boot, which is a request rather than a promise.
+window holds a different graph. The browser may evict the graph under storage pressure. The
+page code calls `persist()` at boot to ask the browser to keep it. The browser may deny the request.
 
-The **Backup** download on the transfer page is the only backup there is. What that costs,
-and why nothing here mitigates it, is
-[docs/requirements/storing-a-graph.md](docs/requirements/storing-a-graph.md).
+The **Backup** download on the transfer page is the only backup there is.
+[docs/requirements/storing-a-graph.md](docs/requirements/storing-a-graph.md) explains what
+that costs, and why nothing here reduces the risk.
 
-One tab at a time. Two tabs will not corrupt anything, but neither is told when the other
-writes, so the second one drifts until you reload it.
+Use one tab at a time. Two tabs corrupt nothing, but neither tab is told when the other
+writes. The second tab shows an old graph until you reload it.
 
 ## Layout
 
@@ -90,27 +90,27 @@ web/
   index.html    the map
   transfer.html a graph out as a file, a file in as a graph, and the whole-graph acts
   nodes.html    the node list: search, dates, order, paging, and the walk into a neighbour
-  app.css       the chrome around all three
+  app.css       the controls around all three
   nodes.css     the rows, the sublist and the stack of cards
 web/src/
   name-lines.ts a name broken into lines that fit a width — pure, no canvas
-  placement.ts  seating geometry + spatial index — pure, no renderer
+  placement.ts  placement geometry + spatial index — pure, no renderer
   projection.ts the surface the map draws on — a screen offset in, a screen offset out
   world.ts      the store: frozen positions, adjacency, degrees
   map.ts        what every renderer holds: calls, events, ids, shared numbers
   map-view.ts   Cytoscape render; additive only, no layout engine
-  globe-view.ts canvas render on the projected surface; one frame loop, no library
-  explore.ts    what the centre reads once the camera settles
+  sphere-view.ts canvas render on the projected surface; one frame loop, no library
+  explore.ts    what the selected node reads once the camera is idle
   palette.ts    validated colour tokens, light and dark
   settings.ts   what the reader has asked the page to do, kept in the browser
   labels.ts     button labels built from a node's own data, shared by two pages
-  combobox.ts   a text box that hands back nodes, not text
+  combobox.ts   a text box that returns nodes
   rename-box.ts a name, and one row saying whether the graph has it already
-  writes.ts     the line every write stands in, and the receipts it leaves
+  writes.ts     the line every write stands in, and its write log entries
   join.ts       the panel at the top: two ends, and the writes
   drag-join.ts  the drag that joins two nodes, and the arrow it draws
-  islands.ts    the panel down the left: every component, as somewhere to go
-  main.ts       wiring, the centre, the panels around it
+  components-panel.ts the panel down the left: every component, as somewhere to go
+  main.ts       wiring, the selected node, the panels around it
   node-list.ts  what the controls select, and where a click leaves the page — pure
   nodes.ts      the node list page: the elements, the reads and the drawing
   transfer.ts   the file page, and everything that changes a whole graph
@@ -121,7 +121,7 @@ web/src/store/
   refused.ts    the graph declining a write, and the graph having no such node
   read.ts       every read: a key, a key range, or an index range
   write.ts      create, join, part, delete — one transaction each
-  islands.ts    which nodes can reach which, as union-find over the graph
+  components.ts which nodes can reach which, as union-find over the graph
   text.ts       the graph as lines of names, read and written
   load.ts       surveys a reading against the store, then adds it
   transfer.ts   a whole graph out, a whole graph in, and the checks over one
@@ -131,18 +131,20 @@ test/
   graph.ts               a graph in memory, for the tests that read and write one
   widgets.ts             the elements the keyboard widgets are built on
   projection.test.ts     the surface the map draws on
-  placement.test.ts      seating geometry and the spatial index
+  placement.test.ts      placement geometry and the spatial index
   name-lines.test.ts     a name broken into lines that fit a width
   keys.test.ts           the normalised name, and the pair key
   text.test.ts           the text format, read and written
-  islands.test.ts        components, derived from a whole graph
+  components.test.ts     components, derived from a whole graph
   generate.test.ts       the demo graph generator
   write.test.ts          every write, against a real IndexedDB
-  read.test.ts           every read, and the island paging
+  db-upgrade.test.ts     a version 2 database opened at version 3
+  read.test.ts           every read, and the component paging
   node-list.test.ts      what the controls select, and where a click leaves the page
   npm-guard.test.ts      the install guard, and the one case it lets past
   load.test.ts           a text file against the store
   transfer.test.ts       export, import, check and recount
+  settings.test.ts       the side panel setting, and its key before the rename
   combobox.dom.test.ts   the box that returns nodes — needs a document
   rename-box.dom.test.ts the box that renames a node — needs a document
 scripts/
@@ -151,10 +153,11 @@ scripts/
   docs-gate-selftest.py  proves each bound check still compares something
   prose-lint.py        the writing rule, on newly written text, as it is written
   prose-lint-selftest.py  proves each writing check still fires, and still holds off
+  plain-terms.txt      the retired figurative terms, and the literal term for each
   probe.mjs            how a drive script asks the map what it drew, and where
   drive-drag-join.mjs  drives the shift-drag that joins two nodes, and checks it
-  drive-globe.mjs      drives the globe renderer, and photographs what it draws
-  drive-long-names.mjs drives names longer than a pill, and checks how they are cut
+  drive-sphere.mjs     drives the sphere view, and photographs what it draws
+  drive-long-names.mjs drives names longer than a label box, and checks how they are cut
   drive-join.mjs       drives the join panel's keyboard, and checks what it keeps
   drive-map.mjs        drives the map in a real browser, for screenshots
   drive-nodes.mjs      drives the node list, its controls and its walk
@@ -170,37 +173,36 @@ scripts/
 
 ## Data model
 
-One database, `connection`, at version 1. Two object stores, and three indexes over them.
+One database, `connection`, at version 3. Two object stores, and three indexes over them.
 [ADR 0030](docs/decisions/0030-the-graph-moves-into-the-browser.md) is why it is here rather
 than in a table behind an API.
 
 | Store | Key | Indexes |
 |---|---|---|
-| `nodes` | `labelKey` — the name, normalised | `byIsland` over `islandSize` + `labelKey`; `byParent` over `parent` |
+| `nodes` | `labelKey` — the name, normalised | `byComponent` over `componentSize` + `labelKey`; `byParent` over `parent` |
 | `edges` | `a` and `b` together, canonical | `byEnd` over `ends`, `multiEntry` |
 
-`keyPath` names the property a key is read out of, so `labelKey` is the key *and* an ordinary
-property rather than two things. `edges` uses an array key path, which is IndexedDB's
-composite key — legal because a key may be a number, a string, a date, a buffer, or an array
-of those.
+`keyPath` names the property a key is read out of. So `labelKey` is the key *and* an
+ordinary property of the same record. `edges` uses an array key path, which is IndexedDB's
+composite key. A key may be a number, a string, a date, a buffer, or an array of those.
 
-An index leaves out any record that does not carry its key path, which is what makes
-`byIsland` hold one entry per component rather than one per node: only a root carries
-`islandSize`. `byEnd` is `multiEntry`, so one edge record is reachable from either of the two
-names in `ends` — which is what a second copy of every edge used to buy.
+An index leaves out any record that does not carry its key path. Only a root carries
+`componentSize`, so `byComponent` holds one entry per component. `byEnd` is `multiEntry`, so
+one edge record is reachable from either of the two names in `ends`. The store once kept a
+second copy of every edge for that.
 
-Nothing else about a record is checked by the engine. Key uniqueness is the only constraint
-it enforces, which is why the interfaces in [db.ts](web/src/store/db.ts) carry the rest, and
-why **Check the graph** on the transfer page exists.
+The engine checks one constraint on a record: key uniqueness. The interfaces in
+[db.ts](web/src/store/db.ts) describe the rest. **Check the graph** on the transfer page
+checks the rest.
 
-The full argument — why the name is the key, why `degree` stays denormalised, and what
-`multiEntry` settled — is [docs/design/architecture.md](docs/design/architecture.md).
+[docs/design/architecture.md](docs/design/architecture.md) holds the full argument. It says
+why the name is the key, why `degree` stays denormalised, and what `multiEntry` solved.
 
 ## The graph demo
 
-Three pages: a map you pan around, a list of every node, and a page a graph arrives at as a
-file and leaves as one. Seeding one, driving all three, and every gesture that changes a graph
-are in **[docs/using-the-demo.md](docs/using-the-demo.md)**.
+Three pages: a map you pan around, a list of every node, and a page that reads and writes a
+graph as a file. **[docs/using-the-demo.md](docs/using-the-demo.md)** covers seeding a graph,
+driving all three pages, and every gesture that changes a graph.
 
 ## Docs
 
@@ -211,5 +213,5 @@ are in **[docs/using-the-demo.md](docs/using-the-demo.md)**.
 - [Requirements](docs/requirements/) — no product scope yet, and what the demo has to do
 - [Design](docs/design/) — layers, boundaries, and the invariants the code protects
 - [Architecture decisions](docs/decisions/) — the "why" behind these choices
-- [Checks](docs/checks.md) — what binds the tables and trees on this page to the code, so
-  that a rename cannot quietly falsify them
+- [Checks](docs/checks.md) — the checks that compare the tables and trees on this page with
+  the code, so a rename that makes them wrong fails

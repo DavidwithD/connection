@@ -8,13 +8,13 @@
 The graph sat in a DynamoDB table behind a Hono API. Four layers, a Java process and an HTTP
 hop stood between a click and a record, for a demo one person runs alone.
 
-It also priced the client. The read-ahead ring hides network latency
-([0006](0006-only-the-centre-reads.md)); the write queue exists because two transactions
+It also set costs in the client. The neighbour read-ahead hides network latency
+([0006](0006-only-the-centre-reads.md)). The write queue exists because two transactions
 reaching for the totals item cancel each other
 ([0010](0010-writing-to-the-graph-from-the-browser.md)).
 
-IndexedDB exists only in the browser, so adopting it is not a driver swap — the server goes
-with it. What size the store must serve had never been written down, and is now
+IndexedDB exists only in the browser, so adopting it also deletes the server. What size the
+store must serve had never been written down, and is now
 [storing-a-graph.md](../requirements/storing-a-graph.md).
 
 ## Decision
@@ -44,12 +44,12 @@ layer, and rewrite the graph logic against it natively.
 The graph lives in one browser profile. Clearing site data destroys it, another profile is a
 different graph, and the export button is the only backup. Nothing here mitigates it.
 
-The read-ahead ring goes, and [0006](0006-only-the-centre-reads.md) with it.
+The neighbour read-ahead goes, and [0006](0006-only-the-centre-reads.md) with it.
 
 `npm test` loses its only behavioural check with the smoke commands, and CI its
 getting-started job.
 
-Two tabs stop agreeing. Both write safely, neither is told, and each drifts until a reload.
+Two tabs stop agreeing. Both write safely, neither is told, and each goes stale until a reload.
 
 Against that: no account, no server, no seeding command. A merge is now exact, and taking a
 node out with its edges costs one recount, not one per edge.
@@ -58,10 +58,11 @@ node out with its edges costs one recount, not one per edge.
 - **Assumed one reader, in one tab.** Nothing enforces it.
 - **Assumed the ceiling holds.** Measured on one seeded graph, in one browser.
 - **Unknown whether a reader loses a graph before learning to export one.**
-- **Unknown how eviction behaves under real pressure.** Persistence is a request, not a grant.
+- **Unknown how eviction behaves under real pressure.** The browser treats persistence
+  as a request it may refuse.
 
 ## Revisit when
 - Somebody loses a graph they cared about to a cleared profile.
 - Two people need to look at one graph.
 - A recount is reported as slow on a graph inside the stated ceiling.
-- The drift between two tabs is noticed.
+- Somebody notices that two tabs disagree.

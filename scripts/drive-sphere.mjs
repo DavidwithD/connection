@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Drive the globe renderer in a real browser and photograph what it draws.
+ * Drive the sphere view renderer in a real browser and photograph what it draws.
  *
  *   npm run web                          # in another terminal
- *   node scripts/drive-globe.mjs         # shots land in .shots/
- *   node scripts/drive-globe.mjs --head  # watch it happen
+ *   node scripts/drive-sphere.mjs         # shots land in .shots/
+ *   node scripts/drive-sphere.mjs --head  # watch it happen
  *
- * A canvas holds no element per node, so this asks `globe-view.ts` for its frame through the
+ * A canvas holds no element per node, so this asks `sphere-view.ts` for its frame through the
  * probe on `#stage`. probe.mjs is that seam, and every drive script in this directory uses it.
  *
  * Playwright is deliberately not a dependency of this project. `npm i -D playwright --no-save`
@@ -34,21 +34,21 @@ const shot = async (page, name) => {
 const degrees = (radians) => `${(radians * (180 / Math.PI)).toFixed(1)}°`
 
 function report(what, seen) {
-  if (!seen) return console.log(`  ${what}: no globe on the page`)
+  if (!seen) return console.log(`  ${what}: no sphere on the page`)
   const it = read(seen)
   const behind = it.nodes.filter((one) => one.at === null).length
   console.log(
     `  ${what}: zoom ${seen.zoom.toFixed(2)} · R ${Math.round(seen.radius)}px` +
-      ` · horizon ${degrees(seen.horizon)}` +
+      ` · visibleLimit ${degrees(seen.visibleLimit)}` +
       ` · ${String(it.drawn.length)} of ${String(seen.elements.length)} drawn` +
-      ` · ${String(behind)} past the limb` +
-      ` · ring ${String(it.ring.length)}` +
-      ` · ${String(it.ghosts.filter((one) => one.at).length)}` +
-      ` of ${String(it.ghosts.length)} doorways drawn` +
-      (it.centreShown ? "" : " · centre out of frame") +
+      ` · ${String(behind)} past the visible limit` +
+      ` · neighbours ${String(it.neighbours.length)}` +
+      ` · ${String(it.markers.filter((one) => one.at).length)}` +
+      ` of ${String(it.markers.length)} off-screen markers drawn` +
+      (it.selectedShown ? "" : " · selected out of frame") +
       (it.twins.length ? ` · ⚠ drawn twice: ${it.twins.map((g) => g.label).join(", ")}` : "") +
-      (it.lost.length ? " · ⚠ every doorway is past the limb" : "") +
-      (it.collisions ? ` · ⚠ ${String(it.collisions)} overlapping doorway pair(s)` : ""),
+      (it.lost.length ? " · ⚠ every marker is past the visible limit" : "") +
+      (it.collisions ? ` · ⚠ ${String(it.collisions)} overlapping marker pair(s)` : ""),
   )
   return seen
 }
@@ -96,18 +96,18 @@ async function main() {
 
   const first = await frame(page)
   if (!first) {
-    console.log("  ✗ #stage has no probe — the page is not on the globe renderer")
+    console.log("  ✗ #stage has no probe — the page is not on the sphere renderer")
     await browser.close()
     process.exit(1)
   }
   report("landed", first)
-  await shot(page, "globe-1-landed")
+  await shot(page, "sphere-1-loaded")
 
   // Walk three steps out from the opening node, so the map holds more than one neighbourhood.
   // A read runs for the centre only, on arrival, so clicking is the only way to grow it.
   for (let step = 0; step < 3; step++) {
     const seen = await frame(page)
-    const next = read(seen).ring.find((one) => one.at !== null)
+    const next = read(seen).neighbours.find((one) => one.at !== null)
     if (!next) break
     await clickOn(page, next.at)
     await page.waitForTimeout(900)
@@ -115,7 +115,7 @@ async function main() {
   report("walked", await frame(page))
 
   // The pointer, at the simplest picture this script will see. A disc under the pointer draws
-  // as its name, so the footprint the renderer reports for it grows from a disc to a pill.
+  // as its name, so the footprint the renderer reports for it grows from a disc to a label box.
   {
     const stage = await stageBox(page)
     const seen = await frame(page)
@@ -141,13 +141,13 @@ async function main() {
   {
     const stage = await stageBox(page)
     const seen = await frame(page)
-    const centre = seen.elements.find((one) => one.id === seen.accent)
-    await page.mouse.click(stage.x + centre.at.x, stage.y + centre.at.y, { button: "right" })
+    const selected = seen.elements.find((one) => one.id === seen.selected)
+    await page.mouse.click(stage.x + selected.at.x, stage.y + selected.at.y, { button: "right" })
     await page.waitForTimeout(250)
     const open = await page.locator("#map-menu").isVisible()
     const row = (await page.locator("#map-remove").textContent()) ?? ""
     console.log(
-      `  right-click the centre: ${open ? `opened — ${row}` : "⚠ nothing opened"}`,
+      `  right-click the selected: ${open ? `opened — ${row}` : "⚠ nothing opened"}`,
     )
     await page.keyboard.press("Escape")
     await page.waitForTimeout(200)
@@ -158,8 +158,8 @@ async function main() {
   {
     const stage = await stageBox(page)
     const seen = await frame(page)
-    const ring = read(seen).ring.filter((one) => one.at)
-    const [from, to] = [ring[0], ring[ring.length - 1]]
+    const neighbours = read(seen).neighbours.filter((one) => one.at)
+    const [from, to] = [neighbours[0], neighbours[neighbours.length - 1]]
     if (!from || !to || from.id === to.id) {
       console.log("  shift-drag: fewer than two neighbours drawn, so no pair to join")
     } else {
@@ -179,7 +179,7 @@ async function main() {
           ` · arrow ${drawing ? "drawn" : "⚠ not drawn"}`,
       )
       // Undone, so the legs below read the graph this script was handed.
-      const undo = page.locator("#receipts button").first()
+      const undo = page.locator("#write-log button").first()
       if (await undo.isVisible()) {
         await undo.click()
         await page.waitForTimeout(600)
@@ -187,9 +187,9 @@ async function main() {
     }
   }
 
-  // Zoomed out, every neighbour is legible at its own seat and nothing should be standing in
-  // for one. Zoomed in, most of a neighbourhood has left the screen and the doorways are what
-  // is left of it.
+  // Zoomed out, every neighbour is legible at its own position and nothing should be standing in
+  // for one. Zoomed in, most of a neighbourhood has left the screen and the off-screen markers are
+  // what is left of it.
   const zoom = async (button, times) => {
     for (let i = 0; i < times; i++) {
       await page.locator(`#${button}`).click()
@@ -200,14 +200,14 @@ async function main() {
 
   await zoom("zoom-out", 5)
   report("zoomed out", await frame(page))
-  await shot(page, "globe-2-zoomed-out")
+  await shot(page, "sphere-2-zoomed-out")
 
   await zoom("zoom-in", 9)
   report("zoomed in", await frame(page))
-  await shot(page, "globe-3-zoomed-in")
+  await shot(page, "sphere-3-zoomed-in")
 
-  // Recentred first, so the pan below starts from a picture this script chose.
-  await page.locator("#home").click()
+  // Sent to the selected node first, so the pan below starts from a picture this script chose.
+  await page.locator("#go-to-selected").click()
   await page.waitForTimeout(900)
 
   /** Pan by whole keyboard steps, and report what is standing afterwards. */
@@ -220,43 +220,43 @@ async function main() {
     return read(await frame(page))
   }
 
-  // Doorways appear as the ring crosses the horizon. Counted per step rather than asserted at
-  // one distance, because which step raises the first one depends on the seeded graph.
+  // Off-screen markers appear as the ring crosses the visible limit. Counted per step rather than
+  // asserted at one distance, because which step raises the first one depends on the seeded graph.
   const climb = []
   let steps = 0
   while (steps < 12) {
     const seen = await nudge("ArrowRight", 1)
     steps++
-    climb.push(seen.ghosts.length)
-    if (seen.ghosts.length) break
+    climb.push(seen.markers.length)
+    if (seen.markers.length) break
   }
   const peak = read(await frame(page))
   console.log(
-    `  doorways out: ${climb.join(" → ")} after ${String(steps)} nudge(s)` +
-      ` · ${String(peak.ghosts.filter((one) => one.at).length)} of ${String(peak.ghosts.length)} drawn` +
-      (peak.centreShown ? "" : " · centre out of frame") +
-      (peak.ghosts.length ? "" : " · ⚠ nothing stood in for a neighbour past the limb"),
+    `  off-screen markers out: ${climb.join(" → ")} after ${String(steps)} nudge(s)` +
+      ` · ${String(peak.markers.filter((one) => one.at).length)} of ${String(peak.markers.length)} drawn` +
+      (peak.selectedShown ? "" : " · selected out of frame") +
+      (peak.markers.length ? "" : " · ⚠ nothing stood in for a neighbour past the visible limit"),
   )
   report("panned", await frame(page))
-  await shot(page, "globe-4-doorways")
+  await shot(page, "sphere-4-markers")
 
-  // A nudge and the nudge back have to land on the same picture. `GHOST_MARGIN` is the dead
-  // band that holds it: without one, a node sitting on the horizon flips on every pan.
+  // A nudge and the nudge back have to land on the same picture. `MARKER_MARGIN` is the dead
+  // band that holds it: without one, a node sitting on the visible limit flips on every pan.
   const standing = (seen) =>
     read(seen)
-      .ghosts.map((g) => `${g.label}@${String(Math.round(g.x))},${String(Math.round(g.y))}`)
+      .markers.map((g) => `${g.label}@${String(Math.round(g.x))},${String(Math.round(g.y))}`)
       .sort()
-  if (peak.ghosts.length) {
+  if (peak.markers.length) {
     const before = standing(await frame(page))
     for (const key of ["ArrowRight", "ArrowLeft"]) {
       await page.keyboard.press(key)
       await page.waitForTimeout(300)
     }
     const after = standing(await frame(page))
-    // Every doorway standing before the nudge has to be in the same place after it. The set
-    // may grow. The two thresholds are not opposites: a neighbour that crossed the margin on
-    // the way out keeps its doorway until it is back in view. What may not happen is a doorway
-    // moving, because nothing on this map moves.
+    // Every off-screen marker standing before the nudge has to be in the same place after it. The
+    // set may grow. The two thresholds are not opposites: a neighbour that crossed the margin on
+    // the way out keeps its off-screen marker until it is back in view. What may not happen is an
+    // off-screen marker moving, because nothing on this map moves.
     const moved = before.filter((one) => !after.includes(one))
     console.log(
       `  nudge and back: ${String(before.length)} → ${String(after.length)} standing` +
@@ -264,48 +264,48 @@ async function main() {
     )
   }
 
-  // And back the way it came, where every neighbour is legible at its own seat again. A
-  // doorway left standing there would be the same name twice.
+  // And back the way it came, where every neighbour is legible at its own position again. A
+  // off-screen marker left standing there would be the same name twice.
   {
     const back = await nudge("ArrowLeft", steps)
     console.log(
-      `  doorways back: ${String(peak.ghosts.length)} → ${String(back.ghosts.length)}` +
-        (back.ghosts.length ? " · ⚠ one is still standing over a neighbour in view" : " · lowered"),
+      `  off-screen markers back: ${String(peak.markers.length)} → ${String(back.markers.length)}` +
+        (back.markers.length ? " · ⚠ one is still standing over a neighbour in view" : " · lowered"),
     )
   }
 
-  // A click on a doorway flies to the node it names. The click is at the pixel the probe says
-  // the doorway is drawn at, because a canvas has nothing to address by name.
+  // A click on an off-screen marker flies to the node it names. The click is at the pixel the probe
+  // says the off-screen marker is drawn at, because a canvas has nothing to address by name.
   {
     const seen = await nudge("ArrowRight", steps)
-    const doorway = seen.ghosts.find((one) => one.at !== null)
-    if (!doorway) {
-      console.log("  flight: no doorway drawn, so nothing to fly to")
+    const marker = seen.markers.find((one) => one.at !== null)
+    if (!marker) {
+      console.log("  flight: no marker drawn, so nothing to fly to")
     } else {
-      await clickOn(page, doorway.at)
+      await clickOn(page, marker.at)
       await page.waitForTimeout(1800)
-      console.log(`  flight: clicked ${doorway.label}`)
-      await shot(page, "globe-5-flown")
+      console.log(`  flight: clicked ${marker.label}`)
+      await shot(page, "sphere-5-moved")
     }
   }
 
   // A map worth measuring on. A read runs for the centre only, on arrival, so the map grows
   // one click at a time. **Walk by pan** does not help: the camera outruns the frontier, and a
   // middle with nothing near it names no centre and reads nothing.
-  await page.locator("#home").click()
+  await page.locator("#go-to-selected").click()
   await page.waitForTimeout(700)
   await zoom("zoom-out", 4)
   for (let step = 0; step < 90; step++) {
-    const ring = read(await frame(page)).ring.filter((one) => one.at)
-    if (!ring.length) break
+    const neighbours = read(await frame(page)).neighbours.filter((one) => one.at)
+    if (!neighbours.length) break
     // Not the same slot every time, so the walk spreads instead of going back and forth over
     // ground already read.
-    await clickOn(page, ring[(step * 3) % ring.length].at)
+    await clickOn(page, neighbours[(step * 3) % neighbours.length].at)
     await page.waitForTimeout(420)
   }
   await page.waitForTimeout(900)
   report("walked out", await frame(page))
-  await shot(page, "globe-6-crowded")
+  await shot(page, "sphere-6-crowded")
 
   // The frame rate, counted off the renderer's own draws rather than off rAF. A dirty-flag
   // loop skips a frame it has nothing to redraw for, so rAF would report the display's rate
@@ -317,7 +317,7 @@ async function main() {
       await page.waitForTimeout(60)
     }
     await page.waitForTimeout(500)
-    await page.locator("#home").click()
+    await page.locator("#go-to-selected").click()
     // Both readings inside the flight, so the click and the first evaluate are outside the
     // window rather than counted as frames nobody drew.
     await page.waitForTimeout(80)
@@ -332,7 +332,7 @@ async function main() {
     // window is reported, and the threshold below is on the cost.
     const cost = (after.drawMs - before.drawMs) / Math.max(1, drew)
     console.log(
-      `  flying: ${String(drew)} draws in ${String(ms)}ms · ${cost.toFixed(1)}ms each` +
+      `  animating: ${String(drew)} draws in ${String(ms)}ms · ${cost.toFixed(1)}ms each` +
         ` · room for ${(1000 / Math.max(0.1, cost)).toFixed(0)} a second` +
         ` over ${String(after.elements.length)} elements` +
         ` (${String(after.elements.filter((one) => one.at).length)} drawn)` +
@@ -366,11 +366,11 @@ async function main() {
     await page.locator("#guide-toggle").click()
     await page.waitForTimeout(200)
     const shown = await page.locator("#curvature-row").isVisible()
-    await shot(page, "globe-7-panel")
+    await shot(page, "sphere-7-panel")
     await page.keyboard.press("Escape")
     await page.waitForTimeout(200)
     if (!ends || !shown) {
-      problems.push("no curvature slider on the page at /?globe")
+      problems.push("no curvature slider on the page at /?sphere")
       console.log("  curvature: ⚠ the slider is not on the page")
     } else {
       const [low, high, step] = ends
@@ -393,9 +393,9 @@ async function main() {
           (off.length ? ` · ⚠ R did not follow the slider at ${off.join(", ")}` : ""),
       )
       // Settled before each read, unlike the sweep above. A curvature change is a viewport
-      // change, so the doorways are revised on the settle it schedules rather than on the
-      // frame that drew it. A read inside that window finds a ghost still standing over a
-      // neighbour the flatter surface has already brought back.
+      // change, so the off-screen markers are revised on the settle it schedules rather than on the
+      // frame that drew it. A read inside that window finds an off-screen marker still standing
+      // over a neighbour the flatter surface has already brought back.
       for (const [name, value] of [
         ["curved", low],
         ["flat", high],
@@ -403,7 +403,7 @@ async function main() {
         await curve(value)
         await still(page)
         report(`curvature ${value.toFixed(2)}`, await frame(page))
-        await shot(page, `globe-7-${name}`)
+        await shot(page, `sphere-7-${name}`)
       }
     }
   }
@@ -416,7 +416,7 @@ async function main() {
       document.documentElement.dataset.theme = value
     }, theme)
     await page.waitForTimeout(250)
-    await shot(page, `globe-8-${theme}`)
+    await shot(page, `sphere-8-${theme}`)
   }
 
   // The setting outlives the tab, which is the only reason it is stored. Last, because the

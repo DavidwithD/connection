@@ -5,31 +5,31 @@
 **Deciders:** David HL
 
 ## Context
-[0037](0037-the-centres-name-on-the-clipboard.md) settled the click on the centre, and the case
-for it is there rather than here. Its last revisit trigger is what this answers: a name wanted
-for a node the reader is not standing on.
+[0037](0037-the-centres-name-on-the-clipboard.md) decided the click on the selected node,
+and holds the case for it. This record answers its last revisit trigger: a name wanted for a
+node other than the selected one.
 
 Every argument that made one name worth copying holds for the twenty others on screen. The
-centre's is the only one reachable as text at all.
+selected node's name is the only one reachable as text at all.
 
 ## Decision
 Clicking any node copies its name.
 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
-| Which click | Any node the map draws | A name under the pointer is a name in hand. |
-| A ghost | Copies, then flies | Its name is on screen long before its node is. |
-| The panel | The centre's click alone | That click takes the caret off the map — [0036](0036-a-click-that-writes-nothing.md). [0049](0049-a-click-leaves-the-panel-alone.md) removed the panel fill. |
+| Which click | Any node the map draws | The reader can see the name under the pointer. |
+| An off-screen marker | Copies, then moves the camera | Its name is on screen long before its node is. |
+| The panel | The selected node's click alone | That click takes the caret off the map — [0036](0036-a-click-that-writes-nothing.md). [0049](0049-a-click-leaves-the-panel-alone.md) removed the panel fill. |
 | On success | Silence | The reader is looking at the name they clicked. |
 | On refusal | The first one says so, and no other | A browser that turns one copy down turns them all down. |
 
 ## Alternatives considered
-- **Leave it at the centre.** 0037's rule stands, and one click means one thing. A name two
-  hops away then costs two clicks and a journey to reach it.
+- **Leave it at the selected node.** 0037's rule stands, and one click means one thing. A
+  name two hops away then costs two clicks and a walk to reach it.
 - **Behind a held key.** Nothing goes to the clipboard unasked. It also hides the gesture,
   which is the ground 0037 turned the same idea down on.
-- **Copy whatever the pointer is over.** No click at all, and the name is always in hand. The
-  clipboard would then be taken by every node the pointer crossed on the way somewhere else.
+- **Copy whatever the pointer is over.** No click at all, and the name is always ready. Every
+  node the pointer crossed on the way somewhere else would then replace the clipboard.
 
 ## Consequences
 Every step of a walk takes the clipboard. Ten clicks across a graph lose ten things, where
@@ -38,11 +38,12 @@ Every step of a walk takes the clipboard. Ten clicks across a graph lose ten thi
 The first refusal is reported and no later one is. A reader who missed that line can believe a
 name is on the clipboard when nothing was written.
 
-A ghost's click does two jobs. It copies and then flies, and the copy is silent while the
-camera is moving.
+A click on an off-screen marker does two jobs. It copies, then starts a camera move. The
+copy is silent while the camera is moving.
 
-The centre's click no longer fills the panel. [0049](0049-a-click-leaves-the-panel-alone.md)
-removed that job. The centre's click now only copies the name.
+A click on the selected node no longer fills the panel.
+[0049](0049-a-click-leaves-the-panel-alone.md) removed that job. That click now only copies
+the name.
 
 ## Assumptions and unknowns
 - **Assumed a click on a node asks for its name.** A reader clicking to walk loses whatever

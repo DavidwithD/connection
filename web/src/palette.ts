@@ -13,7 +13,7 @@ export interface Palette {
   hairline: string
   /** The centre node. A reserved accent. It is not a step on the hop ramp. */
   accent: string
-  accentRing: string
+  selectedOutline: string
   /**
    * The centre's name. It is drawn on the accent fill, not on the surface, so it needs its
    * own contrast pair. Dark in both themes, because the accent is a mid-tone orange in both.
@@ -39,7 +39,7 @@ export interface Palette {
   textPrimary: string
   textSecondary: string
   textMuted: string
-  frontierRing: string
+  unreadOutline: string
 }
 
 const LIGHT: Palette = {
@@ -47,7 +47,7 @@ const LIGHT: Palette = {
   plane: "#f9f9f7",
   hairline: "rgba(11, 11, 11, 0.1)",
   accent: "#eb6834",
-  accentRing: "#fcfcfb",
+  selectedOutline: "#fcfcfb",
   inkOnAccent: "#0b0b0b",
   hop: ["#1c5cab", "#2a78d6", "#5598e7", "#86b6ef"],
   edge: "#c3c2b7",
@@ -55,7 +55,7 @@ const LIGHT: Palette = {
   textPrimary: "#0b0b0b",
   textSecondary: "#52514e",
   textMuted: "#898781",
-  frontierRing: "#52514e",
+  unreadOutline: "#52514e",
 }
 
 const DARK: Palette = {
@@ -63,7 +63,7 @@ const DARK: Palette = {
   plane: "#0d0d0d",
   hairline: "rgba(255, 255, 255, 0.1)",
   accent: "#d95926",
-  accentRing: "#1a1a19",
+  selectedOutline: "#1a1a19",
   inkOnAccent: "#0b0b0b",
   hop: ["#6da7ec", "#3987e5", "#256abf", "#184f95"],
   edge: "#383835",
@@ -71,7 +71,7 @@ const DARK: Palette = {
   textPrimary: "#ffffff",
   textSecondary: "#c3c2b7",
   textMuted: "#898781",
-  frontierRing: "#c3c2b7",
+  unreadOutline: "#c3c2b7",
 }
 
 /** How many hop classes the ramp can tell apart. Beyond this they all look the same. */
@@ -79,13 +79,13 @@ export const HOP_CLASSES = LIGHT.hop.length
 
 const query = window.matchMedia("(prefers-color-scheme: dark)")
 
-function stamped(): "light" | "dark" | null {
+function themeAttribute(): "light" | "dark" | null {
   const value = document.documentElement.dataset["theme"]
   return value === "light" || value === "dark" ? value : null
 }
 
 export const currentPalette = (): Palette =>
-  (stamped() ?? (query.matches ? "dark" : "light")) === "dark" ? DARK : LIGHT
+  (themeAttribute() ?? (query.matches ? "dark" : "light")) === "dark" ? DARK : LIGHT
 
 /**
  * Call `fn` when the theme changes. It watches the OS setting and the `data-theme`
@@ -97,14 +97,14 @@ export const currentPalette = (): Palette =>
  */
 export function onThemeChange(fn: (palette: Palette) => void): () => void {
   const fire = (): void => fn(currentPalette())
-  const stamp = new MutationObserver(fire)
+  const watcher = new MutationObserver(fire)
   query.addEventListener("change", fire)
-  stamp.observe(document.documentElement, {
+  watcher.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["data-theme"],
   })
   return () => {
     query.removeEventListener("change", fire)
-    stamp.disconnect()
+    watcher.disconnect()
   }
 }
