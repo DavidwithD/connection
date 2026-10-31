@@ -1,32 +1,29 @@
 # A graph as text
 
-A graph can be written down as lines of names, typed by hand, and read back in. A line's first
-name joins each of the rest — a star, not a chain — so a hub is one line and a line of one name
-is a node with no edges. Identity is the label, never an id, so the file needs no header and no
-id column. Reading it in is a *patch*: it adds, it never removes, and it goes through the same
-single-node and single-edge writes everything else uses. Writing it out is the same format's
-other half, ordered so that a round trip can be checked with `diff`.
+A person can write a graph as lines of names, by hand, and load it. The first name on a line
+joins each of the other names on that line. That is a star, and a chain is the other reading. So
+a hub is one line, and a line of one name is a node with no edges. The label identifies a node,
+so the file needs no header and no id column. A load is a *patch*. It only adds, and it uses the
+same single-node and single-edge writes as the rest of the app. The writer produces the same
+format. Its order lets `diff` check a round trip.
 
-Both directions live in one file ([text.ts](../../web/src/store/text.ts)) because they are one
-format. What is *done* with a reading — surveying it against the store and applying it — is
-[load.ts](../../web/src/store/load.ts).
+[text.ts](../../web/src/store/text.ts) holds both directions, because they are one format.
+[load.ts](../../web/src/store/load.ts) compares a reading against the store and applies it.
 
 ## The format
 
 ```
 # a comment, and a blank line, both say nothing
-Thorne                        # a node and no edges — an island of one
+Thorne                        # a node and no edges — a component of one
 Kavara | Miselin | Vessarin   # Kavara joins Miselin, and Kavara joins Vessarin
 ```
 
-A star rather than a chain, because that is how a graph is thought about while it is being
-typed: *this node, and what it connects to*. It puts a hub on one line, and it gives a line of
-one name the meaning it should have — the component [the-islands.md](the-islands.md) exists
-for, which a chain reading would have to bolt on as a special case. A path is still a path, one
-line per step.
+The star reading matches how a person thinks while typing a graph: *this node, and what it
+connects to*. It puts a hub on one line. It also gives a line of one name the right meaning: a
+component of one node, as in [the-components.md](the-components.md). A chain reading would need
+a special case for that. A path is still a path, one line per step.
 
-Neither reading is visible in the file, which is why every preview prints the pairs it read
-rather than leaving them to be assumed.
+The file does not show which reading applies. So every preview prints the pairs it read.
 
 ## Indenting a line
 
@@ -42,12 +39,13 @@ joins that line's first name. The rest of the line is an ordinary star. Depth is
 The join stops at the parent. `Sarn | Veyle` above gives Sarn–Veyle. It does not give
 Kavara–Veyle.
 
-This exists so a name is typed once. Flat, every node that has both a parent and children is
-spelled twice. It appears in its parent's list, and again as its own first name. Nothing here
-matches a name against a near miss. So a typo in that second spelling makes a second node.
+With indentation, a person types each name once. In a flat file, a node with both a parent and
+children is spelled twice. It appears in its parent's list, and again as its own first name.
+Nothing here matches a name against a near miss. So a typo in that second spelling makes a
+second node.
 
-**The reader indents. The writer never does.** `format` writes a flat star per anchor. A file
-typed with indentation comes back out flat.
+**The reader indents. The writer never does.** `format` writes a flat star per first name on the
+line. A file typed with indentation comes back out flat.
 
 | Rule | Why |
 |---|---|
@@ -71,111 +69,106 @@ typed with indentation comes back out flat.
 
 ## Reading a file in
 
-`parse` is pure — it reads no store and asks nothing of one. Every fault is collected rather
-than thrown at the first, because a hand-typed file repaired one complaint at a time is an
-afternoon.
+`parse` is pure. It reads no store. It collects every fault, and it does not stop at the first.
+Fixing a hand-typed file one fault at a time would take an afternoon.
 
-Names are deduplicated by their normalised form and kept in the spelling the file uses first,
-because that is the spelling a node will be created under and the one every later line has to
-agree with. Normalising folds case and runs of whitespace and nothing else, so `Kavara` and
-`kavara` are one node while `Zoë` and `Zoe` are two.
+`parse` removes duplicate names by their normalised form. It keeps the spelling the file uses
+first. The store creates the node under that spelling, and every later line must agree with it.
+Normalising folds case and runs of whitespace, and nothing else. So `Kavara` and `kavara` are one
+node, and `Zoë` and `Zoe` are two.
 
-`survey` then asks the store which of those names and pairs already exist — a `get` per name on
-the store's own key, and a `get` per pair on the edge key. `apply` writes what is left.
+`survey` then asks the store which of those names and pairs already exist. It makes one `get`
+per name on the store's own key, and one `get` per pair on the edge key. `apply` writes the rest.
 
-Two things this deliberately is not:
+A load is deliberately neither of these:
 
-- **Authoritative.** The file is a patch, not a picture. Deleting a line does not part an edge,
-  and nothing here removes anything — which makes it the one way into the graph that needs no
-  confirmation before it runs.
-- **Its own writer.** Every node goes through `createNode` and every edge through `addEdge`,
-  one transaction each, so a load defends `degree` and the name keys exactly as the page does
+- **Authoritative.** The file is a patch, and it does not describe the whole graph. Deleting a
+  line parts no edge. Nothing here removes anything. So a load is the one way into the graph
+  that runs without asking first.
+- **Its own writer.** Every node goes through `createNode` and every edge through `addEdge`, one
+  transaction each. So a load protects `degree` and the name keys the same way the page does
   ([writing-to-the-graph.md](writing-to-the-graph.md)).
 
-Running it twice is a no-op. Both writes refuse what is already there, and those two refusals
-are counted rather than raised — which is the whole of what makes a file editable. That is why
-each of those two sentences is an exported constant where it is worded, compared against rather
-than copied.
+A second run of the same file changes nothing. Both writes refuse what already exists. The load
+counts those two refusals and raises no error. That is what makes a file editable. So each of
+those two messages is an exported constant, defined where it is worded. The load compares against
+the constant and does not copy its text.
 
 ## Why it is still sequential
 
-Not for the reason it used to be. Every write once carried a conditional update on one shared
-item, so running them at once made them contend and come back as a cancellation nothing could
-read. That item is gone, and IndexedDB serialises overlapping transactions rather than
-cancelling one.
+The old reason is gone. Every write once made a conditional update on one shared item. Writes
+that ran at once competed for it. One then came back as a cancellation that no code could read.
+That item is gone. IndexedDB queues overlapping transactions and cancels none of them.
 
-What is left is simpler: a load is a series of ordinary writes, and each has to see what the
-one before it did. The name a later line joins to may be the name an earlier line created.
+The remaining reason is simpler. A load is a series of ordinary writes, and each must see the
+result of the one before. A later line may join to a name that an earlier line created.
 
-There is no request to keep open, so the ceiling that capped how many writes one load could
-make is gone with it. What remains is a limit on how much text is accepted at all, which is a
-guard against a pasted novel rather than a bound on the graph.
+A load keeps no request open. So the old cap on how many writes one load could make is gone too.
+One limit remains, on how much text the load accepts at all. It guards against a huge paste. It
+does not limit the graph.
 
-A load large enough to move where the map starts wants nothing afterwards. The boot node is
-derived from the island index, and a merge is recorded inside the write that caused it — so a
-finished load is already described correctly.
+A load large enough to change where the map starts needs no follow-up step. The app derives the
+start node from the component index. Each write records a merge inside the same transaction. So
+a finished load already has correct components.
 
 ## Writing a file out
 
-`format` is pure over the nodes and edges it is handed, so what is written is what was chosen
-rather than a second opinion about which records are the graph.
+`format` is pure over the nodes and edges it receives. So the file holds exactly the chosen
+records. `format` makes no second choice about which records are the graph.
 
-Every ordering is by **label**. That used to be load-bearing because a reloaded graph came back
-with new ids; the name is the id now, so a round trip is stable for a stronger reason than the
-sort. It stays because a file ordered by anything else would still change when the graph was
-reloaded elsewhere.
+Every ordering is by **label**. That once mattered because a reloaded graph came back with new
+ids. The name is the id now, so a round trip is stable even without the sort. The sort stays
+because any other order would still change when someone reloaded the graph elsewhere.
 
-Nothing in the file is dated. The JSON export stamps itself because it is a backup; this file is
-meant to be edited and committed, and a stamp would make every re-export a diff with no change
+Nothing in the file is dated. The JSON export writes its own date because it is a backup. This
+file is meant to be edited and committed. A date would make every re-export a diff with no change
 in it.
 
-Only one end of each pair writes it — the busier node, ties broken by name — because both ends
-would be twice the file, and `a | b` beside `b | a` reads as two facts rather than one.
+The writer writes each pair once, from one end: the node with the higher degree, with ties
+broken by name. Both ends would double the file. `a | b` beside `b | a` also reads as two facts.
 
-The `names` shape is every label and nothing else. This reader still accepts it: every line is a
-lone name, so loading one reproduces the nodes and none of the edges. A vocabulary rather than a
-graph, and worth its own shape because that is what a list of names is wanted for.
+The `names` shape holds every label and nothing else. The reader still accepts it. Every line is
+a single name, so a load creates the nodes and none of the edges. The result is a vocabulary, and
+that is the common use of a list of names. So it gets its own shape.
 
-A text export is lossy on purpose — no degrees, no components. It is not a backup, and the JSON
-export still is.
+A text export drops degrees and components on purpose. The JSON export is the backup.
 
 ## The backup this is not
 
-The JSON export and its import are the other pair, and they behave differently on purpose
+The JSON export and its import are the other pair. They behave differently on purpose
 ([store/transfer.ts](../../web/src/store/transfer.ts)).
 
-A subset of a graph is not automatically a graph, so an import checks before it writes. Each
-fault is an inconsistency that reads fine right up until something walks into it.
+A subset of a graph may be inconsistent, so an import checks before it writes. Each fault below
+looks fine until some code reads the broken record.
 
-- An edge with one end outside the file is dropped. A half-edge is a name nothing carries.
-- `degree` is checked against the edges actually there. A count that outlives the edges it
-  counted makes a finished node look like it has more graph behind it.
-- A record's `label` must normalise to its own key, or the node is found under a name it does
-  not display. This is the check the import path is most likely to break, because `label`
-  arrives from a file rather than from a write.
-- The components are stamped from the nodes and edges themselves, never carried in from the
-  file, because a subset's components are not the ones it was exported from.
+- An edge with one end outside the file is dropped. A half-edge names a node that no record holds.
+- `degree` is checked against the edges in the file. A count larger than its edges makes a fully
+  read node look like it has unread edges.
+- A record's `label` must normalise to its own key. Otherwise the node is found under a name it
+  does not show. The import path is the most likely way to break this. There, `label` comes from
+  a file, and no write produced it.
+- The import computes the components from the nodes and edges. It ignores components in the
+  file, because a subset has different components from the graph it came from.
 
-An export is the whole graph, always. It used to have a subset default, because a re-seed
-dropped the table and the question was which nodes would survive it. Nothing drops a table now,
-and no id shape records where a node came from, so the question has no answer and no reason to
-be asked.
+An export always holds the whole graph. It used to default to a subset, because a re-seed
+dropped the table. The subset chose which nodes would survive it. No code drops a table now,
+and no id shape records where a node came from. So no subset is needed.
 
-The file carries a version, and that is what makes the older files still readable. It writes
-the store's own records now; the version before it wrote the table's items, keyed by id. Those
-files are the only copy of any graph made before this store existed, so the import still reads
-them — it builds an id-to-name map from the node items and rewrites the edges through it. Safe
-on any file the old store produced, because it enforced one node per name.
+The file carries a version, which keeps older files readable. The current version writes the
+store's own records. The version before it wrote the table's items, keyed by id. Those files are
+the only copy of any graph made before this store existed. So the import still reads them. It
+builds an id-to-name map from the node items and rewrites the edges through it. That is safe on
+any file the old store produced, because the old store enforced one node per name.
 
 ## The page
 
-[transfer.html](../../web/transfer.html) is its own Vite entry, sharing the stylesheet and the
-store with the map and importing none of its machinery. That sharing is what makes a second page
-affordable: what one otherwise costs is every fix made twice, across stylesheets and boot
-helpers that were copied once and then drifted. Nothing here draws a graph.
+[transfer.html](../../web/transfer.html) is its own Vite entry. It shares the stylesheet and the
+store with the map, and imports none of the map's code. That sharing keeps a second page cheap.
+Without it, every fix is made twice, in copied stylesheets and boot helpers that change apart over
+time. Nothing on this page draws a graph.
 
-It is now the whole data-management surface, because there is no command line left to hold one.
-Five things happen here:
+This page now holds all data management, because the app has no command line left. It does six
+things:
 
 | | What it does | What it replaced |
 |---|---|---|
@@ -184,71 +177,69 @@ Five things happen here:
 | **Import JSON** | Reads a whole graph in, in one transaction | A command that dropped the table |
 | **Seed a demo graph** | The generator, behind a button | A command that dropped the table |
 | **Check the graph** | Every invariant, over every record | A command's `--check` |
-| **Recount the islands** | Derives the components from the graph | A command |
+| **Recount the components** | Derives the components from the graph | A command |
 
-The way in is still two calls, not one. Choosing a file only surveys it; the button that writes
-appears once there is something to write. A page needs that preview more than a terminal does,
-not less: there is no file on disk to check afterwards and no scrollback saying what was
-written.
+A load still takes two clicks. Choosing a file only surveys it. The write button appears once
+there is something to write. A reader on a page needs that preview more than in a terminal.
+Afterwards there is no file on disk to check, and no scrollback that shows what was written.
 
-The downloads are blobs rather than links to a route. There is no route to follow, and the
-anchors that used to be the only paths in the client nothing checked are gone with it.
+The downloads are blobs, and the page links to no route. There is no route to follow. The old
+route links were the only paths in the client that no check covered, and they are gone too.
 
-**Everything destructive asks first, and offers the export before it runs.** Seeding and
-importing each replace what is stored. On a command line that guard was an environment variable
-and a rescue file written next to whoever ran it; a button inherits neither, so the asking is
-the guard.
+**The page asks before every destructive action, and offers the export first.** Seeding and
+importing each replace what is stored. On a command line, the guard was an environment variable
+and a rescue file written next to the person who ran it. A button has neither, so the question
+to the person is the guard.
 
 ## What has to stay true
 
-**One home for the format's rules.** The separator, the comment character and the star reading
-are each a rule the reader and the writer have to agree on. A rule stated twice is a rule that
-drifts, and a writer that stopped matching its reader would produce files that load as a
-*different graph* rather than as an error.
+**The format's rules live in one place.** The separator, the comment character and the star
+reading are rules the reader and the writer must share. A rule stated twice can change in one
+place only. A writer that no longer matched its reader would produce files that load as a
+*different graph*, with no error.
 
-**A load only ever adds.** No line removes anything. This is what lets it run without asking
-first, where the other two ways in have to.
+**A load only ever adds.** No line removes anything. So a load runs without asking first, and
+the other two ways in must ask.
 
-**The writer never indents.** A graph holds no tree, so `format` has no indentation to pick.
-Any rule it invented would re-indent unchanged nodes whenever an edge moved a degree.
+**The writer never indents.** A graph holds no tree, so `format` has no indentation to choose.
+Any rule it invented would re-indent unchanged nodes whenever an edge changed a degree.
 
-**Every text load goes through the ordinary writes.** Never a bulk path — that exists only
-behind importing a whole graph, which is the one thing a patch must not be.
+**Every text load goes through the ordinary writes.** The bulk path serves only the whole-graph
+import, and a patch must never use it.
 
-**A file is ordered by label alone, and carries no date.** Both exist so that export, load into
-an empty store, and export again give back the same bytes.
+**A file is ordered by label alone, and carries no date.** Both rules exist so that export, load
+into an empty store, and export again give back the same bytes.
 
-**A name holding the separator or the comment character cannot be written at all.** There is no
-escape in this format, and adding one would change what every file already written means.
-Nothing rejects those characters when a node is made, so the writer has to refuse — which means
-an unwritable name is reachable from the map. Which end to fix that at is open.
+**The writer refuses a name that holds the separator or the comment character.** The format has
+no escape. Adding one would change the meaning of every file already written. Nothing rejects
+those characters when a node is made, so the writer must refuse. So a reader can reach an
+unwritable name from the map. Which end should fix that is an open question.
 
-**An import lands whole or not at all.** One transaction, because a half-applied graph is the
-one outcome worse than a rejected one — and the quota being exceeded partway is exactly how
-that would arrive.
+**An import writes everything or nothing.** It uses one transaction. A half-applied graph is
+worse than a rejected one. Exceeding the storage quota partway through is how one would happen.
 
-**A misspelling is a new node, not an error.** The format's real cost, and it cannot be caught
-here: nothing matches a name against a near miss. The plan lists every name it would create,
-and that listing is the whole defence.
+**A misspelling makes a new node, and no error.** That is the format's real cost, and this code
+cannot catch it. Nothing matches a name against a near miss. The plan lists every name it would
+create, and that list is the only defence.
 
 ## Where the numbers are
 
-How much text is read at all, in [store/index.ts](../../web/src/store/index.ts) — beside the
-two functions that read it, with the ceiling it is all that is left of. How many names or
-faults are listed before the rest become a count, and what the seed button builds, in
-[transfer.ts](../../web/src/transfer.ts). What separates names on a line, in
-[text.ts](../../web/src/store/text.ts). What a whole-graph export costs at the ceiling, in
-[storing-a-graph.md](../requirements/storing-a-graph.md).
+The limit on how much text a load reads is in [store/index.ts](../../web/src/store/index.ts). It
+sits beside the two functions that read it, and it is what remains of the old cap.
+[transfer.ts](../../web/src/transfer.ts) holds how many names or faults are listed before the rest
+become a count, and what the seed button builds. [text.ts](../../web/src/store/text.ts) holds what
+separates names on a line. [storing-a-graph.md](../requirements/storing-a-graph.md) gives what a
+whole-graph export costs at the limit.
 
 ## Records behind it
 
-| Record | What it settled |
+| Record | What it decided |
 |---|---|
 | [0021](../decisions/0021-a-graph-in-a-text-file.md) | The format, the star reading, and that a file is a patch |
 | [0046](../decisions/0046-a-line-that-hangs-from-the-line-above.md) | Indentation on the reader, the forgiving column rule, and that the writer stays flat |
 | [0022](../decisions/0022-a-graph-written-back-out.md) | The writer, the ordering that makes a round trip checkable, and the open question about the separator and the comment character |
-| [0023](../decisions/0023-the-graph-moves-through-the-page.md) | A second page rather than a panel, and two calls for the way in |
+| [0023](../decisions/0023-the-graph-moves-through-the-page.md) | A second page instead of a panel, and two clicks for a load |
 | [0030](../decisions/0030-the-graph-moves-into-the-browser.md) | That every way a graph moves is now a button, and the export is the only backup |
-| [0017](../decisions/0017-the-second-view-goes.md) | That there is one view, so a second page shares rather than copies |
-| [0018](../decisions/0018-the-graph-outlives-the-seed.md) | The JSON export this is deliberately not, and the subset default that went with the id shape |
+| [0017](../decisions/0017-the-second-view-goes.md) | That there is one view, so a second page shares code and copies none |
+| [0018](../decisions/0018-the-graph-outlives-the-seed.md) | The JSON export this file is not, and the subset default that went with the id shape |
 | [0012](../decisions/0012-the-name-is-the-node.md) | That a node is its name, which is why the file has no ids |

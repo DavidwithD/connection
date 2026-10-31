@@ -7,7 +7,7 @@
 ## Context
 The node list at `/nodes.html` orders nodes by date and filters on a date range. Version 1
 of [db.ts](../../web/src/store/db.ts) held the key, the name, the degree, the parent, and
-`islandSize` on a root. None of them records when a node was written.
+`componentSize` on a root. None of them records when a node was written.
 
 The page was first built against dates derived from each name. A shipped page cannot show an
 invented number as a fact.
@@ -23,7 +23,7 @@ upgrade.
 | Old nodes | One shared stamp, at the upgrade | Version 1 recorded nothing truer |
 | A rename | Keeps the date | A renamed node is the same node |
 | A file load | One stamp for the whole file | Those nodes did arrive together |
-| An old backup | Stamped at the load | `stampUndated` in transfer.ts |
+| An old backup | Stamped at the load | `dateUndated` in transfer.ts |
 | An index | None | It would be maintained by every write to serve one page |
 
 Two places build a node record: `createNode` in [write.ts](../../web/src/store/write.ts) and

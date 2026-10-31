@@ -32,29 +32,29 @@ One transaction, and a box of its own.
   names holding part of the graph.
 - **Reusing `Combobox`.** Its prefix search, highlight and create row all go unused, and
   fitting it would mean changing the class [0013](0013-one-box-that-grows-into-an-edge.md)
-  settled for the join panel.
-- **Editing over the pill.** Closest to the name. Cytoscape draws it on a canvas, so an HTML
+  chose for the join panel.
+- **Editing over the label box.** Closest to the name. Cytoscape draws it on a canvas, so an HTML
   input has to be held over it through every pan and zoom.
 - **A surrogate id, so keys never move.** A version bump rewriting every record. Still open,
   but rename is no longer the reason to take it.
 
 ## Consequences
 The store gains its first write that changes a key. `reparent` in
-[islands.ts](../../web/src/store/islands.ts) exports what `adopt` already did.
+[components.ts](../../web/src/store/components.ts) exports what `adopt` already did.
 
 A second place on the page now takes a typed name. A verdict row is different enough from a
 picker to be worth that. `↻ update` is modelled on `+ create “…”`, so `↵` means what it meant
 already.
 
 Renaming a hub costs one stall, at the per-record rate measured in
-[islands.ts](../../web/src/store/islands.ts). The reader cannot pan during it.
+[components.ts](../../web/src/store/components.ts). The reader cannot pan during it.
 
 ## Assumptions and unknowns
 - **A rename is rare enough that one uncapped read is affordable.** Untested past the seeded
   graph's largest hub, which has 24 edges.
 - **The verdict is advice, and the store checks again.** Another tab can claim the name between
   the read and the write, so `renameNode` tests it inside the transaction.
-- `reparent` is allowed to fail, like every index update. **Recount the islands** repairs it.
+- `reparent` is allowed to fail, like every index update. **Recount the components** repairs it.
 - Whether anyone reads `is taken` as a row they should click is untested.
 
 ## Revisit when

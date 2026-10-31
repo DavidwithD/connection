@@ -1,7 +1,7 @@
 /**
  * Every read the three pages make, from web/src/store/read.ts.
  *
- * The paging is the part worth testing. `byIsland` is keyed by size and then by name, so no
+ * The paging is the part worth testing. `byComponent` is keyed by size and then by name, so no
  * two rows share a key. A page that repeated or skipped a component would be hard to notice
  * on a graph of 267 of them.
  */
@@ -12,9 +12,9 @@ import { open } from "../web/src/store/db.js"
 import { Missing } from "../web/src/store/refused.js"
 import {
   decodeCursor,
-  fetchIslands,
-  readIslandCount,
-  readIslandPage,
+  fetchComponents,
+  readComponentCount,
+  readComponentPage,
   readAllNodes,
   readNeighbourhood,
   readNode,
@@ -23,7 +23,7 @@ import {
 } from "../web/src/store/read.js"
 
 /** Five components, each a different size, so a page order can be checked. */
-const FIVE_ISLANDS = [
+const FIVE_COMPONENTS = [
   "N1 | N2 | N3 | N4 | N5",
   "M1 | M2 | M3 | M4",
   "L1 | L2 | L3",
@@ -36,16 +36,16 @@ beforeEach(async () => {
 })
 
 /**
- * Take `islandSize` off every node, which is what a failed repair can leave behind.
+ * Take `componentSize` off every node, which is what a failed repair can leave behind.
  *
- * A record without it stays out of `byIsland` (see db.ts), so the index goes empty while both
+ * A record without it stays out of `byComponent` (see db.ts), so the index goes empty while both
  * object stores still hold the graph.
  */
-async function unstampEveryRoot(): Promise<void> {
+async function clearEveryRootSize(): Promise<void> {
   const db = await open()
   const tx = db.transaction("nodes", "readwrite")
   for (const node of await tx.store.getAll()) {
-    const { islandSize: _gone, ...rest } = node
+    const { componentSize: _gone, ...rest } = node
     await tx.store.put(rest)
   }
   await tx.done
@@ -54,36 +54,36 @@ async function unstampEveryRoot(): Promise<void> {
 describe("readOpening", () => {
   it("describes an empty graph as having nowhere to start", async () => {
     expect(await readOpening()).toEqual({
-      islands: [],
-      islandCursor: null,
-      islandCount: 0,
+      components: [],
+      componentCursor: null,
+      componentCount: 0,
     })
   })
 
   it("counts every component the graph holds", async () => {
-    await seed(FIVE_ISLANDS)
-    expect((await readOpening()).islandCount).toBe(5)
+    await seed(FIVE_COMPONENTS)
+    expect((await readOpening()).componentCount).toBe(5)
   })
 
   // The map raises its empty panel on this answer, so a graph with no stamped root is the
   // panel's one false positive. ADR 0050 weighed it against a scan of the nodes.
   it("reports nowhere to start when every root lost its stamp", async () => {
-    await seed(FIVE_ISLANDS)
-    await unstampEveryRoot()
-    expect((await readOpening()).islands).toEqual([])
+    await seed(FIVE_COMPONENTS)
+    await clearEveryRootSize()
+    expect((await readOpening()).components).toEqual([])
     expect((await readAllNodes()).length).toBe(15)
   })
 
   it("opens on the largest component", async () => {
-    await seed(FIVE_ISLANDS)
+    await seed(FIVE_COMPONENTS)
     const opening = await readOpening()
-    expect(opening.islands[0]?.size).toBe(5)
-    expect(opening.islands.map((island) => island.size)).toEqual([5, 4, 3, 2, 1])
+    expect(opening.components[0]?.size).toBe(5)
+    expect(opening.components.map((component) => component.size)).toEqual([5, 4, 3, 2, 1])
   })
 
   it("returns no cursor while one page holds every component", async () => {
-    await seed(FIVE_ISLANDS)
-    expect((await readOpening()).islandCursor).toBeNull()
+    await seed(FIVE_COMPONENTS)
+    expect((await readOpening()).componentCursor).toBeNull()
   })
 })
 
@@ -190,51 +190,51 @@ describe("searchLabels", () => {
   })
 })
 
-describe("paging the islands", () => {
+describe("paging the components", () => {
   beforeEach(async () => {
-    await seed(FIVE_ISLANDS)
+    await seed(FIVE_COMPONENTS)
   })
 
   it("hands back one page and somewhere to continue from", async () => {
-    const page = await readIslandPage(2)
-    expect(page.islands.map((island) => island.size)).toEqual([5, 4])
+    const page = await readComponentPage(2)
+    expect(page.components.map((component) => component.size)).toEqual([5, 4])
     expect(page.cursor).not.toBeNull()
   })
 
   it("walks every component once, and no component twice", async () => {
     const seen: string[] = []
-    let page = await readIslandPage(2)
-    seen.push(...page.islands.map((island) => island.id))
+    let page = await readComponentPage(2)
+    seen.push(...page.components.map((component) => component.id))
 
     while (page.cursor) {
-      page = await fetchIslands(page.cursor)
-      seen.push(...page.islands.map((island) => island.id))
+      page = await fetchComponents(page.cursor)
+      seen.push(...page.components.map((component) => component.id))
     }
 
-    expect(seen).toHaveLength(await readIslandCount())
+    expect(seen).toHaveLength(await readComponentCount())
     expect(new Set(seen).size).toBe(seen.length)
   })
 
   it("keeps the pages in descending order of size", async () => {
     const sizes: number[] = []
-    let page = await readIslandPage(2)
-    sizes.push(...page.islands.map((island) => island.size))
+    let page = await readComponentPage(2)
+    sizes.push(...page.components.map((component) => component.size))
     while (page.cursor) {
-      page = await fetchIslands(page.cursor)
-      sizes.push(...page.islands.map((island) => island.size))
+      page = await fetchComponents(page.cursor)
+      sizes.push(...page.components.map((component) => component.size))
     }
     expect(sizes).toEqual([5, 4, 3, 2, 1])
   })
 
   it("closes the cursor on the last page", async () => {
-    const page = await readIslandPage(20)
-    expect(page.islands).toHaveLength(5)
+    const page = await readComponentPage(20)
+    expect(page.components).toHaveLength(5)
     expect(page.cursor).toBeNull()
   })
 })
 
-describe("the island cursor", () => {
-  it("refuses anything readIslandPage did not produce", () => {
+describe("the component cursor", () => {
+  it("refuses anything readComponentPage did not produce", () => {
     expect(decodeCursor("not base64 at all")).toBeNull()
     expect(decodeCursor(btoa("[1]"))).toBeNull()
     expect(decodeCursor(btoa('["five","kavara"]'))).toBeNull()
@@ -244,12 +244,12 @@ describe("the island cursor", () => {
     // `btoa` throws on any character above 255. Names here are not all Latin, so the
     // cursor is encoded through UTF-8 first.
     await seed(["Zoë | Zoé", "Kavara"])
-    const page = await readIslandPage(1)
+    const page = await readComponentPage(1)
     expect(page.cursor).not.toBeNull()
     expect(decodeCursor(page.cursor!)).not.toBeNull()
   })
 
   it("returns an empty page for a cursor it cannot read", async () => {
-    expect(await fetchIslands("nonsense")).toEqual({ islands: [], cursor: null })
+    expect(await fetchComponents("nonsense")).toEqual({ components: [], cursor: null })
   })
 })

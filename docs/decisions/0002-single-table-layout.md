@@ -5,9 +5,9 @@
 **Deciders:** David HL
 
 ## Context
-DynamoDB was specified, so the store itself was never in play. What was open was how to
-lay a table out for a product that does not exist: the repo held documentation only, and
-the product is still unnamed (see the [README](../../README.md)). DynamoDB wants access
+DynamoDB was specified, so the store itself was never in play. The open question was how
+to lay a table out for a product that does not exist. The repo held documentation only. The
+product is still unnamed (see the [README](../../README.md)). DynamoDB wants access
 patterns known up front, and there were none to know.
 
 The machine also had no container runtime, so the usual `amazon/dynamodb-local` image was

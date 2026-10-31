@@ -1,203 +1,206 @@
 # Writing to the graph
 
-Four writes change the graph: a node is created, a node is deleted, two nodes are joined, two
-nodes are parted. Each one is a single transaction, and every rule that matters is a check
-inside it — so a refusal is the store declining rather than a caller having asked first. A
-fifth operation, taking a node out along with its edges, is a loop over transactions rather
-than one of its own. Every write from the page stands in one line, and every write that lands
-leaves a receipt that can reverse it.
+Four writes change the graph: create a node, delete a node, join two nodes, part two nodes.
+Each one is a single transaction. Every rule that matters is a check inside that transaction.
+So a refusal comes from the store, and a caller does not have to ask first. A fifth operation
+takes a node out along with its edges. It is a loop over transactions, with no transaction of
+its own. `Writes` runs every write from the page through one queue. Every write that succeeds
+leaves a write log entry that can reverse it.
 
-The shape behind this is [architecture.md](architecture.md); this is the write path in detail.
-Reads are the other half and live in [the-centre.md](the-centre.md).
+The shape behind this is [architecture.md](architecture.md). This page is the write path in
+detail. Reads are the other half and live in [the-centre.md](the-centre.md).
 
 ## The pieces
 
 | Name | What it is | In the code |
 |---|---|---|
-| node record | The node itself: `label`, `degree`, `parent`, `islandSize` if it is a root | `nodes` |
+| node record | The node itself: `label`, `degree`, `parent`, `componentSize` if it is a root | `nodes` |
 | edge record | One undirected edge, stored once and keyed on the pair | `edges` |
 | refusal | The graph declining a write, as distinct from the write failing | [`Refused`](../../web/src/store/refused.ts) |
 | unavailability | The store unable to answer at all, which is neither of those | [`Unavailable`](../../web/src/store/db.ts) |
-| receipt | One write on screen, carrying its undo while it stands | [`Receipt`](../../web/src/writes.ts) |
-| the line | The single chain every write waits in | [`Writes`](../../web/src/writes.ts) |
+| write log entry | One write on screen, carrying its undo while it stands | [`LogEntry`](../../web/src/writes.ts) |
+| the write queue | The single chain every write waits in | [`Writes`](../../web/src/writes.ts) |
 
 ## The five transactions
 
 All five are [write.ts](../../web/src/store/write.ts).
 
-**Creating a node** holds one store, and that narrowness is the point: there is no counter to
-bump and no edge to touch. The name is checked inside the transaction, which is what makes the
-sentence the graph's own; the unique key underneath is the backstop, and the engine's
-`ConstraintError` maps to the same sentence — a net nobody catches is not a net.
+**Creating a node** holds one store. That is deliberate: there is no counter to raise and no
+edge to touch. The transaction checks the name itself, so the refusal sentence comes from the
+graph. The unique key underneath is the backstop. The engine's `ConstraintError` maps to the
+same sentence, so a caller always gets a refusal it can read.
 
-There is no id to mint. The name is the key ([finding-a-node.md](finding-a-node.md)), so the
-random id, the shape that recorded whether a node was made by hand, and the item that held the
-name against being claimed twice all go together.
+There is no id to mint. The name is the key ([finding-a-node.md](finding-a-node.md)). So three
+things went together. One was the random id. One was the id shape that recorded whether a node
+was made by hand. One was the item that stopped a name being claimed twice.
 
-`islandSize` goes on at creation, uniquely among writes: a node with no edges is a component of
-one, and that is the single case where the answer is known before the write rather than walked
-afterwards.
+Only the create sets `componentSize` at the time of the write. A node with no edges is a
+component of one. That is the single case where the size is known before the write, with no
+walk afterwards.
 
-**Deleting a node** refuses unless `degree` is zero. That condition used to be load-bearing —
-an edge was stored twice, so taking a node holding one stranded the other half where nothing
-could reach it. An edge is one record now, so the hazard is gone and the refusal stays anyway:
-it is reader-visible, and the undo is built on it. A node something else has been joined to
-since is no longer only that write's doing.
+**Deleting a node** refuses unless `degree` is zero. That condition used to protect the data.
+An edge was stored twice, so deleting a node that held one left the other half where nothing
+could reach it. An edge is one record now, so that hazard is gone. The refusal stays anyway,
+because readers can see it and the undo is built on it. A node that something else joined to
+since the write is no longer only that write's doing.
 
-**Joining two nodes** writes one edge record and raises two degrees, and then merges the two
-components in the same transaction ([the-islands.md](the-islands.md)). It is one transaction
-because `degree` is how a reader decides whether it has seen all of a node's edges — an edge
-that lands without its increment, or an increment that lands twice, makes the store misdescribe
-itself.
+**Joining two nodes** writes one edge record and raises two degrees. Then it merges the two
+components in the same transaction ([the-components.md](the-components.md)). It is one
+transaction because a reader uses `degree` to decide whether it has seen all of a node's
+edges. An edge written without its increment, or an increment written twice, makes the store
+misdescribe itself.
 
 The edge is one record because a `multiEntry` index over its two ends reaches it from either
-of them, which is the whole of what the second copy was buying.
+end. That index does all the work the second copy did.
 
-A node joined to itself is refused before anything is read. The graph has no self-edges, and
-guarding it in one place covers every caller.
+The join refuses a node joined to itself before it reads anything. The graph has no
+self-edges, and one guard in one place covers every caller.
 
-**Renaming a node** is a delete and a re-add, because the name is the key. Both stores are held
-so the node record and every edge on it move together; a rename split across transactions would
-leave two names each holding some of the edges. No degree changes anywhere, since each
-neighbour loses one edge and gains one. The edge read is the one that is not capped: an edge
-left behind would name a node the store has not got.
+**Renaming a node** is a delete and a re-add, because the name is the key. The rename holds
+both stores, so the node record and every edge on it move together. A rename split across
+transactions could leave two names, each holding some of the edges. No degree changes, since
+each neighbour loses one edge and gains one. This edge read has no cap. An edge left behind
+would name a node the store does not hold.
 
-The components are untouched, which is what makes it cheap. The edges afterwards are the edges
-before, so `reparent` moves the `parent` pointers naming the old key and nothing is walked.
+The rename leaves the components unchanged, which keeps it cheap. The edges afterwards are the
+edges before. So `reparent` moves the `parent` pointers that name the old key, and nothing is
+walked.
 
 **Parting two nodes** deletes the edge and lowers both degrees, neither below zero. A degree
-short of its edges is the one state a reader cannot detect — the node simply stops asking for
-graph that is there. The component it may have divided is recounted *after* the transaction,
-because that is a walk.
+lower than its edge count is the one state a reader cannot detect. The node simply stops
+asking for edges that exist. The part may have split a component. That component is recounted
+*after* the transaction, because the recount is a walk.
 
 ## A refusal is thrown where it is decided
 
-Each check throws the sentence it means, at the point it fails. There is no table of reasons
-and no position to keep in step with it — which was a real hazard: a reason at the wrong index
-was a confident sentence about the wrong thing, and nothing in the repo would have caught it.
+Each check throws its sentence at the point it fails. There is no table of reasons, and no
+position to keep in step with one. A table was a real hazard. A reason at the wrong index gave
+a confident sentence about the wrong thing, and nothing in the repo would have caught it.
 
-Two of those sentences are exported as constants — a name being taken, and a pair already being
-joined — because a bulk load counts them as skipped rather than as faults, and it compares
-against the string itself rather than a copy of it.
+Two of those sentences are exported as constants: a name already taken, and a pair already
+joined. A bulk load counts them as skipped rather than as faults. It compares against the
+exported string itself, and holds no copy of it.
 
-A third type sits beside `Refused`. `Unavailable` is the store being unable to answer: the
-origin's quota exceeded, a transaction aborted from outside, another tab holding the database
-at a different version, or a browser that will not store anything at all. A refusal is an
-answer to act on; these are not, and a page has to be able to tell "that name is taken" from
-"there is nowhere to put it".
+A third type sits beside `Refused`. `Unavailable` means the store cannot answer. One cause is an
+exceeded origin quota. Others are a transaction aborted from outside, or another tab holding
+the database at a different version. The last is a browser that stores nothing at
+all. A refusal is an answer the page can act on, and these are not. A page has to tell "that
+name is taken" from "there is nowhere to put it".
 
 ## Taking a node out with its edges
 
-The delete above will not take a node holding an edge, so this empties it first: read what it
-is joined to, delete each edge, lower each neighbour's degree, and take the node itself in the
-same transaction as the last of them.
+The delete above refuses a node holding an edge, so this operation empties the node first. It
+reads what the node is joined to, deletes each edge and lowers each neighbour's degree. It
+deletes the node in the same transaction as the last edge.
 
-**Once at the end, not once per edge.** Each part used to recount the components behind it, so
-taking out a node at the read ceiling recomputed a component per edge to reach a state one
-recount produces directly — and almost all of that work was spent discovering that nothing had
-split. The index is knowingly stale in between, which is the trade
-[0024](../decisions/0024-taking-a-node-out-with-its-edges.md) already accepts.
+**Once at the end, not once per edge.** Each part used to recount the components behind it. A
+node at the read ceiling then cost one component recount per edge. One recount produces the
+same state directly. Almost all of that work only found that nothing had split. The index is
+knowingly stale in between. [0024](../decisions/0024-taking-a-node-out-with-its-edges.md)
+already accepts that trade.
 
-The component is captured on the first round, while the node is still there. Read afterwards, a
-deleted root leaves every chain ending at a record that is gone, and the size needed to name a
-new root has gone with it.
+The loop captures the component on the first round, while the node still exists. Read
+afterwards, a deleted root leaves every chain ending at a record that is gone. The size needed
+to name a new root is gone with it.
 
-The edges are re-read each round rather than once at the top, because the read stops at a
-ceiling and a node past it hands back an instalment. It terminates because every round parts at
-least one edge and nothing here adds any; a join arriving mid-run is more work, not a loop that
-never closes.
+The loop re-reads the edges each round, because the read stops at a ceiling. A node past the
+ceiling returns only part of its edges each time. The loop ends because every round parts at
+least one edge and nothing here adds any. A join that arrives mid-run adds work, and the loop
+still ends.
 
-## One line, and a way back
+## One queue, and a way back
 
-Every write from the page goes down a single chain, one at a time
-([writes.ts](../../web/src/writes.ts)). The reason changed and the chain did not. It was there
-because two transactions reaching for the totals item at once made the store cancel one of
-them, with no failed condition for the page to read; that item no longer exists, and IndexedDB
-serialises overlapping transactions anyway. What is left is worth keeping on its own: two rapid
-gestures land in the order they were made, and a receipt waits its turn at no cost anyone sees.
+Every write from the page goes through a single chain, one at a time
+([writes.ts](../../web/src/writes.ts)). The reason for the chain changed, and the chain stayed.
+It was added because two transactions on the totals item at once made the store cancel one of
+them. The page had no failed condition to read. That item no longer exists, and IndexedDB
+serialises overlapping transactions anyway. The chain still has a use. Two fast gestures write
+in the order they were made. A write log entry waits its turn, and nobody sees the delay.
 
-Two tabs still drift. This only stops one reader fighting themselves, and nothing tells the
-other tab anything ([storing-a-graph.md](../requirements/storing-a-graph.md)).
+Two tabs still go out of step. The chain only stops one reader's writes from colliding with
+each other. Nothing tells the other tab anything
+([storing-a-graph.md](../requirements/storing-a-graph.md)).
 
-The line lives outside the panel because the map writes too: taking a node out is fired from the
-centre and never touches an end of the panel. A queue a second writer cannot reach is a queue
-that does not do its job.
+The queue lives outside the panel because the map writes too. The map fires the delete of a
+node with its edges from the selected node, and that write never touches an end of the panel.
+A queue that a second writer cannot reach would not order that writer's writes.
 
-The map fires a join as well, from shift and a drag between two nodes
-([0038](../decisions/0038-a-drag-that-joins-two-nodes.md)). Its undo parts the pair, which is
-the mirror of a part's undo joining it again. Both reach the map through one function, so a pair
-a drag drew and a pair an undo restored are drawn the same way.
+The map also fires a join, from a shift-drag between two nodes
+([0038](../decisions/0038-a-drag-that-joins-two-nodes.md)). Its undo parts the pair. That
+mirrors a part's undo, which joins the pair again. Both reach the map through one function. So
+the map draws a pair from a drag and a pair from an undo the same way.
 
-Creating a name and joining it are two transactions, not one
-([join.ts](../../web/src/join.ts)). A create that lands followed by a join that is refused
-leaves a real node with no edges — reachable by name, attached to nothing.
+Creating a name and joining it are two transactions ([join.ts](../../web/src/join.ts)). A
+create that succeeds followed by a refused join leaves a real node with no edges. That node is
+reachable by name and attached to nothing.
 
-Undo runs that order backwards: the edge parts, then the node it brought with it goes, because
-the store will not delete a node that still has edges. If something else has been joined to
-that node since, the delete is refused and the receipt says the node was left in place. That is
-right — the node is no longer only this write's doing, and the edge is gone, which is what was
-asked for.
+Undo runs that order backwards. The edge parts first, then the node the write created goes,
+because the store will not delete a node that still has edges. Something else may have joined
+to that node since. Then the delete is refused, and the write log entry says the node was left
+in place. That is the right result. The node is no longer only this write's doing, and the
+edge is gone, as asked.
 
-The anchor is never undone. It is the thing being worked from, and reversing it under the box
-still naming it would be a stranger result than leaving it.
+The undo never removes the start name's node. The user is working from it. Reversing it while
+the box still names it would be a stranger result than leaving it.
 
 ## What has to stay true
 
-**A degree and its edges move together.** The edge and both counts in one transaction, always.
-`missing` is degree minus the edges loaded, so an edge drawn without raising both degrees makes
-an unfinished node report that it is finished, and a part without both decrements makes a
-finished one claim graph that is gone.
+**A degree and its edges move together.** The edge and both counts are in one transaction,
+always. `missing` is degree minus the edges loaded. An edge drawn without raising both degrees
+makes an unfinished node report that it is finished. A part without both decrements makes a
+finished node claim edges that are gone.
 
 **A degree never goes below zero.** A negative degree makes `missing` meaningless for that node
 for the rest of the graph's life.
 
-**A node leaves only once nothing is joined to it.** The store's delete and
-[`World.forget`](../../web/src/world.ts) refuse alike, and the loop above is the only thing
-allowed to get around it — by parting the edges first, not by relaxing the rule.
+**A node is deleted only once nothing is joined to it.** The store's delete and
+[`World.forget`](../../web/src/world.ts) both refuse otherwise. The loop above is the only code
+allowed past that rule. It parts the edges first, and the rule stays as it is.
 
-**No end of the panel holds a node the store has lost.** A node goes two ways, and
-[`JoinPanel.forget`](../../web/src/join.ts) is called on both: an undo deleting what its write
-created, and the map's own delete from the centre. A dead name left in an end fires its next
-pick at an id nothing carries.
+**No end of the panel holds a node the store has lost.** A node is deleted in two ways, and
+both call [`JoinPanel.forget`](../../web/src/join.ts). One is an undo deleting what its write
+created. The other is the map's own delete of the selected node. A deleted name left in an end
+sends its next pick to an id the store no longer holds.
 
-**Nothing inside a transaction awaits anything but the store.** A transaction commits the
-moment the queue drains with nothing pending, so one timer or one call to anything else ends it
-mid-write. Every function here is store calls from open to done.
+**Nothing inside a transaction awaits anything but the store.** A transaction commits as soon
+as its queue drains with nothing pending. So one timer, or one call to anything else, ends it
+mid-write. Every function here makes only store calls from open to done.
 
 **A refusal is raised after the transaction, never inside it.** A check decides where the
-reason is known, but the throw waits. Throwing mid-transaction leaves `tx.done` settling into
-nobody's hands, and it surfaces as an unhandled rejection rather than as the refusal it is. So
-each write decides, finishes the transaction, and then says. Nothing has been written on any of
-those paths, so there is nothing to undo.
+reason is known, and the throw waits. A throw mid-transaction leaves `tx.done` to resolve with
+no handler. It then surfaces as an unhandled rejection instead of as a refusal. So each write
+decides, finishes the transaction, and then throws. Nothing has been written on any of those
+paths, so there is nothing to undo.
 
-**The graph is the transaction; the split is derived.** A part is followed by a recount that
-runs outside it and is allowed to fail, because a recount that cannot be recorded must not undo
-a part that already happened. A merge is not: it is two record updates, so it is inside.
+**The graph is the transaction, and the split is derived.** A recount follows each part. The
+recount runs outside the part's transaction and is allowed to fail. A recount that cannot be
+recorded must not undo a part that already happened. A merge is two record updates, so it runs
+inside the transaction.
 
 ## Where the numbers are
 
-Beside the code that reads them, once. How long a receipt stays and how many are kept, in
-[writes.ts](../../web/src/writes.ts) — with the reason half a minute replaced the five seconds
-it started as. The ceiling on how many edges one read returns, in
-[read.ts](../../web/src/store/read.ts). How much text one file may carry, in
-[store/index.ts](../../web/src/store/index.ts). Records per transaction and the budget for one
-recount, in [islands.ts](../../web/src/store/islands.ts).
+Each number lives once, beside the code that reads them.
+[writes.ts](../../web/src/writes.ts) holds how long a write log entry stays and how many are
+kept. It also gives the reason half a minute replaced the first five seconds.
+[read.ts](../../web/src/store/read.ts) holds the ceiling on how many edges one read returns.
+[store/index.ts](../../web/src/store/index.ts) holds how much text one file may carry.
+[components.ts](../../web/src/store/components.ts) holds the records per transaction and the
+budget for one recount.
 
-Each carries the reason for its value in a comment. Copying one here would make this the stale
-copy.
+Each carries the reason for its value in a comment. A copy here would go stale.
 
 ## Records behind it
 
-| Record | What it settled |
+| Record | What it decided |
 |---|---|
 | [0009](../decisions/0009-the-first-write-outside-the-seed.md) | One edge is one transaction, and why the degrees ride with it |
 | [0010](../decisions/0010-writing-to-the-graph-from-the-browser.md) | Writes from the page at all; ids not labels; one write in flight |
 | [0011](../decisions/0011-taking-a-write-back.md) | That every write is reversible, and the order an undo runs in |
 | [0030](../decisions/0030-the-graph-moves-into-the-browser.md) | One record per edge, no totals item, and a check where a condition was |
 | [0013](../decisions/0013-one-box-that-grows-into-an-edge.md) | The panel that fires the writes, and why `↵` is enough |
-| [0019](../decisions/0019-every-island-has-an-address.md) | That the island index is derived, and so may lag behind a part |
+| [0019](../decisions/0019-every-component-has-an-address.md) | That the component index is derived, and so may lag behind a part |
 | [0024](../decisions/0024-taking-a-node-out-with-its-edges.md) | Edge by edge rather than one transaction, and what a stopped run leaves |
-| [0028](../decisions/0028-where-a-chained-name-lands.md) | Which end a chained name lands in, and what moving the anchor spends |
+| [0028](../decisions/0028-where-a-chained-name-lands.md) | Which end a chained name goes in, and what moving the start name costs |
 | [0036](../decisions/0036-a-click-that-writes-nothing.md) | That the map's click fires no join, and a key is what does |
 | [0038](../decisions/0038-a-drag-that-joins-two-nodes.md) | That a drag on the map fires one, and where its arrow is drawn |
 | [0040](../decisions/0040-a-node-under-a-new-name.md) | That a rename is one transaction, needs no walk, and gets its own box |

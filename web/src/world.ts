@@ -7,12 +7,12 @@
 import {
   LONG_EDGE,
   Occupancy,
-  SEAT_SEP,
+  NODE_SEP,
   SQUEEZE_SEP,
   distance,
-  ringSlots,
+  circleSlots,
   rotationFor,
-  seat,
+  freeSpots,
   touches,
   type Placed,
   type Point,
@@ -44,27 +44,27 @@ export interface NodeMeta {
 export interface Absorbed {
   nodes: WorldNode[]
   edges: [string, string][]
-  /** Neighbours that found no free spot. Kept, not discarded. See `seatPending`. */
-  unseated: NodeMeta[]
+  /** Neighbours that found no free spot. Kept, not discarded. See `placePending`. */
+  unplaced: NodeMeta[]
 }
 
 /** A new empty result each time. The caller owns what it is given. */
-const nothing = (): Absorbed => ({ nodes: [], edges: [], unseated: [] })
+const nothing = (): Absorbed => ({ nodes: [], edges: [], unplaced: [] })
 
 /**
- * How far a new island is kept from anything already placed.
+ * How far a new component is kept from anything already placed.
  *
  * Sized against LONG_EDGE, not against a node. That is the distance at which the renderer
  * stops drawing a line and draws two stubs instead. Any closer and a line could be drawn
- * between two islands that share no edge. The line would be correct, but the reader could
+ * between two components that share no edge. The line would be correct, but the reader could
  * not see that there is a gap.
  */
 const CLEARANCE = LONG_EDGE
 
 /** How far each candidate position steps out and around. The values are approximate. */
-const BERTH_STEP = CLEARANCE * 0.55
-const BERTH_TURN = 2.399963 // the golden angle, so no two candidates share a bearing
-const BERTH_STEPS = 96
+const SPIRAL_STEP = CLEARANCE * 0.55
+const SPIRAL_TURN = 2.399963 // the golden angle, so no two candidates share a bearing
+const SPIRAL_STEPS = 96
 
 export class World {
   private readonly nodes = new Map<string, WorldNode>()
@@ -120,36 +120,37 @@ export class World {
   }
 
   /**
-   * Temporary positions near a node, for ghosts. These are not seats.
+   * Temporary positions near a node, for off-screen markers. These are not placed positions.
    *
-   * Real gaps first, at the tighter separation, because a ghost draws at neighbour size and
-   * not at accent size. Anything with no gap still gets a position: a crowded area is what
-   * puts a neighbour out of drawing range in the first place, so a ghost that gave up there
-   * would be missing from every case it exists for.
+   * Real gaps first, at the tighter separation, because an off-screen marker draws at neighbour
+   * size and not at accent size. Anything with no gap still gets a position: a crowded area is what
+   * puts a neighbour out of drawing range in the first place, so an off-screen marker that gave up
+   * there would be missing from every case it exists for.
    *
-   * Nothing is written to the occupancy grid. That is what keeps these from being seats, and
+   * Nothing is written to the occupancy grid. That is what keeps these from being placed positions, and
    * what stops `nearestTo` returning one as the centre node.
    *
-   * `slot` is how much room one ghost needs. Only the renderer knows, because a ghost draws
-   * as a name. It sets how many fit on a ring, and so how many rings are used.
+   * `slot` is how much room one off-screen marker needs. Only the renderer knows, because an
+   * off-screen marker draws as a name. It sets how many fit on a ring, and so how many rings are
+   * used.
    */
   slotsAround(id: string, count: number, slot: Slot, maxRadius: number): Point[] {
     const node = this.nodes.get(id)
     if (!node || count <= 0) return []
-    const seed = `ghost:${id}`
-    // Two reasons a gap `seat` found is no good here. It walks outward until it has the count
-    // and knows nothing about where the screen ends, so one beyond the reach is a doorway
-    // nobody can open. And it spaces by a scalar sized for discs, while these draw as names —
-    // so two gaps far enough apart to be separate seats can still bury one another as pills.
-    // Both drop out, and `ringSlots` refills from rings that are inside the reach.
+    const seed = `offscreen:${id}`
+    // Two reasons a gap `freeSpots` found is no good here. It walks outward until it has the count
+    // and knows nothing about where the screen ends, so one beyond the reach is an off-screen
+    // marker nobody can open. And it spaces by a scalar sized for discs, while these draw as names
+    // — so two gaps far enough apart to be separate free spots can still bury one another as label
+    // boxes. Both drop out, and `circleSlots` refills from rings that are inside the reach.
     const gaps: Point[] = []
-    for (const point of seat(node, count, this.occupancy, seed, SQUEEZE_SEP)) {
+    for (const point of freeSpots(node, count, this.occupancy, seed, SQUEEZE_SEP)) {
       if (distance(node, point) > maxRadius) continue
       if (gaps.some((other) => touches(point, other, slot))) continue
       gaps.push(point)
     }
     if (gaps.length >= count) return gaps
-    return [...gaps, ...ringSlots(node, count - gaps.length, seed, gaps, slot, maxRadius)]
+    return [...gaps, ...circleSlots(node, count - gaps.length, seed, gaps, slot, maxRadius)]
   }
 
   /**
@@ -157,36 +158,36 @@ export class World {
    *
    * Every other node gets its position from a neighbour. A searched node has no neighbour on
    * the map yet, so its position can only be based on the camera. The one rule left is that
-   * it must not land on top of something already placed. `seat` enforces that, so this asks
-   * `seat` for a single spot around a point instead of around a parent node.
+   * it must not land on top of something already placed. `freeSpots` enforces that, so this asks
+   * `freeSpots` for a single spot around a point instead of around a parent node.
    */
-  landing(near: Point, seed: string): Point {
-    return seat(near, 1, this.occupancy, seed, SEAT_SEP)[0] ?? near
+  nearestFreeSpot(near: Point, seed: string): Point {
+    return freeSpots(near, 1, this.occupancy, seed, NODE_SEP)[0] ?? near
   }
 
   /**
    * A position with room around it, for setting down a whole component.
    *
-   * `landing` is the answer for a single node arriving alone. It takes the first clear spot
+   * `nearestFreeSpot` is the answer for a single node arriving alone. It takes the first clear spot
    * near the camera, which suits a node that was searched for and is read one hop at a time.
-   * An island is different. It is the first node of a neighbourhood that grows as the reader
-   * walks it. Started from a gap between two nodes of another island, it would grow through
+   * A component is different. It is the first node of a neighbourhood that grows as the reader
+   * walks it. Started from a gap between two nodes of another component, it would grow through
    * them, and two unconnected regions would share one patch of ground with no way to tell
    * which node belongs to which. Positions are never reassigned, so it would stay that way.
    *
    * So this asks for room, not for a gap. Candidates run outward along a spiral from the
-   * origin, and the first one with CLEARANCE clear on all sides wins. That gives each island
+   * origin, and the first one with CLEARANCE clear on all sides wins. That gives each component
    * its own space, including the space its first ring will need. If no candidate is clear,
-   * the island is placed beyond everything already on the map. An island drawn far away is
+   * the component is placed beyond everything already on the map. A component drawn far away is
    * still readable; one drawn on top of another is not.
    */
-  berth(seed: string): Point {
+  freeSpot(seed: string): Point {
     const rotation = rotationFor(seed)
-    for (let step = 0; step < BERTH_STEPS; step++) {
+    for (let step = 0; step < SPIRAL_STEPS; step++) {
       // Angle and radius grow together, so the candidates spread around the origin instead
       // of running outward along one bearing.
-      const angle = rotation + step * BERTH_TURN
-      const radius = CLEARANCE + step * BERTH_STEP
+      const angle = rotation + step * SPIRAL_TURN
+      const radius = CLEARANCE + step * SPIRAL_STEP
       const point = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }
       if (!this.occupancy.within(point.x, point.y, CLEARANCE).length) return point
     }
@@ -235,7 +236,7 @@ export class World {
    * Used by both the first pass and the second. They differ only in the separation they ask
    * for and in where the candidates came from.
    */
-  private seatAndLink(
+  private placeAndLink(
     parent: WorldNode,
     candidates: NodeMeta[],
     separation: number,
@@ -245,9 +246,9 @@ export class World {
     // room runs out.
     fresh.sort((a, b) => b.degree - a.degree || (a.id < b.id ? -1 : 1))
 
-    const seats = seat(parent, fresh.length, this.occupancy, parent.id, separation)
+    const spots = freeSpots(parent, fresh.length, this.occupancy, parent.id, separation)
     const nodes: WorldNode[] = []
-    seats.forEach((point, i) => {
+    spots.forEach((point, i) => {
       const meta = fresh[i]
       if (!meta) return
       nodes.push(this.place(meta, point))
@@ -259,11 +260,11 @@ export class World {
       if (this.link(parent.id, meta.id)) edges.push([parent.id, meta.id])
     }
 
-    return { nodes, edges, unseated: fresh.slice(seats.length) }
+    return { nodes, edges, unplaced: fresh.slice(spots.length) }
   }
 
-  private remember(parentId: string, unseated: NodeMeta[]): void {
-    if (unseated.length) this.pending.set(parentId, unseated)
+  private remember(parentId: string, unplaced: NodeMeta[]): void {
+    if (unplaced.length) this.pending.set(parentId, unplaced)
     else this.pending.delete(parentId)
   }
 
@@ -277,8 +278,8 @@ export class World {
     this.markExpanded(parentId)
     if (!parent) return nothing()
 
-    const result = this.seatAndLink(parent, neighbours, SEAT_SEP)
-    this.remember(parentId, result.unseated)
+    const result = this.placeAndLink(parent, neighbours, NODE_SEP)
+    this.remember(parentId, result.unplaced)
     return result
   }
 
@@ -286,13 +287,13 @@ export class World {
    * Retry the neighbours the first pass could not fit, at a tighter separation. This needs
    * no read: the metadata was kept in `pending`.
    */
-  seatPending(parentId: string, separation: number = SQUEEZE_SEP): Absorbed {
+  placePending(parentId: string, separation: number = SQUEEZE_SEP): Absorbed {
     const parent = this.nodes.get(parentId)
     const waiting = this.pending.get(parentId)
     if (!parent || !waiting?.length) return nothing()
 
-    const result = this.seatAndLink(parent, waiting, separation)
-    this.remember(parentId, result.unseated)
+    const result = this.placeAndLink(parent, waiting, separation)
+    this.remember(parentId, result.unplaced)
     return result
   }
 
@@ -397,7 +398,7 @@ export class World {
       this.pending.delete(from)
       this.pending.set(to, waiting)
     }
-    // The renamed node may itself be waiting for a seat under another parent. There it is
+    // The renamed node may itself be waiting for a free spot under another parent. There it is
     // held as metadata rather than as a placed node.
     for (const list of this.pending.values()) {
       const at = list.findIndex((meta) => meta.id === from)

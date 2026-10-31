@@ -5,8 +5,8 @@
 **Deciders:** David HL
 
 ## Context
-[0007](0007-a-table-for-the-graph.md) gave the graph its own table, which is what lets the
-seed clear it by dropping it — free, while the seed was the only writer.
+[0007](0007-a-table-for-the-graph.md) gave the graph its own table, so the seed clears it by
+dropping the table. That cost nothing while the seed was the only writer.
 
 [0010](0010-writing-to-the-graph-from-the-browser.md) ended that. Nodes are made from the
 page now, and 688 had accumulated beside 600 seeded ones. Re-seeding would take both, and
@@ -38,12 +38,13 @@ The graph comes out to a file, and the table is rebuilt from it.
   emulator supports unevenly.
 
 ## Consequences
-The id shape is now load-bearing. It was free — `nodeId` only slices a prefix — and is now
-the sole mark of whose work an item is, so both shapes live in `keys.ts` where neither can
-move alone.
+The code now depends on the id shape. Before, `nodeId` only sliced a prefix. It is now the
+sole mark of whose work an item is. So both shapes live in `keys.ts`, where neither can
+change alone.
 
-A subset of a graph is not a graph. So the export corrects on the way out: edges with one
-end outside it go, claims on absent names stay behind, `degree` is rewritten to match.
+A subset of a graph can hold edges to nodes outside it, so the export corrects it. Edges with
+one end outside go, and claims on absent names stay behind. The export rewrites `degree` to
+match.
 
 `bulk.ts` shares the batched write and the drop with the seed rather than copying them.
 

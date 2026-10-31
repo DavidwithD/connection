@@ -53,22 +53,22 @@ const state = (page) =>
       // The panel shows one input until a name is picked, then two.
       grown: !document.querySelector("#far-end").hidden,
       focus: document.activeElement?.id ?? "—",
-      // A receipt per write that landed. Its text is both names and the undo button.
-      receipts: [...document.querySelectorAll("#receipts > *")].map((chip) =>
+      // A write log entry per write that landed. Its text is both names and the undo button.
+      logEntries: [...document.querySelectorAll("#write-log > *")].map((chip) =>
         chip.textContent.trim(),
       ),
-      // How many of those writes created a node. The panel marks the receipt when the pick
+      // How many of those writes created a node. The panel marks the write log entry when the pick
       // was a create, so this separates "created and joined" from "joined to what was there"
       // without having to count the store.
-      fresh: document.querySelectorAll("#receipts > [data-new]").length,
+      fresh: document.querySelectorAll("#write-log > [data-new]").length,
       status: document.querySelector("#status")?.textContent?.trim() ?? "",
     }
   })
 
 const check = (name, seen, want) => {
-  // `receipts` is asked for as a count, because that is the readable way to write the
+  // `logEntries` is asked for as a count, because that is the readable way to write the
   // expectation. Everything else compares as it is read.
-  const flat = { ...seen, receipts: seen.receipts.length }
+  const flat = { ...seen, logEntries: seen.logEntries.length }
   const wrong = Object.keys(want).filter((key) => String(flat[key]) !== String(want[key]))
   if (wrong.length) {
     failures++
@@ -80,15 +80,15 @@ const check = (name, seen, want) => {
     console.log(`  ✓ ${name}`)
   }
   console.log(
-    `      near="${seen.near}" far="${seen.far}" caret=${seen.focus} receipts=${seen.receipts.length}`,
+    `      near="${seen.near}" far="${seen.far}" caret=${seen.focus} logEntries=${seen.logEntries.length}`,
   )
 }
 
 /**
  * Empty both inputs and shrink the panel back to one, the way a reader would.
  *
- * Two presses of Escape: the first closes the row list, the second empties the box. Receipts
- * are left alone. They outlive the pair that made them, which is the point of them.
+ * Two presses of Escape: the first closes the row list, the second empties the box. Write log
+ * entries are left alone. They outlive the pair that made them, which is the point of them.
  */
 const reset = async (page) => {
   await page.locator("#near").focus()
@@ -136,7 +136,7 @@ async function main() {
     near: "alpha",
     far: "",
     grown: true,
-    receipts: 0,
+    logEntries: 0,
   })
 
   console.log(`\n2. plain ↵ completes the pair`)
@@ -146,7 +146,7 @@ async function main() {
     near: "alpha",
     far: "",
     focus: "far",
-    receipts: 1,
+    logEntries: 1,
   })
 
   console.log(`\n3. ⌘↵ on a name that does NOT exist`)
@@ -156,7 +156,7 @@ async function main() {
     near: "gamma",
     far: "",
     focus: "far",
-    receipts: 2,
+    logEntries: 2,
     // Both writes so far named a node that did not exist, so both created one.
     fresh: 2,
   })
@@ -169,7 +169,7 @@ async function main() {
     near: "delta",
     far: "",
     focus: "far",
-    receipts: 3,
+    logEntries: 3,
     fresh: 3,
   })
 
@@ -180,7 +180,7 @@ async function main() {
     near: "epsilon",
     far: "",
     focus: "far",
-    receipts: 4,
+    logEntries: 4,
     fresh: 4,
   })
 
@@ -188,13 +188,13 @@ async function main() {
   // one. A name that already exists has nothing to create, and the same key must join to the
   // node that is there rather than refuse or duplicate it.
   console.log(`\n6. ⌘↵ on a name that DOES exist`)
-  console.log(`   expected: joined to the existing alpha, nothing created — receipt not marked new`)
+  console.log(`   expected: joined to the existing alpha, nothing created — entry not marked new`)
   await enter(page, "far", "alpha", "Meta+Enter")
   check("Meta+Enter joins without creating when the name exists", await state(page), {
     near: "alpha",
     far: "",
     focus: "far",
-    receipts: 5,
+    logEntries: 5,
     // Still 4. The fifth write joined to a node that was already there.
     fresh: 4,
   })
@@ -224,7 +224,7 @@ async function main() {
   console.log(`   expected: swallowed — no join, and the typed text stays in the box`)
   await reset(page)
   await enter(page, "near", "kappa", "Enter")
-  const was = (await state(page)).receipts.length
+  const was = (await state(page)).logEntries.length
   await page.locator("#far").focus()
   await page.keyboard.type("lambda", { delay: 20 })
   await page.waitForTimeout(300)
@@ -244,19 +244,19 @@ async function main() {
   check("a composing Enter writes nothing", composing, {
     near: "kappa",
     far: "lambda",
-    receipts: was,
+    logEntries: was,
   })
 
-  // ADR 0049 keeps the receipt's name button as a way into the panel. The reader clicks it
+  // ADR 0049 keeps the write log entry's name button as a way into the panel. The reader clicks it
   // inside the panel, so the name and the caret move where the reader is looking.
-  console.log(`\n9. a receipt's name button, on an empty panel`)
+  console.log(`\n9. an entry's name button, on an empty panel`)
   console.log(`   expected: the name lands in the near input, and the caret waits in the far one`)
   await reset(page)
-  const button = page.locator("#receipts button.pick").first()
+  const button = page.locator("#write-log button.pick").first()
   const named = (await button.textContent()).trim()
   await button.click()
   await page.waitForTimeout(300)
-  check("the receipt fills the panel", await state(page), {
+  check("the entry fills the panel", await state(page), {
     near: named,
     far: "",
     grown: true,
@@ -265,23 +265,23 @@ async function main() {
 
   // ADR 0049: a click on the centre copies its name and leaves the panel alone. The caret
   // stays off the inputs, so the arrow keys still reach the map.
-  console.log(`\n10. a click on the centre`)
+  console.log(`\n10. a click on the selected`)
   console.log(`   expected: both inputs stay empty, and the caret is in neither`)
   await reset(page)
   await still(page)
-  const centre = await reachable(page, [read(await frame(page)).centre].filter(Boolean))
-  if (centre) {
-    await clickOn(page, centre.at)
+  const selected = await reachable(page, [read(await frame(page)).selected].filter(Boolean))
+  if (selected) {
+    await clickOn(page, selected.at)
     await page.waitForTimeout(300)
     const seen = await state(page)
-    check("the centre's click leaves the panel alone", seen, { near: "", far: "", grown: false })
+    check("the selected node's click leaves the panel alone", seen, { near: "", far: "", grown: false })
     if (seen.focus === "near" || seen.focus === "far") {
       failures++
       console.log(`      ✗ the caret went into the ${seen.focus} input`)
     }
   } else {
     failures++
-    console.log(`  ✗ no centre the pointer can reach`)
+    console.log(`  ✗ no selected node the pointer can reach`)
   }
 
   await browser.close()

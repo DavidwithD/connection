@@ -7,30 +7,30 @@
  *
  * Three things Cytoscape supplied are written out here: the draw, the pick, and the camera.
  * Its `z-index` becomes the order the passes in `draw` run in. Its stylesheet becomes the
- * branches inside them. Its ids stay, because a ghost's id is what the page reads a node back
- * out of.
+ * branches inside them. Its ids stay, because an off-screen marker's id is what the page reads a
+ * node back out of.
  *
  * What the page may call is `MapSurface` in map.ts. Nothing outside that reaches the canvas.
  */
 import {
-  CENTRE_NAME,
-  CENTRE_TEXT,
-  DISSOLVE_MS,
-  FLIGHT_MAX,
-  FLIGHT_MIN,
-  FLIGHT_SPEED,
-  GHOST_MARGIN,
+  SELECTED_NAME,
+  SELECTED_TEXT,
+  FADE_MS,
+  MOVE_MAX_MS,
+  MOVE_MIN_MS,
+  MOVE_SPEED,
+  MARKER_MARGIN,
   HOVER_NAME,
   LINE_STEP,
-  PILL_FONT,
-  PILL_HALO,
-  PILL_PAD,
-  RING_NAME,
-  RING_TEXT,
+  LABEL_FONT,
+  LABEL_OUTLINE,
+  LABEL_PAD,
+  NEIGHBOUR_NAME,
+  NEIGHBOUR_TEXT,
   SLOT_GAP,
   STUB_REACH,
-  ghostId,
-  ghostTarget,
+  markerId,
+  markerTarget,
   type MapEvents,
   type MapSurface,
   type NameShape,
@@ -42,7 +42,7 @@ import { currentPalette, type Palette } from "./palette.js"
 import {
   CURVATURE,
   bounds,
-  horizon,
+  visibleLimit,
   marginAngle,
   project,
   radius,
@@ -57,8 +57,8 @@ const TAU = Math.PI * 2
 /** The stub's own diameter, in world units. */
 const STUB_SIZE = 7
 
-/** How long the ghosts left behind take to fade, once a flight has started. */
-const LEAVING_MS = 260
+/** How long the off-screen markers left behind take to fade, once a flight has started. */
+const FADE_OTHERS_MS = 260
 
 /**
  * The OS setting for reduced motion. Read on each flight rather than once at load, so a
@@ -69,21 +69,22 @@ const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)")
 /** The easing the flight timings were judged against, as its four control values. */
 const EASE = { x1: 0.4, y1: 0, x2: 0.2, y2: 1 } as const
 
-/** How round a pill's corners are, as a fraction of its shorter side. */
-const PILL_CORNER = 0.25
+/** How round a label box's corners are, as a fraction of its shorter side. */
+const LABEL_CORNER = 0.25
 
 /**
- * The smallest a name is drawn at, in screen pixels. Below this the pill is drawn empty.
+ * The smallest a name is drawn at, in screen pixels. Below this the label box is drawn empty.
  *
- * Three pixels of text is a smear, and the shrink toward the limb passes through every size on
- * the way to nothing. The pill keeps shrinking, so the mark does not disappear with the name.
+ * Three pixels of text is a smear, and the shrink toward the visible limit passes through every
+ * size on the way to nothing. The label box keeps shrinking, so the mark does not disappear with
+ * the name.
  */
 const TEXT_FLOOR = 3
 
 /**
  * The smallest radius a disc is drawn at, in screen pixels.
  *
- * A node shrinks by `cos(t)` and reaches zero at the limb. Without a floor the last few
+ * A node shrinks by `cos(t)` and reaches zero at the visible limit. Without a floor the last few
  * degrees draw as a smear. This is the size every node is at when it goes.
  */
 const DOT_FLOOR = 1.5
@@ -93,11 +94,11 @@ const EDGE_STEPS = 14
 
 /** Line widths in world units, so a line thickens with the zoom the way a node grows. */
 const EDGE_WIDTH = 1.5
-const ACCENT_WIDTH = 2
-/** The dash a ghost's lead and a stub's lead are drawn with, in world units. */
-const LEAD_DASH = [6, 3]
+const SELECTED_WIDTH = 2
+/** The dash an off-screen marker's lead and a stub's lead are drawn with, in world units. */
+const LINE_DASH = [6, 3]
 /** The dash on a node with neighbours nobody has read, in world units. */
-const FRONTIER_DASH = [1, 3]
+const UNREAD_DASH = [1, 3]
 
 /** How far a wheel notch zooms. A notch out leaves about four fifths of the scale. */
 const WHEEL_SENSITIVITY = 0.22
@@ -111,18 +112,18 @@ const MAX_ZOOM = 2.4
 const TAP_SLOP = 8
 
 /** How much of its contrast a node near the centre gives up, so the ring reads over it. */
-const BACKDROP_ALPHA = 0.22
-/** A ring pill's fill. Where two overlap, the front one is still readable. */
-const RING_OPACITY = 0.92
+const DIMMED_ALPHA = 0.22
+/** A ring label box's fill. Where two overlap, the front one is still readable. */
+const NEIGHBOUR_OPACITY = 0.92
 /** How loud the dash on a node with unread neighbours is. */
-const FRONTIER_ALPHA = 0.55
-/** Border widths in world units: a read in flight, a ghost, and the centre's ring. */
+const UNREAD_ALPHA = 0.55
+/** Border widths in world units: a read in flight, an off-screen marker, and the centre's ring. */
 const LOADING_WIDTH = 3
-const GHOST_WIDTH = 2
-const CENTRE_RING = 3
+const MARKER_BORDER = 2
+const SELECTED_OUTLINE_WIDTH = 3
 /** The ring on the node a release would join to, and how far outside the shape it sits. */
-const AIM_WIDTH = 3
-const AIM_OFFSET = 2
+const DROP_TARGET_WIDTH = 3
+const DROP_TARGET_OFFSET = 2
 
 /**
  * Ids for the two elements that replace a long edge: a stub at one end, and the short line
@@ -132,15 +133,15 @@ const AIM_OFFSET = 2
  * starts with `s` or `e`. `keys.ts` owns that character.
  */
 const stubId = (key: string, owner: string): string => `s${NUL}${key}${NUL}${owner}`
-const leadId = (id: string): string => `e${NUL}${id}`
+const lineId = (id: string): string => `e${NUL}${id}`
 
-/** One drawn element: a node, a stub, or a ghost. */
+/** One drawn element: a node, a stub, or an off-screen marker. */
 interface Drawn {
   id: string
-  /** World position. Assigned once, and written again only during a ghost's flight. */
+  /** World position. Assigned once, and written again only during an off-screen marker's flight. */
   x: number
   y: number
-  kind: "node" | "stub" | "ghost"
+  kind: "node" | "stub" | "marker"
   label: string
   /** 0 the centre, 1 its neighbours, 2 the rest, 3 the nodes the centre crowds. */
   tier: number
@@ -149,9 +150,11 @@ interface Drawn {
   more: boolean
   /** A read is in flight for this node. */
   loading: boolean
-  /** A stub a ghost has replaced. It comes back when the ghost is lowered. */
+  /**
+   * A stub an off-screen marker has replaced. It comes back when the off-screen marker is lowered.
+   */
   hidden: boolean
-  /** 1, except while a ghost fades out. */
+  /** 1, except while an off-screen marker fades out. */
   alpha: number
 }
 
@@ -159,23 +162,27 @@ interface Drawn {
 export interface Line {
   a: string
   b: string
-  kind: "edge" | "stub" | "ghost"
+  kind: "edge" | "stub" | "marker"
 }
 
-/** A ghost on the map: its element id, the centre that raised it, and the node it names. */
-interface Ghost {
-  ghost: string
-  centre: string
+/**
+ * An off-screen marker on the map: its element id, the centre that raised it, and the node it
+ * names.
+ */
+interface OffscreenMarker {
+  marker: string
+  selected: string
   target: string
 }
 
 /**
- * The ghost positions for one centre node, held for as long as it is the centre.
+ * The off-screen marker positions for one centre node, held for as long as it is the centre.
  *
- * `at` is only added to, so a ghost never moves. `slotsFor` maintains this and explains why.
+ * `at` is only added to, so an off-screen marker never moves. `slotsFor` maintains this and
+ * explains why.
  */
-interface Doorways {
-  centre: string
+interface SlotPlan {
+  selected: string
   /** Every position this centre offers, in the order they are assigned. */
   pool: Point[]
   /** The position each neighbour holds. Only added to. */
@@ -193,7 +200,7 @@ interface Doorways {
  * whole picture in one call, so a script cannot be told two different frames about it. `at`
  * runs the pick, which goes through `unproject` in world coordinates. `path` says where one
  * line's curve runs, which its two ends do not. A line is drawn as `EDGE_STEPS` segments, and
- * either end of it may be past the limb.
+ * either end of it may be past the visible limit.
  */
 export interface MapProbe {
   report: () => Drawing
@@ -220,18 +227,18 @@ export interface Drawing {
   drawMs: number
   zoom: number
   /** Where the middle of the screen is, in world coordinates. */
-  centre: Point
+  middle: Point
   /** The surface radius, in screen pixels. */
   radius: number
   /** The angle past which nothing is on screen, in radians. */
-  horizon: number
-  accent: string | null
+  visibleLimit: number
+  selected: string | null
   /** The node a release would join to, or null. */
-  aimed: string | null
+  dropTarget: string | null
   /** False while a gesture has the drag to itself. */
   panning: boolean
   /**
-   * True while the camera or a ghost is still travelling.
+   * True while the camera or an off-screen marker is still travelling.
    *
    * A flight to where the camera already is moves nothing, so the pose alone cannot say the
    * map has stopped. It still ends with a `viewport` event, and that closes the menu.
@@ -244,7 +251,7 @@ export interface Drawing {
 /** One element, as a drive script sees it. */
 export interface DrawnAs {
   id: string
-  kind: "node" | "stub" | "ghost"
+  kind: "node" | "stub" | "marker"
   label: string
   tier: number
   degree: number
@@ -255,9 +262,11 @@ export interface DrawnAs {
   y: number
   /** Where it is drawn, in canvas pixels, or null once the surface has turned away. */
   at: Point | null
-  /** How much of its size the surface left it: 1 at the middle, 0 at the limb. */
+  /** How much of its size the surface left it: 1 at the middle, 0 at the visible limit. */
   k: number
-  /** How far past the horizon its box lies, in radians. Zero or less means partly on screen. */
+  /**
+   * How far past the visible limit its box lies, in radians. Zero or less means partly on screen.
+   */
   past: number
   /** The footprint it draws, in world units. */
   box: Slot
@@ -266,7 +275,7 @@ export interface DrawnAs {
 /** Where the probe is registered, and under what name. */
 type Probed = HTMLElement & { __map?: MapProbe }
 
-/** A camera or a ghost travelling between two points. */
+/** A camera or an off-screen marker travelling between two points. */
 interface Journey {
   from: Point
   to: Point
@@ -298,7 +307,7 @@ function ease(t: number): number {
 
 /** A name, as the canvas wants it. */
 const fontOf = (text: TextStyle, px: number): string =>
-  `${String(text.weight)} ${px.toFixed(2)}px ${PILL_FONT}`
+  `${String(text.weight)} ${px.toFixed(2)}px ${LABEL_FONT}`
 
 /** How far a world point lies from a world segment. The right-click that parts a pair. */
 function gapToSegment(at: Point, a: Point, b: Point): number {
@@ -314,7 +323,7 @@ function gapToSegment(at: Point, a: Point, b: Point): number {
 const LINE_REACH = 6
 
 /** The five ways a line is drawn. Listed in the order the passes run. */
-const LINE_ORDER = ["dim", "plain", "stub", "accent", "ghost"] as const
+const LINE_ORDER = ["dim", "plain", "stub", "selected", "marker"] as const
 type LineClass = (typeof LINE_ORDER)[number]
 
 /** How each of the five classes is drawn. Widths and dashes are in world units. */
@@ -324,9 +333,9 @@ const LINE_STYLE: Record<
 > = {
   dim: { ink: (p) => p.edge, alpha: 0.12, width: EDGE_WIDTH, dash: [] },
   plain: { ink: (p) => p.edge, alpha: 0.55, width: EDGE_WIDTH, dash: [] },
-  stub: { ink: (p) => p.textMuted, alpha: 0.75, width: EDGE_WIDTH, dash: LEAD_DASH },
-  accent: { ink: (p) => p.edgeActive, alpha: 0.9, width: ACCENT_WIDTH, dash: [] },
-  ghost: { ink: (p) => p.edgeActive, alpha: 0.9, width: ACCENT_WIDTH, dash: LEAD_DASH },
+  stub: { ink: (p) => p.textMuted, alpha: 0.75, width: EDGE_WIDTH, dash: LINE_DASH },
+  selected: { ink: (p) => p.edgeActive, alpha: 0.9, width: SELECTED_WIDTH, dash: [] },
+  marker: { ink: (p) => p.edgeActive, alpha: 0.9, width: SELECTED_WIDTH, dash: LINE_DASH },
 }
 
 /** One element and where the surface put it. */
@@ -335,7 +344,7 @@ interface Shown {
   at: Projected
 }
 
-/** The border around a pill or a disc, where the node has earned one. */
+/** The border around a label box or a disc, where the node has earned one. */
 interface Border {
   colour: string
   /** In world units, so it thickens with the zoom. */
@@ -344,46 +353,46 @@ interface Border {
   dash: readonly number[]
 }
 
-/** What a pill is made of. */
-interface PillStyle {
+/** What a label box is made of. */
+interface LabelStyle {
   text: TextStyle
   /** How the name is cut to fit. */
   shape: NameShape
-  /** The fill, or null for a ghost, which is drawn hollow. */
+  /** The fill, or null for an off-screen marker, which is drawn hollow. */
   fill: string | null
-  /** How opaque that fill is. Two ring pills overlap, and the loser stays partly visible. */
+  /** How opaque that fill is. Two ring label boxes overlap, and the loser stays partly visible. */
   opacity: number
   ink: string
   border: Border | null
 }
 
 /** A name cut into lines, and the box that holds them. */
-interface PillLayout {
+interface LabelLayout {
   lines: string[]
   box: Slot
 }
 
 /**
- * Which pill is drawn on top, by degree.
+ * Which label box is drawn on top, by degree.
  *
  * Two names overlap because they sit at the same radius, so distance cannot break the tie.
- * `seatAndLink` in world.ts already ranks neighbours by degree for the closest positions.
+ * `placeAndLink` in world.ts already ranks neighbours by degree for the closest positions.
  * Ranking by it here applies the same rule twice rather than adding a new one.
  *
- * Ascending, because the last pill drawn is the one on top. The id settles a tie, so the
+ * Ascending, because the last label box drawn is the one on top. The id settles a tie, so the
  * picture does not depend on the order the elements arrived in.
  */
 const byPaint = (a: Drawn, b: Drawn): number =>
   a.degree - b.degree || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
 
-export class GlobeView implements MapSurface {
+export class SphereView implements MapSurface {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private palette = currentPalette()
 
-  /** Every drawn element by id: nodes, stubs and ghosts alike. */
+  /** Every drawn element by id: nodes, stubs and off-screen markers alike. */
   private readonly elements = new Map<string, Drawn>()
-  /** Every drawn line by id. A short edge is its pair key, and a lead is `leadId` of its end. */
+  /** Every drawn line by id. A short edge is its pair key, and a lead is `lineId` of its end. */
   private readonly lines = new Map<string, Line>()
   /** Which lines touch an element, so removing one does not scan the whole map. */
   private readonly linesAt = new Map<string, Set<string>>()
@@ -413,22 +422,25 @@ export class GlobeView implements MapSurface {
    */
   private readonly listeners = new Map<keyof MapEvents, unknown[]>()
 
-  private accentId: string | null = null
+  private selectedId: string | null = null
   private stubbed = 0
   /** True while the camera is flying. Nothing may take the accent until it lands. */
-  private flying = false
+  private animating = false
   /** The node whose name the pointer is holding open, or null. */
   private hovered: string | null = null
   /** The node a drag would join to, or null. */
-  private aimed: string | null = null
+  private dropTarget: string | null = null
   /** The element the pointer was last reported over, so a crossing can be told from a move. */
   private entered: string | null = null
   /** Where the mouse last was on the canvas, or null when it is off the canvas. */
   private pointer: Point | null = null
-  /** The ghosts the current centre raised, and the node each one stands in for. */
-  private ghosts: Ghost[] = []
-  /** Ghost positions for the current centre. Built on the first pass, then only extended. */
-  private doorways: Doorways | null = null
+  /** The off-screen markers the current centre raised, and the node each one stands in for. */
+  private markers: OffscreenMarker[] = []
+  /**
+   * Off-screen marker positions for the current centre. Built on the first pass, then only
+   * extended.
+   */
+  private slotPlan: SlotPlan | null = null
 
   /** False while a gesture has the drag to itself. See drag-join.ts. */
   private panEnabled = true
@@ -439,10 +451,10 @@ export class GlobeView implements MapSurface {
   private drawMs = 0
 
   /** The camera on its way somewhere, if it is. */
-  private glide: Journey | null = null
-  /** The ghost on its way to the node it names, if one is. */
-  private flier: (Journey & { id: string }) | null = null
-  /** Ghosts fading out, and how long each fade runs for. */
+  private cameraMove: Journey | null = null
+  /** The off-screen marker on its way to the node it names, if one is. */
+  private markerMove: (Journey & { id: string }) | null = null
+  /** Off-screen markers fading out, and how long each fade runs for. */
   private readonly fading = new Map<string, { start: number; ms: number }>()
 
   /** Pointers held down on the canvas, by id, at their last position in client coordinates. */
@@ -456,10 +468,10 @@ export class GlobeView implements MapSurface {
    * Each name's lines and box, keyed by its style, its shape and the name.
    *
    * Breaking a name measures it many times. `boxOf` runs for every element on each hit test,
-   * so the result is kept. It is measured on the canvas the pill is later drawn on, so the
+   * so the result is kept. It is measured on the canvas the label box is later drawn on, so the
    * width a slot is reserved at is the width the name takes.
    */
-  private readonly layouts = new Map<string, PillLayout>()
+  private readonly layouts = new Map<string, LabelLayout>()
 
   constructor(
     container: HTMLElement,
@@ -523,26 +535,26 @@ export class GlobeView implements MapSurface {
     this.drawMs += performance.now() - began
   }
 
-  /** Move the camera, the ghost in flight, and every fade, to where `now` puts them. */
+  /** Move the camera, the off-screen marker in flight, and every fade, to where `now` puts them. */
   private advance(now: number): void {
-    const glide = this.glide
-    if (glide) {
-      const at = ease(glide.ms > 0 ? Math.min(1, (now - glide.start) / glide.ms) : 1)
-      this.cam.x = glide.from.x + (glide.to.x - glide.from.x) * at
-      this.cam.y = glide.from.y + (glide.to.y - glide.from.y) * at
-      if (at >= 1) this.glide = null
+    const cameraMove = this.cameraMove
+    if (cameraMove) {
+      const at = ease(cameraMove.ms > 0 ? Math.min(1, (now - cameraMove.start) / cameraMove.ms) : 1)
+      this.cam.x = cameraMove.from.x + (cameraMove.to.x - cameraMove.from.x) * at
+      this.cam.y = cameraMove.from.y + (cameraMove.to.y - cameraMove.from.y) * at
+      if (at >= 1) this.cameraMove = null
       this.moved()
     }
 
-    const flier = this.flier
-    if (flier) {
-      const at = ease(flier.ms > 0 ? Math.min(1, (now - flier.start) / flier.ms) : 1)
-      const ghost = this.elements.get(flier.id)
-      if (ghost) {
-        ghost.x = flier.from.x + (flier.to.x - flier.from.x) * at
-        ghost.y = flier.from.y + (flier.to.y - flier.from.y) * at
+    const markerMove = this.markerMove
+    if (markerMove) {
+      const at = ease(markerMove.ms > 0 ? Math.min(1, (now - markerMove.start) / markerMove.ms) : 1)
+      const marker = this.elements.get(markerMove.id)
+      if (marker) {
+        marker.x = markerMove.from.x + (markerMove.to.x - markerMove.from.x) * at
+        marker.y = markerMove.from.y + (markerMove.to.y - markerMove.from.y) * at
       }
-      if (at >= 1) this.flier = null
+      if (at >= 1) this.markerMove = null
       this.paint()
     }
 
@@ -600,7 +612,7 @@ export class GlobeView implements MapSurface {
         // Not during a flight: the camera is already going somewhere, and a pan would land it
         // where neither asked for. Not while panning is switched off either, which is how a
         // gesture keeps the drag to itself.
-        if (this.panEnabled && !this.flying) this.panBy({ x: dx, y: dy })
+        if (this.panEnabled && !this.animating) this.panBy({ x: dx, y: dy })
         for (const hear of this.each("pressMove")) hear(event)
       }
       this.crossed(event)
@@ -735,7 +747,7 @@ export class GlobeView implements MapSurface {
     this.panEnabled = on
   }
 
-  centre(): Point {
+  middle(): Point {
     return { x: this.cam.x, y: this.cam.y }
   }
 
@@ -760,8 +772,8 @@ export class GlobeView implements MapSurface {
    * Not clamped here. `curvature()` in settings.ts is the only source, and it clamps.
    *
    * `moved` rather than `paint`, because what the window shows has changed. A flatter surface
-   * reaches over less of the world. A neighbour legible at its own seat before the move may
-   * need a doorway after it. Every settle a pan gets is a settle this one needs.
+   * reaches over less of the world. A neighbour legible at its own position before the move may
+   * need an off-screen marker after it. Every settle a pan gets is a settle this one needs.
    */
   curve(value: number): void {
     if (value === this.curvature) return
@@ -798,7 +810,7 @@ export class GlobeView implements MapSurface {
    * The element under a canvas position, or null.
    *
    * Run in world coordinates rather than on the drawn shapes. `project` is one-to-one inside
-   * the limb, so a world-space test against a world-sized box answers the same question a
+   * the visible limit, so a world-space test against a world-sized box answers the same question a
    * screen-space test would. It takes one `unproject` rather than one per element.
    *
    * A stub is never returned. It stands for the far end of a long edge and names no node.
@@ -829,25 +841,25 @@ export class GlobeView implements MapSurface {
    * already failed, and listing the exceptions again would be more code than that.
    */
   private *topDown(): Generator<Drawn> {
-    const centre = this.accentId ? this.elements.get(this.accentId) : undefined
-    if (centre) yield centre
+    const selected = this.selectedId ? this.elements.get(this.selectedId) : undefined
+    if (selected) yield selected
 
-    const ghosts = this.ghosts
-      .map((ghost) => this.elements.get(ghost.ghost))
-      .filter((ghost): ghost is Drawn => ghost !== undefined)
+    const markers = this.markers
+      .map((marker) => this.elements.get(marker.marker))
+      .filter((marker): marker is Drawn => marker !== undefined)
       .sort((a, b) => byPaint(b, a))
-    for (const ghost of ghosts) yield ghost
+    for (const marker of markers) yield marker
 
     const hovered = this.hovered ? this.elements.get(this.hovered) : undefined
     if (hovered) yield hovered
 
-    if (this.accentId) {
-      const ring = this.world
-        .neighbours(this.accentId)
+    if (this.selectedId) {
+      const neighbourList = this.world
+        .neighbours(this.selectedId)
         .map((id) => this.elements.get(id))
         .filter((node): node is Drawn => node !== undefined)
         .sort((a, b) => byPaint(b, a))
-      for (const node of ring) yield node
+      for (const node of neighbourList) yield node
     }
 
     for (const element of this.elements.values()) yield element
@@ -857,8 +869,8 @@ export class GlobeView implements MapSurface {
    * The line nearest the pointer, or null where none is near enough.
    *
    * Measured in world coordinates, like the pick above, and the tolerance is converted at the
-   * cursor. Near the limb one screen pixel covers many world units, which is what the local
-   * scale in the divisor stands for.
+   * cursor. Near the visible limit one screen pixel covers many world units, which is what the
+   * local scale in the divisor stands for.
    */
   private pickLine(x: number, y: number): Line | null {
     const flat = unproject(x - this.halfW, y - this.halfH, this.R)
@@ -884,18 +896,18 @@ export class GlobeView implements MapSurface {
   /** The footprint an element draws, in world units. */
   private boxOf(element: Drawn): Slot {
     if (element.kind === "stub") return { w: STUB_SIZE, h: STUB_SIZE }
-    if (element.kind === "ghost") return this.pillLayout(element.label, RING_TEXT, RING_NAME).box
+    if (element.kind === "marker") return this.labelLayout(element.label, NEIGHBOUR_TEXT, NEIGHBOUR_NAME).box
     if (element.tier === 0) {
-      const shape = element.id === this.hovered ? CENTRE_NAME : RING_NAME
-      return this.pillLayout(element.label, CENTRE_TEXT, shape).box
+      const shape = element.id === this.hovered ? SELECTED_NAME : NEIGHBOUR_NAME
+      return this.labelLayout(element.label, SELECTED_TEXT, shape).box
     }
     // The node under the pointer draws as its full name, so the name is what a click lands on.
-    // The opened pill covers the ring pill or the disc it replaces, so entering by one and
-    // leaving by the other cannot flicker.
+    // The opened label box covers the ring label box or the disc it replaces, so entering by one
+    // and leaving by the other cannot flicker.
     if (element.id === this.hovered) {
-      return this.pillLayout(element.label, RING_TEXT, HOVER_NAME).box
+      return this.labelLayout(element.label, NEIGHBOUR_TEXT, HOVER_NAME).box
     }
-    if (element.tier === 1) return this.pillLayout(element.label, RING_TEXT, RING_NAME).box
+    if (element.tier === 1) return this.labelLayout(element.label, NEIGHBOUR_TEXT, NEIGHBOUR_NAME).box
     return { w: NODE_SIZE.resting, h: NODE_SIZE.resting }
   }
 
@@ -905,7 +917,7 @@ export class GlobeView implements MapSurface {
    * A one-line name gets the box it always had: its own width and the type size, plus the
    * padding. Each further line adds `LINE_STEP` times the type size.
    */
-  private pillLayout(label: string, text: TextStyle, shape: NameShape): PillLayout {
+  private labelLayout(label: string, text: TextStyle, shape: NameShape): LabelLayout {
     const key = [text.size, text.weight, shape.width, shape.lines, label].join(NUL)
     let layout = this.layouts.get(key)
     if (!layout) {
@@ -913,11 +925,11 @@ export class GlobeView implements MapSurface {
       const { lines, width } = wrapName(
         label,
         (line) => this.ctx.measureText(line).width,
-        shape.width - 2 * PILL_PAD,
+        shape.width - 2 * LABEL_PAD,
         shape.lines,
       )
       const rest = (lines.length - 1) * text.size * LINE_STEP
-      layout = { lines, box: { w: width + 2 * PILL_PAD, h: text.size + rest + 2 * PILL_PAD } }
+      layout = { lines, box: { w: width + 2 * LABEL_PAD, h: text.size + rest + 2 * LABEL_PAD } }
       this.layouts.set(key, layout)
     }
     return layout
@@ -929,20 +941,20 @@ export class GlobeView implements MapSurface {
     return this.stubbed
   }
 
-  get accent(): string | null {
-    return this.accentId
+  get selected(): string | null {
+    return this.selectedId
   }
 
-  get inFlight(): boolean {
-    return this.flying
+  get cameraMoving(): boolean {
+    return this.animating
   }
 
   /** Add elements. Existing ones are never changed. `drop` removes, and only for an undo. */
   add(nodes: readonly WorldNode[], edges: readonly [string, string][]): void {
     // A node can arrive while its parent is already the centre, so it has to be created in the
     // right tier. Waiting for the next accent change would draw a neighbour as a distant node.
-    const accent = this.accentId
-    const ring = accent ? new Set(this.world.neighbours(accent)) : null
+    const selected = this.selectedId
+    const neighbourList = selected ? new Set(this.world.neighbours(selected)) : null
 
     for (const node of nodes) {
       if (this.elements.has(node.id)) continue
@@ -952,7 +964,7 @@ export class GlobeView implements MapSurface {
         y: node.y,
         kind: "node",
         label: node.label,
-        tier: node.id === accent ? 0 : ring?.has(node.id) ? 1 : 2,
+        tier: node.id === selected ? 0 : neighbourList?.has(node.id) ? 1 : 2,
         degree: node.degree,
         more: this.world.missing(node.id) > 0,
         loading: false,
@@ -993,7 +1005,7 @@ export class GlobeView implements MapSurface {
           hidden: false,
           alpha: 1,
         })
-        this.addLine(leadId(stub), { a: owner, b: stub, kind: "stub" })
+        this.addLine(lineId(stub), { a: owner, b: stub, kind: "stub" })
       }
       this.stubbed++
     }
@@ -1006,14 +1018,15 @@ export class GlobeView implements MapSurface {
       }
     }
     // A node already on the map when this read landed was given a tier before it was known to
-    // be a neighbour of the centre. Only `setAccent` recomputes tiers, and it does not run
+    // be a neighbour of the centre. Only `select` recomputes tiers, and it does not run
     // until the accent moves, so promote it here.
-    if (accent) this.setTiers(accent, true)
+    if (selected) this.setTiers(selected, true)
     this.paint()
 
-    // No ghost pass here, on purpose. A read can leave new nodes off screen with no ghost
-    // standing in for them, but this also runs for a late placement. Ghosts are only raised on
-    // a settled camera, and main.ts schedules a settle when a read lands.
+    // No off-screen marker pass here, on purpose. A read can leave new nodes off screen with no
+    // off-screen marker standing in for them, but this also runs for a late placement. Off-screen
+    // markers are only raised on a settled camera, and main.ts schedules a settle when a read
+    // lands.
   }
 
   /**
@@ -1024,14 +1037,14 @@ export class GlobeView implements MapSurface {
    * removes its lead with it. Both forms are tried, because which one was drawn depended on a
    * distance that may have changed since.
    *
-   * The ghost test is against the slot plan rather than the ghosts on screen. The plan is the
-   * larger set: a slot is held for a neighbour whose ghost is lowered. Rebuilding it also lets
-   * the remaining slots use the space the removal just freed.
+   * The off-screen marker test is against the slot plan rather than the off-screen markers on
+   * screen. The plan is the larger set: a slot is held for a neighbour whose off-screen marker is
+   * lowered. Rebuilding it also lets the remaining slots use the space the removal just freed.
    */
   drop(nodeIds: readonly string[], edges: readonly [string, string][]): void {
-    const plan = this.doorways
-    if (plan && nodeIds.some((id) => id === plan.centre || plan.at.has(id))) {
-      this.clearGhosts()
+    const plan = this.slotPlan
+    if (plan && nodeIds.some((id) => id === plan.selected || plan.at.has(id))) {
+      this.clearMarkers()
     }
 
     for (const [a, b] of edges) {
@@ -1048,7 +1061,7 @@ export class GlobeView implements MapSurface {
     for (const id of nodeIds) this.removeElement(id)
     // An accent pointing at a deleted node would keep the map marking it until the camera
     // moved. Clear it here. The caller picks a new one.
-    if (this.accentId && nodeIds.includes(this.accentId)) this.accentId = null
+    if (this.selectedId && nodeIds.includes(this.selectedId)) this.selectedId = null
 
     // Each surviving end of a removed edge may have unread neighbours again.
     for (const [a, b] of edges) {
@@ -1090,7 +1103,7 @@ export class GlobeView implements MapSurface {
    * Change the name a node draws, and nothing else.
    *
    * For a rename that kept its key, where the id is the same node and only the spelling moved.
-   * A pill takes both dimensions from its name, so the box changes with it. Position, tier and
+   * A label box takes both dimensions from its name, so the box changes with it. Position, tier and
    * edges are untouched.
    */
   relabel(id: string, label: string): void {
@@ -1126,9 +1139,9 @@ export class GlobeView implements MapSurface {
    * scoped to a tier. Either end of a drag may be any node drawn, the centre included. So the
    * mark has to draw wherever the pointer lands.
    */
-  aim(id: string | null): void {
-    if (id === this.aimed) return
-    this.aimed = id
+  markDropTarget(id: string | null): void {
+    if (id === this.dropTarget) return
+    this.dropTarget = id
     this.paint()
   }
 
@@ -1144,7 +1157,7 @@ export class GlobeView implements MapSurface {
    * Long edges are excluded. A neighbour reached by two stubs is far enough that using it
    * would dim half the map for one node.
    */
-  private ringReach(id: string): number {
+  private neighbourReach(id: string): number {
     let reach = 0
     for (const other of this.world.neighbours(id)) {
       const span = this.world.span(id, other)
@@ -1156,16 +1169,16 @@ export class GlobeView implements MapSurface {
   /**
    * The nodes the centre crowds: close enough to be in the way, but not joined to it.
    *
-   * A radius test, not a corridor test. Corridor membership changes as the accent drifts,
+   * A radius test, not a corridor test. Corridor membership changes as the accent moves,
    * which would flicker nodes in and out during a pan.
    */
-  private backdropOf(id: string): string[] {
-    const centre = this.world.get(id)
-    const reach = this.ringReach(id)
-    if (!centre || reach <= 0) return []
+  private dimmedOf(id: string): string[] {
+    const selected = this.world.get(id)
+    const reach = this.neighbourReach(id)
+    if (!selected || reach <= 0) return []
     const spared = new Set([id, ...this.world.neighbours(id)])
     return this.world
-      .nodesWithin(centre, reach)
+      .nodesWithin(selected, reach)
       .filter((node) => !spared.has(node.id))
       .map((node) => node.id)
   }
@@ -1183,9 +1196,9 @@ export class GlobeView implements MapSurface {
       const neighbour = this.elements.get(other)
       if (neighbour) neighbour.tier = active ? 1 : 2
     }
-    for (const other of this.backdropOf(id)) {
-      const backdrop = this.elements.get(other)
-      if (backdrop) backdrop.tier = active ? 3 : 2
+    for (const other of this.dimmedOf(id)) {
+      const dimmed = this.elements.get(other)
+      if (dimmed) dimmed.tier = active ? 3 : 2
     }
   }
 
@@ -1193,18 +1206,18 @@ export class GlobeView implements MapSurface {
    * Make a node the accent and demote the previous one. It touches only the two neighbourhoods
    * involved, so it stays cheap during a pan.
    */
-  setAccent(id: string): boolean {
-    if (id === this.accentId || !this.elements.has(id)) return false
-    const previous = this.accentId
-    this.accentId = id
+  select(id: string): boolean {
+    if (id === this.selectedId || !this.elements.has(id)) return false
+    const previous = this.selectedId
+    this.selectedId = id
 
-    this.clearGhosts()
+    this.clearMarkers()
     // Clear the old tiers before setting the new ones. A node in both neighbourhoods then ends
     // up promoted rather than demoted.
     if (previous) this.setTiers(previous, false)
     this.setTiers(id, true)
 
-    this.settleHover()
+    this.refreshHover()
     this.paint()
     return true
   }
@@ -1215,29 +1228,29 @@ export class GlobeView implements MapSurface {
    * A click moves no camera, so the node clicked is still under the pointer when it becomes the
    * centre. No pointer event follows, so nothing else would open its name. The same goes for a
    * node the centre leaves: the pointer may no longer be over it, and the flag would keep it
-   * drawn as a hovered pill. Both are the same question asked again, and `pick` answers it.
+   * drawn as a hovered label box. Both are the same question asked again, and `pick` answers it.
    */
-  private settleHover(): void {
+  private refreshHover(): void {
     const hit = this.pointer ? this.pick(this.pointer.x, this.pointer.y) : null
     this.entered = hit
     this.hover(hit)
   }
 
-  /* ---------------------------------------------------------------- ghosts */
+  /* ---------------------------------------------------------------- off-screen markers */
 
   /**
-   * How far past the horizon a node's drawn box lies, in radians. Zero or less means some part
-   * of it is on screen.
+   * How far past the visible limit a node's drawn box lies, in radians. Zero or less means some
+   * part of it is on screen.
    *
    * The box, not the position, because a neighbour draws as its name. A position just past the
-   * horizon can still have half its name inside it, and a ghost for it would show the same
-   * name twice.
+   * visible limit can still have half its name inside it, and an off-screen marker for it would
+   * show the same name twice.
    *
    * The nearest corner of the box, because that is the part of it that leaves last.
    */
   private outsideBy(id: string, edge: number): number {
     const node = this.elements.get(id)
-    // There is no node here, so return the value that raises no ghost.
+    // There is no node here, so return the value that raises no off-screen marker.
     if (!node) return -Infinity
     const box = this.boxOf(node)
     const flat = this.flatOf(node)
@@ -1247,12 +1260,13 @@ export class GlobeView implements MapSurface {
   }
 
   /**
-   * Where each of a centre's ghosts stands. Built once per centre, then only extended.
+   * Where each of a centre's off-screen markers stands. Built once per centre, then only extended.
    *
-   * The slots cannot be recomputed on each pass. `seat` spreads what it is given evenly, so the
-   * same neighbours in a different number come back on different bearings. And a ghost does not
-   * occupy the grid, so asking for one slot twice returns the same point twice. Either way, a
-   * set that changed with the camera would move ghosts that are already on screen.
+   * The slots cannot be recomputed on each pass. `freeSpots` spreads what it is given evenly, so the
+   * same neighbours in a different number come back on different bearings. And an off-screen marker
+   * does not occupy the grid, so asking for one slot twice returns the same point twice. Either
+   * way, a set that changed with the camera would move off-screen markers that are already on
+   * screen.
    *
    * The pool is sized from the degree the store reports, not from the neighbours drawn so far.
    * A read that lands later then finds a slot free. A write that adds a neighbour beyond that
@@ -1260,38 +1274,38 @@ export class GlobeView implements MapSurface {
    *
    * `reach` is read here only, on the pass that builds the plan, for the same reason. It sets
    * how far out the outermost ring can sit, and a reach that followed the zoom would move
-   * ghosts already shown. So a visit is measured once, at the zoom it started at.
+   * off-screen markers already shown. So a visit is measured once, at the zoom it started at.
    */
   private slotsFor(
-    centre: string,
+    selected: string,
     known: readonly string[],
     reach: number,
     outside: ReadonlyMap<string, number>,
     margin: number,
   ): ReadonlyMap<string, Point> {
-    let plan = this.doorways
-    if (!plan || plan.centre !== centre) {
-      const room = Math.max(known.length, this.world.get(centre)?.degree ?? 0)
+    let plan = this.slotPlan
+    if (!plan || plan.selected !== selected) {
+      const room = Math.max(known.length, this.world.get(selected)?.degree ?? 0)
       // Slots are sized for the widest name known now. The degree covers a neighbour that
       // arrives later. A name that has not arrived cannot be measured, so a longer one will
       // overhang its slot.
       plan = {
-        centre,
-        pool: this.world.slotsAround(centre, room, this.slotBox(known), reach),
+        selected,
+        pool: this.world.slotsAround(selected, room, this.slotBox(known), reach),
         at: new Map(),
       }
-      this.doorways = plan
+      this.slotPlan = plan
     }
 
-    // A slot is claimed only by a neighbour past the margin, meaning one about to get a ghost.
-    // Assigning one to every neighbour up front would spend the pool on names already in view.
-    // A hub has more neighbours than the rings have room for.
+    // A slot is claimed only by a neighbour past the margin, meaning one about to get an off-screen
+    // marker. Assigning one to every neighbour up front would spend the pool on names already in
+    // view. A hub has more neighbours than the rings have room for.
     //
     // This depends on the camera, and that is safe because a claim is never released. The
     // camera decides who receives a free slot. It cannot move or revoke a slot already held,
     // so a neighbour that goes out of view and comes back finds its own waiting.
     if (plan.at.size < plan.pool.length) {
-      for (const target of this.ghostable(known, centre)) {
+      for (const target of this.markerOrder(known, selected)) {
         if (plan.at.has(target) || (outside.get(target) ?? -Infinity) <= margin) continue
         // The lowest slot not yet assigned, because none is ever released.
         const at = plan.pool[plan.at.size]
@@ -1312,25 +1326,25 @@ export class GlobeView implements MapSurface {
    */
   private slotBox(ids: readonly string[]): Slot {
     let widest = 0
-    let tallest = RING_TEXT.size
+    let tallest = NEIGHBOUR_TEXT.size
     for (const id of ids) {
       const label = this.world.get(id)?.label
       if (!label) continue
-      const { box } = this.pillLayout(label, RING_TEXT, RING_NAME)
-      widest = Math.max(widest, box.w - 2 * PILL_PAD)
-      tallest = Math.max(tallest, box.h - 2 * PILL_PAD)
+      const { box } = this.labelLayout(label, NEIGHBOUR_TEXT, NEIGHBOUR_NAME)
+      widest = Math.max(widest, box.w - 2 * LABEL_PAD)
+      tallest = Math.max(tallest, box.h - 2 * LABEL_PAD)
     }
-    const around = 2 * PILL_PAD + 2 * PILL_HALO + SLOT_GAP
+    const around = 2 * LABEL_PAD + 2 * LABEL_OUTLINE + SLOT_GAP
     return { w: widest + around, h: tallest + around }
   }
 
   /**
-   * The centre's neighbours, ordered by who should get a ghost first.
+   * The centre's neighbours, ordered by who should get an off-screen marker first.
    *
    * Neighbours with no drawn line first. A neighbour off screen whose edge is drawn still shows
-   * which way the connection goes. One drawn as two stubs shows almost nothing, so a ghost is
-   * worth more there. `add` decided which pairs got a line, and this reads the map back rather
-   * than recomputing it.
+   * which way the connection goes. One drawn as two stubs shows almost nothing, so an off-screen
+   * marker is worth more there. `add` decided which pairs got a line, and this reads the map back
+   * rather than recomputing it.
    *
    * Then nearest first. Those are the most likely to be worth walking to. Degree breaks a tie,
    * as it does for the paint order, and ties are common because a parent's neighbours sit at
@@ -1342,11 +1356,11 @@ export class GlobeView implements MapSurface {
    *
    * This does not depend on the camera, so two neighbours never swap order during a pan.
    */
-  private ghostable(known: readonly string[], centre: string): string[] {
+  private markerOrder(known: readonly string[], selected: string): string[] {
     const ranked = known.map((other) => ({
       id: other,
-      unlined: this.lines.has(edgeKey(centre, other)) ? 1 : 0,
-      span: this.world.span(centre, other),
+      unlined: this.lines.has(edgeKey(selected, other)) ? 1 : 0,
+      span: this.world.span(selected, other),
       degree: this.world.get(other)?.degree ?? 0,
     }))
     ranked.sort(
@@ -1365,29 +1379,31 @@ export class GlobeView implements MapSurface {
   }
 
   /**
-   * Raise a ghost for every neighbour off screen, and lower every ghost whose neighbour has
-   * come into view.
+   * Raise an off-screen marker for every neighbour off screen, and lower every off-screen marker
+   * whose neighbour has come into view.
    *
-   * Idempotent, and run on a settled camera rather than per frame. A ghost holds a doorway
-   * slot, and slots appearing and disappearing during a fast pan would flicker.
+   * Idempotent, and run on a settled camera rather than per frame. An off-screen marker holds an
+   * off-screen marker slot, and slots appearing and disappearing during a fast pan would flicker.
    *
-   * The two tests are deliberately not opposites. A ghost is lowered as soon as any part of
-   * its target is on screen. It is raised only once the target is `GHOST_MARGIN` past the
-   * horizon. One pass can therefore never both lower and raise a ghost for one neighbour.
+   * The two tests are deliberately not opposites. An off-screen marker is lowered as soon as any
+   * part of its target is on screen. It is raised only once the target is `MARKER_MARGIN` past the
+   * visible limit. One pass can therefore never both lower and raise an off-screen marker for one
+   * neighbour.
    *
    * Runs whether or not the centre is itself on screen. A neighbour can come back into view
-   * while the centre is still outside it. Skipping the pass would leave that ghost standing.
+   * while the centre is still outside it. Skipping the pass would leave that off-screen marker
+   * standing.
    *
-   * Nothing is written to the occupancy grid. A ghost holds no ground, which is what stops
-   * `nearestTo` ever returning one and making a ghost the centre.
+   * Nothing is written to the occupancy grid. An off-screen marker holds no ground, which is what
+   * stops `nearestTo` ever returning one and making an off-screen marker the centre.
    */
-  reviseGhosts(): void {
-    const centre = this.accentId
-    if (!centre || this.flying) return
+  updateMarkers(): void {
+    const selected = this.selectedId
+    if (!selected || this.animating) return
 
-    const known = this.world.neighbours(centre)
-    const edge = horizon(this.halfW, this.halfH, this.R)
-    const margin = marginAngle(GHOST_MARGIN, this.R)
+    const known = this.world.neighbours(selected)
+    const edge = visibleLimit(this.halfW, this.halfH, this.R)
+    const margin = marginAngle(MARKER_MARGIN, this.R)
     // Measure every neighbour, not only the ones holding a slot, because `slotsFor` chooses
     // from these.
     const outside = new Map<string, number>()
@@ -1395,49 +1411,49 @@ export class GlobeView implements MapSurface {
     // How far out a slot may sit: half the viewport's smaller side. `slotsFor` reads this only
     // on the pass that builds the plan, and explains why.
     const reach = this.reach()
-    const slots = this.slotsFor(centre, known, reach, outside, margin)
+    const slots = this.slotsFor(selected, known, reach, outside, margin)
 
     const neighbours = new Set(known)
     const standing = new Set<string>()
-    const down: Ghost[] = []
-    for (const ghost of this.ghosts) {
-      // A ghost whose target is no longer a neighbour is lowered too. Undoing a join removes
-      // the edge and keeps both nodes, so nothing else would lower it.
-      const gap = outside.get(ghost.target) ?? -Infinity
-      if (neighbours.has(ghost.target) && gap > 0) standing.add(ghost.target)
-      else down.push(ghost)
+    const down: OffscreenMarker[] = []
+    for (const marker of this.markers) {
+      // An off-screen marker whose target is no longer a neighbour is lowered too. Undoing a join
+      // removes the edge and keeps both nodes, so nothing else would lower it.
+      const gap = outside.get(marker.target) ?? -Infinity
+      if (neighbours.has(marker.target) && gap > 0) standing.add(marker.target)
+      else down.push(marker)
     }
 
-    /** A ghost about to be raised, with the slot it stands in. */
-    const up: (Ghost & { at: Point })[] = []
+    /** An off-screen marker about to be raised, with the slot it stands in. */
+    const up: (OffscreenMarker & { at: Point })[] = []
     for (const [target, at] of slots) {
       // The plan keeps a slot for a node that is no longer a neighbour, because it is only ever
-      // added to. Without this test the loop above would lower that ghost and this one would
-      // raise it again, showing an edge that no longer exists.
+      // added to. Without this test the loop above would lower that off-screen marker and this one
+      // would raise it again, showing an edge that no longer exists.
       if (!neighbours.has(target)) continue
       if (standing.has(target) || (outside.get(target) ?? -Infinity) <= margin) continue
       const node = this.world.get(target)
       if (!node) continue
-      up.push({ ghost: ghostId(centre, target), centre, target, at })
+      up.push({ marker: markerId(selected, target), selected, target, at })
     }
 
     // A settle fires on every camera stop. When nothing crossed a threshold, stop here.
     if (!down.length && !up.length) return
 
-    for (const ghost of down) this.lower(ghost)
+    for (const marker of down) this.lower(marker)
     for (const raised of up) {
       const node = this.world.get(raised.target)
       if (!node) continue
-      // Hide the long edge's stub at this end. The ghost says the same thing more clearly. A
-      // short edge has no stub, and its line stays: the line shows where the neighbour actually
-      // is, which a ghost cannot.
-      const stub = this.stubAt(centre, raised.target)
+      // Hide the long edge's stub at this end. The off-screen marker says the same thing more
+      // clearly. A short edge has no stub, and its line stays: the line shows where the neighbour
+      // actually is, which an off-screen marker cannot.
+      const stub = this.stubAt(selected, raised.target)
       if (stub) stub.hidden = true
-      this.elements.set(raised.ghost, {
-        id: raised.ghost,
+      this.elements.set(raised.marker, {
+        id: raised.marker,
         x: raised.at.x,
         y: raised.at.y,
-        kind: "ghost",
+        kind: "marker",
         label: node.label,
         tier: 2,
         degree: node.degree,
@@ -1446,41 +1462,42 @@ export class GlobeView implements MapSurface {
         hidden: false,
         alpha: 1,
       })
-      this.addLine(leadId(raised.ghost), { a: centre, b: raised.ghost, kind: "ghost" })
+      this.addLine(lineId(raised.marker), { a: selected, b: raised.marker, kind: "marker" })
     }
-    this.ghosts = [
-      ...this.ghosts.filter((ghost) => standing.has(ghost.target)),
-      ...up.map(({ ghost, centre: from, target }) => ({ ghost, centre: from, target })),
+    this.markers = [
+      ...this.markers.filter((marker) => standing.has(marker.target)),
+      ...up.map(({ marker, selected: from, target }) => ({ marker, selected: from, target })),
     ]
     this.paint()
   }
 
-  /** Lower one ghost and show the stub it replaced. */
-  private lower(ghost: Ghost): void {
-    const stub = this.stubAt(ghost.centre, ghost.target)
+  /** Lower one off-screen marker and show the stub it replaced. */
+  private lower(marker: OffscreenMarker): void {
+    const stub = this.stubAt(marker.selected, marker.target)
     if (stub) stub.hidden = false
-    this.removeElement(ghost.ghost)
-    this.fading.delete(ghost.ghost)
+    this.removeElement(marker.marker)
+    this.fading.delete(marker.marker)
   }
 
-  /** Lower every ghost and discard the slot plan. */
-  private clearGhosts(): void {
-    // Before the early return, because a plan outlives its ghosts. A centre whose neighbours
-    // are all on screen has a plan with no slots assigned. A stale plan surviving an accent
-    // change is the one way the slots come out wrong.
-    this.doorways = null
-    if (!this.ghosts.length) return
-    for (const ghost of this.ghosts) this.lower(ghost)
-    this.ghosts = []
+  /** Lower every off-screen marker and discard the slot plan. */
+  private clearMarkers(): void {
+    // Before the early return, because a plan outlives its off-screen markers. A centre whose
+    // neighbours are all on screen has a plan with no slots assigned. A stale plan surviving an
+    // accent change is the one way the slots come out wrong.
+    this.slotPlan = null
+    if (!this.markers.length) return
+    for (const marker of this.markers) this.lower(marker)
+    this.markers = []
     this.paint()
   }
 
   /* ---------------------------------------------------------------- the flight */
 
   /**
-   * Where a world point is drawn, clamped to the limb so a point past it still has a place.
+   * Where a world point is drawn, clamped to the visible limit so a point past it still has a
+   * place.
    *
-   * Only `flightTime` reads this. A flight often starts or ends outside the limb, and the
+   * Only `moveTime` reads this. A flight often starts or ends outside the visible limit, and the
    * distance it covers on screen is what the speed is measured in.
    */
   private drawnAt(at: Point): Point {
@@ -1499,18 +1516,18 @@ export class GlobeView implements MapSurface {
    * clamps stop both extremes.
    *
    * The drawn distance, not the world distance times the zoom. Those two differ by the local
-   * scale, and near the limb that difference is most of the answer.
+   * scale, and near the visible limit that difference is most of the answer.
    *
    * Zero when the OS asks for reduced motion. The camera then cuts to the destination and the
-   * ghost fades where it lands. The fade is kept: a fade is the right replacement for a
+   * off-screen marker fades where it lands. The fade is kept: a fade is the right replacement for a
    * movement.
    */
-  private flightTime(from: Point, to: Point): number {
+  private moveTime(from: Point, to: Point): number {
     if (REDUCED_MOTION.matches) return 0
     const a = this.drawnAt(from)
     const b = this.drawnAt(to)
     const pixels = Math.hypot(b.x - a.x, b.y - a.y)
-    return Math.min(FLIGHT_MAX, Math.max(FLIGHT_MIN, pixels / FLIGHT_SPEED))
+    return Math.min(MOVE_MAX_MS, Math.max(MOVE_MIN_MS, pixels / MOVE_SPEED))
   }
 
   /** Move the camera so a node sits in the middle of the screen. */
@@ -1518,78 +1535,79 @@ export class GlobeView implements MapSurface {
     const node = this.world.get(id)
     if (!node) return
     if (!animate) {
-      this.glide = null
+      this.cameraMove = null
       this.cam.x = node.x
       this.cam.y = node.y
       this.moved()
       return
     }
-    this.glide = {
-      from: this.centre(),
+    this.cameraMove = {
+      from: this.middle(),
       to: { x: node.x, y: node.y },
       start: performance.now(),
-      ms: this.flightTime(this.centre(), node),
+      ms: this.moveTime(this.middle(), node),
     }
     this.moved()
   }
 
   /**
-   * Fly to the node a ghost stands in for, and fade the ghost out on arrival.
+   * Fly to the node an off-screen marker stands in for, and fade the off-screen marker out on
+   * arrival.
    *
-   * The ghost is not removed on the click. It moves. If it disappeared as soon as its centre
-   * stopped being the centre, the thing the reader clicked would be gone by the second frame.
-   * So the accent is held for the duration and the ghost travels to the real node, arriving as
-   * the camera finishes centring it.
+   * The off-screen marker is not removed on the click. It moves. If it disappeared as soon as its
+   * centre stopped being the centre, the thing the reader clicked would be gone by the second
+   * frame. So the accent is held for the duration and the off-screen marker travels to the real
+   * node, arriving as the camera finishes centring it.
    *
    * This is the one place anything on the map moves, and `advance` is what moves it. Every
-   * other position in `elements` is written once, by `add` or by `reviseGhosts`.
+   * other position in `elements` is written once, by `add` or by `updateMarkers`.
    */
-  flyTo(ghost: string, onArrive: (target: string) => void): boolean {
-    const target = ghostTarget(ghost)
+  moveToMarker(marker: string, onArrive: (target: string) => void): boolean {
+    const target = markerTarget(marker)
     const node = target ? this.world.get(target) : null
-    const flier = this.elements.get(ghost)
-    if (!target || !node || this.flying || !flier) return false
+    const markerMove = this.elements.get(marker)
+    if (!target || !node || this.animating || !markerMove) return false
 
-    const from = this.ghosts.find((one) => one.ghost === ghost)?.centre ?? null
-    const duration = this.flightTime(flier, node)
+    const from = this.markers.find((one) => one.marker === marker)?.selected ?? null
+    const duration = this.moveTime(markerMove, node)
     const start = performance.now()
-    this.flying = true
+    this.animating = true
 
-    // Fade out the other ghosts. They belong to the centre being left behind.
-    for (const other of this.ghosts) {
-      if (other.ghost === ghost) continue
-      this.fading.set(other.ghost, { start, ms: LEAVING_MS })
+    // Fade out the other off-screen markers. They belong to the centre being left behind.
+    for (const other of this.markers) {
+      if (other.marker === marker) continue
+      this.fading.set(other.marker, { start, ms: FADE_OTHERS_MS })
     }
 
-    this.glide = { from: this.centre(), to: { x: node.x, y: node.y }, start, ms: duration }
-    this.flier = {
-      id: ghost,
-      from: { x: flier.x, y: flier.y },
+    this.cameraMove = { from: this.middle(), to: { x: node.x, y: node.y }, start, ms: duration }
+    this.markerMove = {
+      id: marker,
+      from: { x: markerMove.x, y: markerMove.y },
       to: { x: node.x, y: node.y },
       start,
       ms: duration,
     }
     this.paint()
 
-    // Two moments, not one. `setAccent` names the node the camera landed on, and the ghost
+    // Two moments, not one. `select` names the node the camera landed on, and the off-screen marker
     // fades out over the next 320ms. Waiting for the fade would leave the map naming the node
     // the reader started from.
     setTimeout(() => {
-      this.flying = false
-      // Take the flying ghost out of the list. `setAccent` lowers the others, and this one is
-      // still fading and outlives them. Its removal is scheduled before anything that could
+      this.animating = false
+      // Take the flying off-screen marker out of the list. `select` lowers the others, and this one
+      // is still fading and outlives them. Its removal is scheduled before anything that could
       // throw, so it cannot be left on the map.
-      this.ghosts = this.ghosts.filter((one) => one.ghost !== ghost)
-      this.fading.set(ghost, { start: performance.now(), ms: DISSOLVE_MS })
+      this.markers = this.markers.filter((one) => one.marker !== marker)
+      this.fading.set(marker, { start: performance.now(), ms: FADE_MS })
       setTimeout(() => {
-        this.removeElement(ghost)
-        this.fading.delete(ghost)
+        this.removeElement(marker)
+        this.fading.delete(marker)
         this.paint()
-      }, DISSOLVE_MS)
+      }, FADE_MS)
       const stub = from ? this.stubAt(from, target) : undefined
       if (stub) stub.hidden = false
-      this.setAccent(target)
-      this.reviseGhosts()
+      this.select(target)
+      this.updateMarkers()
       onArrive(target)
     }, duration)
     return true
@@ -1600,9 +1618,9 @@ export class GlobeView implements MapSurface {
   /**
    * One pass over the map, back to front.
    *
-   * The limb, then the lines, then the discs, then the names. Within the names, the ring, the
-   * name under the pointer, the ghosts and the centre. `byPaint` orders the ring and the
-   * ghosts among themselves.
+   * The visible limit, then the lines, then the discs, then the names. Within the names, the ring,
+   * the name under the pointer, the off-screen markers and the centre. `byPaint` orders the ring
+   * and the off-screen markers among themselves.
    */
   private draw(): void {
     const ctx = this.ctx
@@ -1636,7 +1654,7 @@ export class GlobeView implements MapSurface {
     this.drawLines()
     this.drawDiscs(shown)
     this.drawNames(shown)
-    this.drawAim(shown)
+    this.drawDropTarget(shown)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
   }
 
@@ -1659,7 +1677,7 @@ export class GlobeView implements MapSurface {
   /** Which of the five ways a line is drawn, from its kind and the tiers of its two ends. */
   private classOf(line: Line, a: Drawn, b: Drawn): LineClass {
     if (line.kind !== "edge") return line.kind
-    if (a.tier === 0 || b.tier === 0) return "accent"
+    if (a.tier === 0 || b.tier === 0) return "selected"
     if (a.tier === 3 || b.tier === 3) return "dim"
     return "plain"
   }
@@ -1753,9 +1771,9 @@ export class GlobeView implements MapSurface {
     const plain = (node: Drawn): boolean =>
       node.kind === "node" && node.tier >= 2 && node.id !== this.hovered
 
-    // The backdrop first, then the rest.
+    // The dimmed nodes first, then the rest.
     for (const [tier, alpha] of [
-      [3, BACKDROP_ALPHA],
+      [3, DIMMED_ALPHA],
       [2, 1],
     ] as const) {
       ctx.beginPath()
@@ -1788,17 +1806,17 @@ export class GlobeView implements MapSurface {
     // somebody who cannot tell two ramp steps apart. One width for the pass, so every ring is
     // drawn in one stroke.
     ctx.beginPath()
-    let frontier = false
+    let unread = false
     for (const { node, at } of shown) {
       if (!plain(node) || !node.more || node.loading) continue
       disc(at, NODE_SIZE.resting)
-      frontier = true
+      unread = true
     }
-    if (frontier) {
-      ctx.globalAlpha = FRONTIER_ALPHA
-      ctx.strokeStyle = this.palette.frontierRing
+    if (unread) {
+      ctx.globalAlpha = UNREAD_ALPHA
+      ctx.strokeStyle = this.palette.unreadOutline
       ctx.lineWidth = Math.max(0.4, zoom)
-      ctx.setLineDash(FRONTIER_DASH.map((gap) => gap * zoom))
+      ctx.setLineDash(UNREAD_DASH.map((gap) => gap * zoom))
       ctx.stroke()
       ctx.setLineDash([])
     }
@@ -1819,33 +1837,33 @@ export class GlobeView implements MapSurface {
   /** The four bands of names, back to front. */
   private drawNames(shown: readonly Shown[]): void {
     const palette = this.palette
-    const ring: Shown[] = []
-    const ghosts: Shown[] = []
+    const neighbourList: Shown[] = []
+    const markers: Shown[] = []
     let hovered: Shown | null = null
-    let centre: Shown | null = null
+    let selected: Shown | null = null
 
     for (const entry of shown) {
       const node = entry.node
-      if (node.kind === "ghost") {
-        ghosts.push(entry)
+      if (node.kind === "marker") {
+        markers.push(entry)
         continue
       }
       if (node.kind !== "node") continue
-      if (node.tier === 0) centre = entry
+      if (node.tier === 0) selected = entry
       else if (node.id === this.hovered) hovered = entry
-      else if (node.tier === 1) ring.push(entry)
+      else if (node.tier === 1) neighbourList.push(entry)
     }
 
-    ring.sort((a, b) => byPaint(a.node, b.node))
-    ghosts.sort((a, b) => byPaint(a.node, b.node))
+    neighbourList.sort((a, b) => byPaint(a.node, b.node))
+    markers.sort((a, b) => byPaint(a.node, b.node))
 
-    for (const entry of ring) {
-      this.drawPill(entry, {
-        text: RING_TEXT,
-        shape: RING_NAME,
+    for (const entry of neighbourList) {
+      this.drawLabelBox(entry, {
+        text: NEIGHBOUR_TEXT,
+        shape: NEIGHBOUR_NAME,
         fill: palette.surface,
-        // Nearly opaque, so where two pills overlap the front one is readable.
-        opacity: RING_OPACITY,
+        // Nearly opaque, so where two label boxes overlap the front one is readable.
+        opacity: NEIGHBOUR_OPACITY,
         ink: palette.hop[0]!,
         border: null,
       })
@@ -1853,46 +1871,46 @@ export class GlobeView implements MapSurface {
 
     // A disc takes the page's own ink, not `hop[0]`. The ring's ink says "a neighbour of the
     // centre", and a disc is not one. A ring name keeps its ink as it opens. Opaque, unlike a
-    // ring pill: there is only ever one of these, and legibility is its whole job.
+    // ring label box: there is only ever one of these, and legibility is its whole job.
     if (hovered) {
-      const inRing = hovered.node.kind === "node" && hovered.node.tier === 1
-      this.drawPill(hovered, {
-        text: RING_TEXT,
+      const isNeighbour = hovered.node.kind === "node" && hovered.node.tier === 1
+      this.drawLabelBox(hovered, {
+        text: NEIGHBOUR_TEXT,
         shape: HOVER_NAME,
         fill: palette.surface,
         opacity: 1,
-        ink: inRing ? palette.hop[0]! : palette.textPrimary,
+        ink: isNeighbour ? palette.hop[0]! : palette.textPrimary,
         border: null,
       })
     }
 
-    // A ghost: hollow and dashed, so it is not mistaken for the node itself. The node exists
-    // once, elsewhere on the map, and while the ghost stands it is off screen.
-    for (const entry of ghosts) {
-      this.drawPill(entry, {
-        text: RING_TEXT,
-        shape: RING_NAME,
+    // An off-screen marker: hollow and dashed, so it is not mistaken for the node itself. The node
+    // exists once, elsewhere on the map, and while the off-screen marker stands it is off screen.
+    for (const entry of markers) {
+      this.drawLabelBox(entry, {
+        text: NEIGHBOUR_TEXT,
+        shape: NEIGHBOUR_NAME,
         fill: null,
         opacity: 1,
         ink: palette.textSecondary,
-        border: { colour: palette.hop[0]!, width: GHOST_WIDTH, alpha: 1, dash: LEAD_DASH },
+        border: { colour: palette.hop[0]!, width: MARKER_BORDER, alpha: 1, dash: LINE_DASH },
       })
     }
 
-    if (centre) {
-      this.drawPill(centre, {
-        text: CENTRE_TEXT,
-        shape: centre.node.id === this.hovered ? CENTRE_NAME : RING_NAME,
+    if (selected) {
+      this.drawLabelBox(selected, {
+        text: SELECTED_TEXT,
+        shape: selected.node.id === this.hovered ? SELECTED_NAME : NEIGHBOUR_NAME,
         fill: palette.accent,
         opacity: 1,
         ink: palette.inkOnAccent,
-        border: { colour: palette.accentRing, width: CENTRE_RING, alpha: 1, dash: [] },
+        border: { colour: palette.selectedOutline, width: SELECTED_OUTLINE_WIDTH, alpha: 1, dash: [] },
       })
     }
   }
 
   /**
-   * The border a node has earned, or null to leave the pill its own.
+   * The border a node has earned, or null to leave the label box its own.
    *
    * A read in flight beats unread neighbours, and both beat the ring the centre draws. A read
    * is the shortest-lived of the three, and the only one that ends on its own.
@@ -1903,30 +1921,30 @@ export class GlobeView implements MapSurface {
     }
     if (node.more) {
       return {
-        colour: this.palette.frontierRing,
+        colour: this.palette.unreadOutline,
         width: 1,
-        alpha: FRONTIER_ALPHA,
-        dash: FRONTIER_DASH,
+        alpha: UNREAD_ALPHA,
+        dash: UNREAD_DASH,
       }
     }
     return null
   }
 
   /**
-   * One name on its pill, at the size the surface left it.
+   * One name on its label box, at the size the surface left it.
    *
-   * The halo is stroked before the fill, so the fill covers the inner half of it and what is
-   * left reads as an outline. A pill below `TEXT_FLOOR` is drawn empty: the box keeps shrinking
-   * toward the limb, so the mark stays even after the name is gone.
+   * The label outline is stroked before the fill, so the fill covers the inner half of it and what
+   * is left reads as an outline. A label box below `TEXT_FLOOR` is drawn empty: the box keeps
+   * shrinking toward the visible limit, so the mark stays even after the name is gone.
    */
-  private drawPill(shown: Shown, style: PillStyle): void {
+  private drawLabelBox(shown: Shown, style: LabelStyle): void {
     const ctx = this.ctx
     const { node, at } = shown
-    const { lines, box } = this.pillLayout(node.label, style.text, style.shape)
+    const { lines, box } = this.labelLayout(node.label, style.text, style.shape)
     const scale = this.cam.zoom * at.k
     const width = box.w * scale
     const height = box.h * scale
-    const round = Math.min(width, height) * PILL_CORNER
+    const round = Math.min(width, height) * LABEL_CORNER
     const border = this.borderOf(node) ?? style.border
 
     ctx.setLineDash([])
@@ -1934,7 +1952,7 @@ export class GlobeView implements MapSurface {
     ctx.roundRect(at.x - width / 2, at.y - height / 2, width, height, round)
 
     ctx.globalAlpha = node.alpha
-    ctx.lineWidth = 2 * PILL_HALO * scale
+    ctx.lineWidth = 2 * LABEL_OUTLINE * scale
     ctx.strokeStyle = this.palette.surface
     ctx.stroke()
 
@@ -1960,7 +1978,7 @@ export class GlobeView implements MapSurface {
       ctx.font = fontOf(style.text, size)
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      const top = at.y - height / 2 + (PILL_PAD + style.text.size / 2) * scale
+      const top = at.y - height / 2 + (LABEL_PAD + style.text.size / 2) * scale
       lines.forEach((line, i) => {
         ctx.fillText(line, at.x, top + i * style.text.size * LINE_STEP * scale)
       })
@@ -1975,10 +1993,10 @@ export class GlobeView implements MapSurface {
    * which node the release would take, and nothing more. Drawn last, over every band, because
    * it lasts only as long as the button is held.
    */
-  private drawAim(shown: readonly Shown[]): void {
-    const aimed = this.aimed
-    if (!aimed) return
-    const found = shown.find((entry) => entry.node.id === aimed)
+  private drawDropTarget(shown: readonly Shown[]): void {
+    const dropTarget = this.dropTarget
+    if (!dropTarget) return
+    const found = shown.find((entry) => entry.node.id === dropTarget)
     if (!found) return
     const ctx = this.ctx
     const { node, at } = found
@@ -1986,22 +2004,22 @@ export class GlobeView implements MapSurface {
 
     ctx.beginPath()
     if (node.kind === "node" && node.tier >= 2 && node.id !== this.hovered) {
-      const r = Math.max(DOT_FLOOR, (NODE_SIZE.resting / 2) * scale) + AIM_OFFSET * scale
+      const r = Math.max(DOT_FLOOR, (NODE_SIZE.resting / 2) * scale) + DROP_TARGET_OFFSET * scale
       ctx.arc(at.x, at.y, r, 0, TAU)
     } else {
       const box = this.boxOf(node)
-      const width = box.w * scale + 2 * AIM_OFFSET * scale
-      const height = box.h * scale + 2 * AIM_OFFSET * scale
+      const width = box.w * scale + 2 * DROP_TARGET_OFFSET * scale
+      const height = box.h * scale + 2 * DROP_TARGET_OFFSET * scale
       ctx.roundRect(
         at.x - width / 2,
         at.y - height / 2,
         width,
         height,
-        Math.min(width, height) * PILL_CORNER,
+        Math.min(width, height) * LABEL_CORNER,
       )
     }
     ctx.setLineDash([])
-    ctx.lineWidth = Math.max(1, AIM_WIDTH * scale)
+    ctx.lineWidth = Math.max(1, DROP_TARGET_WIDTH * scale)
     ctx.strokeStyle = this.palette.accent
     ctx.stroke()
   }
@@ -2009,22 +2027,23 @@ export class GlobeView implements MapSurface {
   /**
    * The whole frame, for a drive script. Nothing in the page reads this.
    *
-   * Every element, not only the ones on screen. A script asking about a ghost is asking
-   * whether the node it stands for is drawn, and a node past the limb answers `null`.
+   * Every element, not only the ones on screen. A script asking about an off-screen marker is
+   * asking whether the node it stands for is drawn, and a node past the visible limit answers
+   * `null`.
    */
   private report(): Drawing {
-    const edge = horizon(this.halfW, this.halfH, this.R)
+    const edge = visibleLimit(this.halfW, this.halfH, this.R)
     return {
       frames: this.frames,
       drawMs: this.drawMs,
       zoom: this.cam.zoom,
-      centre: this.centre(),
+      middle: this.middle(),
       radius: this.R,
-      horizon: edge,
-      accent: this.accentId,
-      aimed: this.aimed,
+      visibleLimit: edge,
+      selected: this.selectedId,
+      dropTarget: this.dropTarget,
       panning: this.panEnabled,
-      moving: this.glide !== null || this.flier !== null,
+      moving: this.cameraMove !== null || this.markerMove !== null,
       elements: [...this.elements.values()].map((node) => {
         const flat = this.flatOf(node)
         const at = node.hidden ? null : project(flat.x, flat.y, this.R)
@@ -2052,7 +2071,7 @@ export class GlobeView implements MapSurface {
    * What a press at one canvas point would land on, for a drive script.
    *
    * The node first and the line second, which is the order `contextmenu` asks in. A script
-   * aiming at a line has to know whether a pill covers the point it picked. This is the
+   * aiming at a line has to know whether a label box covers the point it picked. This is the
    * answer the page itself would give.
    */
   private hitAt(x: number, y: number): Hit {
@@ -2065,8 +2084,8 @@ export class GlobeView implements MapSurface {
   /**
    * Where one line is drawn, in canvas pixels, at the steps `strokeLines` draws it through.
    *
-   * Null at a step the surface has turned away. A ghost's lead from a centre past the limb is
-   * drawn from the first step that lands. Its two ends do not say where it runs.
+   * Null at a step the surface has turned away. An off-screen marker's lead from a centre past the
+   * visible limit is drawn from the first step that lands. Its two ends do not say where it runs.
    */
   private pathOf(a: string, b: string): (Point | null)[] {
     const from = this.elements.get(a)

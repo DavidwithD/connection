@@ -10,8 +10,8 @@ from a product nobody could describe. It was written alongside the table rather 
 argued, so this is the first time the layout has been weighed.
 
 What one table buys is reading unlike items in a single request. Nothing does that. A node
-and its edges come back together, but they share a *partition*, which any table gives them;
-the starting point and each label claim are read alone. Meanwhile the graph is no longer
+and its edges come back together, but they share a *partition*, which any table gives them.
+The starting point and each label claim are read alone. Meanwhile the graph is no longer
 hypothetical — the seed writes a known shape.
 
 ## Decision

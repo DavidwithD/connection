@@ -7,9 +7,9 @@ import { describe, expect, it } from "vitest"
 
 import {
   CURVATURE,
-  LIMB,
+  EDGE_ANGLE,
   bounds,
-  horizon,
+  visibleLimit,
   marginAngle,
   project,
   radius,
@@ -20,7 +20,7 @@ import {
 const R = 600
 
 describe("radius", () => {
-  it("takes the shorter half-span, so the limb stays inside a wide window", () => {
+  it("takes the shorter half-span, so the visible limit stays inside a wide window", () => {
     expect(radius(800, 400, 1)).toBe(400)
     expect(radius(300, 900, 1)).toBe(300)
   })
@@ -36,7 +36,7 @@ describe("project", () => {
     expect(project(0, 0, R)).toEqual({ x: 0, y: 0, k: 1 })
   })
 
-  it("moves a node inward, and shrinks it, as it nears the limb", () => {
+  it("moves a node inward, and shrinks it, as it nears the visible limit", () => {
     const near = project(60, 0, R)
     const far = project(500, 0, R)
     expect(near).not.toBeNull()
@@ -49,11 +49,11 @@ describe("project", () => {
     expect(near!.k).toBeLessThan(1)
   })
 
-  it("refuses an offset at or past the limb", () => {
-    expect(project(R * LIMB, 0, R)).toBeNull()
+  it("refuses an offset at or past the visible limit", () => {
+    expect(project(R * EDGE_ANGLE, 0, R)).toBeNull()
     expect(project(R * Math.PI, 0, R)).toBeNull()
     // A hair inside it still projects.
-    expect(project(R * LIMB - 1, 0, R)).not.toBeNull()
+    expect(project(R * EDGE_ANGLE - 1, 0, R)).not.toBeNull()
   })
 
   it("keeps the bearing, so nothing rotates", () => {
@@ -69,7 +69,7 @@ describe("project", () => {
 })
 
 describe("unproject", () => {
-  it("runs project backwards for every offset inside the limb", () => {
+  it("runs project backwards for every offset inside the visible limit", () => {
     for (const [sx, sy] of [
       [0, 0],
       [1, 0],
@@ -86,7 +86,7 @@ describe("unproject", () => {
     }
   })
 
-  it("clamps a cursor outside the disc to the limb, rather than refusing it", () => {
+  it("clamps a cursor outside the disc to the visible limit, rather than refusing it", () => {
     const far = unproject(R * 5, 0, R)
     expect(far.x).toBeCloseTo(R * (Math.PI / 2), 8)
     expect(far.y).toBe(0)
@@ -95,7 +95,7 @@ describe("unproject", () => {
 
 describe("bounds", () => {
   it("is the flat offset at which project starts refusing", () => {
-    expect(bounds(R)).toBe(R * LIMB)
+    expect(bounds(R)).toBe(R * EDGE_ANGLE)
     expect(project(bounds(R), 0, R)).toBeNull()
     expect(project(bounds(R) - 1e-6, 0, R)).not.toBeNull()
   })
@@ -108,20 +108,20 @@ describe("bounds", () => {
   })
 })
 
-describe("horizon", () => {
-  it("is the limb while the disc is drawn inside the window", () => {
+describe("visibleLimit", () => {
+  it("is the visible limit while the disc is drawn inside the window", () => {
     const halfW = 800
     const halfH = 400
-    expect(horizon(halfW, halfH, radius(halfW, halfH, 1))).toBe(LIMB)
-    expect(horizon(halfW, halfH, radius(halfW, halfH, CURVATURE.min))).toBe(LIMB)
+    expect(visibleLimit(halfW, halfH, radius(halfW, halfH, 1))).toBe(EDGE_ANGLE)
+    expect(visibleLimit(halfW, halfH, radius(halfW, halfH, CURVATURE.min))).toBe(EDGE_ANGLE)
   })
 
-  it("falls below the limb once the disc is drawn wider than the window", () => {
+  it("falls below the visible limit once the disc is drawn wider than the window", () => {
     const halfW = 500
     const halfH = 500
     const wide = radius(halfW, halfH, CURVATURE.max)
-    const angle = horizon(halfW, halfH, wide)
-    expect(angle).toBeLessThan(LIMB)
+    const angle = visibleLimit(halfW, halfH, wide)
+    expect(angle).toBeLessThan(EDGE_ANGLE)
     // The corner is the last part of the window a node leaves.
     expect(angle).toBeCloseTo(Math.asin(Math.hypot(halfW, halfH) / wide), 10)
   })

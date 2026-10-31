@@ -2,7 +2,7 @@
  * Connected components, as union-find over the stored graph. Balanced by size, with no path
  * compression.
  *
- * `settle` runs inside the write transaction. `recount` runs outside it, in chunks, and is
+ * `merge` runs inside the write transaction. `recount` runs outside it, in chunks, and is
  * allowed to fail. Union-find has no inverse for a split, so a split has to walk the graph:
  * up to half a component, measured at about 12 seconds at this store's size limit. A
  * transaction holds its object stores locked for its whole life, so that walk cannot be
@@ -26,7 +26,7 @@ const MAX_DEPTH = 64
  *
  * Measured: one transaction rewriting 30,000 records stalls reads of the same store to 2.91
  * seconds, against a 22ms baseline. The lock is per object store, so during that the map, the
- * search box and the island panel are all frozen. Chunked at 200, the worst stall is 130ms.
+ * search box and the component panel are all frozen. Chunked at 200, the worst stall is 130ms.
  * That costs 1.9 times as long overall: twice the total time, in exchange for never blocking
  * a read for more than a tenth of a second.
  */
@@ -37,12 +37,12 @@ const CHUNK = 200
  *
  * At a measured 188µs per record rewritten: 500 is invisible but gives up often, and 10,000
  * is 1.88 seconds, which is too long. 2,000 is about 376ms, and is rarely reached at all.
- * Past it, **Recount the islands** on the transfer page finishes the job.
+ * Past it, **Recount the components** on the transfer page finishes the job.
  */
 const BUDGET = 2000
 
 /** A component: the root node that names it, and how many nodes it holds. */
-export interface Island {
+export interface Component {
   root: string
   size: number
 }
@@ -50,8 +50,8 @@ export interface Island {
 /**
  * The part of an object store the code below uses. It only reads and puts.
  *
- * A structural type, so `settle` can be given the store from the caller's own write
- * transaction without this file naming idb's generics. That matters: `settle` must run inside
+ * A structural type, so `merge` can be given the store from the caller's own write
+ * transaction without this file naming idb's generics. That matters: `merge` must run inside
  * the transaction that wrote the edge, and a function that opened its own would not be.
  */
 export interface NodeStore {
@@ -59,10 +59,10 @@ export interface NodeStore {
   put(value: StoredNode): Promise<string>
 }
 
-/** A recount that ran out of budget. Expected. **Recount the islands** finishes the job. */
+/** A recount that ran out of budget. Expected. **Recount the components** finishes the job. */
 export class Lagging extends Error {
   constructor() {
-    super("the island list is behind the graph — run Recount the islands on the transfer page")
+    super("the component list is behind the graph — run Recount the components on the transfer page")
     this.name = "Lagging"
   }
 }
@@ -117,27 +117,27 @@ export function components(
 /**
  * Rewrite the component fields on a whole graph's records, in memory.
  *
- * This is the counterpart to `settle` and `recount`. Those maintain the index one edge at a
+ * This is the counterpart to `merge` and `recount`. Those maintain the index one edge at a
  * time and can fail. This derives it from every node and edge at once and cannot. Two callers
  * hold a whole graph: an import, whose file may be a subset with different components from
  * the graph it came from, and the recount, which exists to repair what the incremental path
  * misses.
  *
  * It compares the grouping, never the pointers. Which node names a component depends on the
- * order the unions ran in, so a seed, a `settle` and this reach different roots for the same
- * graph, and all of them are correct. Treating that as drift would leave the recount
+ * order the unions ran in, so a seed, a `merge` and this reach different roots for the same
+ * graph, and all of them are correct. Treating that as lag would leave the recount
  * permanently reporting changes. So a component whose members already resolve to a single
  * root inside that component keeps it. Only a wrong grouping, a wrong size, or an
- * `islandSize` on a node that is not a root counts as a change.
+ * `componentSize` on a node that is not a root counts as a change.
  *
- * Chains are left alone for the same reason. `settle` re-points the losing root and not the
+ * Chains are left alone for the same reason. `merge` re-points the losing root and not the
  * nodes behind it, so a member two joins deep reaches its root in two hops. Flattening that
- * is an optimisation, not a repair, and it would report drift after every join.
+ * is an optimisation, not a repair, and it would report lag after every join.
  */
-export function stampIslands(
+export function setComponents(
   nodes: StoredNode[],
   edges: Iterable<readonly [string, string]>,
-): { islands: number; changed: StoredNode[] } {
+): { components: number; changed: StoredNode[] } {
   const held = new Map<string, StoredNode>()
   for (const node of nodes) held.set(node.labelKey, node)
 
@@ -180,19 +180,19 @@ export function stampIslands(
       const node = held.get(id)
       if (!node) continue
       const wasParent = node.parent
-      const wasSize = node.islandSize
+      const wasSize = node.componentSize
 
       // Re-point only a node that does not already reach this root. One that reaches it
       // through another node keeps its chain.
       if (stored(id) !== root) node.parent = root
-      if (id === root) node.islandSize = group.length
-      else delete node.islandSize
+      if (id === root) node.componentSize = group.length
+      else delete node.componentSize
 
-      if (node.parent !== wasParent || node.islandSize !== wasSize) changed.push(node)
+      if (node.parent !== wasParent || node.componentSize !== wasSize) changed.push(node)
     }
   }
 
-  return { islands: groups.size, changed }
+  return { components: groups.size, changed }
 }
 
 /**
@@ -202,12 +202,12 @@ export function stampIslands(
  * index existed looks like. Returning "itself" leaves such a graph as the recount will find
  * it, rather than inventing a component nobody wrote.
  */
-export async function find(nodes: NodeStore, id: string): Promise<Island | null> {
+export async function find(nodes: NodeStore, id: string): Promise<Component | null> {
   let at = id
   for (let hop = 0; hop < MAX_DEPTH; hop++) {
     const node = await nodes.get(at)
     if (!node) return null
-    if (node.parent === at) return { root: at, size: node.islandSize ?? 1 }
+    if (node.parent === at) return { root: at, size: node.componentSize ?? 1 }
     at = node.parent
   }
   throw new Error(`parent pointers from ${id} do not reach a root`)
@@ -217,13 +217,13 @@ export async function find(nodes: NodeStore, id: string): Promise<Island | null>
  * Merge the two components a new edge joins, leaving one root.
  *
  * This runs inside the write transaction. It is two record updates at any graph size: the
- * losing root points at the winner and drops its `islandSize`, which removes it from
- * `byIsland`, and the winner takes the combined size.
+ * losing root points at the winner and drops its `componentSize`, which removes it from
+ * `byComponent`, and the winner takes the combined size.
  *
  * No conditional updates, and none are needed. IndexedDB serialises overlapping transactions,
  * so what `find` read is still true when this writes.
  */
-export async function settle(nodes: NodeStore, aId: string, bId: string): Promise<void> {
+export async function merge(nodes: NodeStore, aId: string, bId: string): Promise<void> {
   const a = await find(nodes, aId)
   const b = await find(nodes, bId)
   // A missing node is not this function's problem to report. The write that called it has
@@ -235,9 +235,9 @@ export async function settle(nodes: NodeStore, aId: string, bId: string): Promis
   const winning = await nodes.get(winner.root)
   if (!losing || !winning) return
 
-  const { islandSize: _gone, ...rest } = losing
+  const { componentSize: _gone, ...rest } = losing
   await nodes.put({ ...rest, parent: winner.root })
-  await nodes.put({ ...winning, islandSize: winner.size + loser.size })
+  await nodes.put({ ...winning, componentSize: winner.size + loser.size })
 }
 
 /**
@@ -268,7 +268,7 @@ export async function settle(nodes: NodeStore, aId: string, bId: string): Promis
  */
 export async function recount(
   seeds: string[],
-  was: Island | null,
+  was: Component | null,
   deleted: string | null = null,
 ): Promise<void> {
   if (!was) return
@@ -298,7 +298,7 @@ export async function recount(
       return
     }
     // Still in one piece, still rooted, and one node smaller. Easy to miss because nothing
-    // moved, but a root counting a node that is gone is exactly the drift this path exists to
+    // moved, but a root counting a node that is gone is exactly the lag this path exists to
     // prevent. It is arithmetic, not a walk.
     await adopt([deleted], was.root, () => false)
     await resize(was.root, Math.max(1, was.size - 1))
@@ -314,13 +314,13 @@ export async function recount(
   // every piece has to be walked. This is the one path that gives up the early exit.
   if (deleted && was.root === deleted) {
     if (rest) await closeOut(walk, rest)
-    for (const group of groups) await stamp(group)
+    for (const group of groups) await writeGroup(group)
     return
   }
 
   if (!rest) {
     // Every group finished, so every size came from a walk.
-    for (const group of groups) await stamp(group)
+    for (const group of groups) await writeGroup(group)
     return
   }
 
@@ -329,14 +329,14 @@ export async function recount(
     // the remainder cannot keep it and has to be enumerated after all. This is no worse at k
     // seeds than at two.
     await closeOut(walk, rest)
-    for (const group of groups) await stamp(group)
+    for (const group of groups) await writeGroup(group)
     return
   }
 
-  for (const group of closed) await stamp(group)
+  for (const group of closed) await writeGroup(group)
 
   // The remainder was never walked, so its pointers are unchanged, and some of them name a
-  // node that is no longer in it. `settle` re-points a losing root at the winner and leaves
+  // node that is no longer in it. `merge` re-points a losing root at the winner and leaves
   // the nodes behind it alone, so a chain can run out of the remainder and into the piece
   // that just split off. Left alone, `find` would return a component the node is not in, and
   // the next write would read a root and a size belonging to another component.
@@ -357,7 +357,7 @@ export async function recount(
  * Re-point any node that still names a node no longer in this component.
  *
  * This is the one repair a walk cannot cover, and it is needed because a `parent` pointer is
- * not an edge. `settle` re-points a losing root at the winner and leaves everything behind it
+ * not an edge. `merge` re-points a losing root at the winner and leaves everything behind it
  * alone, so a node deep in the graph can be named by many others without being a root. A
  * chain can therefore cross whatever an edge removal or a delete just cut.
  *
@@ -388,8 +388,8 @@ async function adopt(
 
   await rewrite(orphaned, (node) => {
     // A node pointing at another is not a root, so drop any size it carries. Left in place,
-    // it would appear in `byIsland` as a component that does not exist.
-    const { islandSize: _gone, ...rest } = node
+    // it would appear in `byComponent` as a component that does not exist.
+    const { componentSize: _gone, ...rest } = node
     return { ...rest, parent: root }
   })
 }
@@ -402,7 +402,7 @@ async function adopt(
  * nothing for `recount` to work out. What is left is the `parent` pointers naming a key the
  * store no longer holds, and `adopt` moves those from an index read.
  *
- * The renamed record carries its own `parent` and `islandSize` across inside the write
+ * The renamed record carries its own `parent` and `componentSize` across inside the write
  * transaction. This is only for the nodes behind it.
  */
 export async function reparent(from: string, to: string): Promise<void> {
@@ -504,32 +504,32 @@ export function pickRoot(ids: Iterable<string>): string {
 }
 
 /** Give a fully walked component its own root, and the size the walk counted. */
-async function stamp(group: Group): Promise<void> {
+async function writeGroup(group: Group): Promise<void> {
   const ids = [...group.seen]
   await reroot(ids, pickRoot(ids), ids.length)
 }
 
 /**
- * Point a set of nodes at a root, and set `islandSize` on that root only.
+ * Point a set of nodes at a root, and set `componentSize` on that root only.
  *
  * The root is written last, so nothing points at a node that is not a root yet. A run cut
  * short leaves the index over-listing components or reporting a wrong size, which is what
- * **Recount the islands** repairs.
+ * **Recount the components** repairs.
  */
 async function reroot(ids: string[], root: string, size: number): Promise<void> {
   await rewrite(
     ids.filter((id) => id !== root),
     (node) => {
-      const { islandSize: _gone, ...rest } = node
+      const { componentSize: _gone, ...rest } = node
       return { ...rest, parent: root }
     },
   )
-  await rewrite([root], (node) => ({ ...node, parent: root, islandSize: size }))
+  await rewrite([root], (node) => ({ ...node, parent: root, componentSize: size }))
 }
 
 /** Update a root's size, for a component that lost members but kept its root. */
 async function resize(root: string, size: number): Promise<void> {
-  await rewrite([root], (node) => ({ ...node, islandSize: size }))
+  await rewrite([root], (node) => ({ ...node, componentSize: size }))
 }
 
 /**
@@ -544,8 +544,8 @@ async function resize(root: string, size: number): Promise<void> {
  * component, so they all reached it, so at least one pointed at it.
  *
  * How many children X has depends on how the graph was built. A graph grown by joins leaves X
- * few, because `settle` re-points only the losing root: one child per merge won. A graph that
- * has been imported or recounted leaves X all of them, because `stampIslands` flattens every
+ * few, because `merge` re-points only the losing root: one child per merge won. A graph that
+ * has been imported or recounted leaves X all of them, because `setComponents` flattens every
  * node onto its root. Even then only the writes are O(component). Finding them is still one
  * range read.
  */
@@ -559,11 +559,11 @@ async function rerootByParent(deleted: string, size: number): Promise<void> {
   const root = pickRoot(children.map((node) => node.labelKey))
   // Write the root first here. The chains are already broken, so nothing points at a valid
   // record in the meantime, and everything else is about to point at this one.
-  await rewrite([root], (node) => ({ ...node, parent: root, islandSize: size }))
+  await rewrite([root], (node) => ({ ...node, parent: root, componentSize: size }))
   await rewrite(
     children.map((node) => node.labelKey).filter((id) => id !== root),
     (node) => {
-      const { islandSize: _gone, ...rest } = node
+      const { componentSize: _gone, ...rest } = node
       return { ...rest, parent: root }
     },
   )
@@ -613,7 +613,7 @@ async function rewrite(
 }
 
 /** Write a whole graph's stamped records back, chunked for the reason given at `CHUNK`. */
-export async function writeStamped(changed: StoredNode[]): Promise<void> {
+export async function writeComponents(changed: StoredNode[]): Promise<void> {
   if (!changed.length) return
   const db = await open()
   for (let i = 0; i < changed.length; i += CHUNK) {

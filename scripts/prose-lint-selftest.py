@@ -41,25 +41,48 @@ CASES: list[tuple[str, str, str, set[str]]] = [
     # L001, both ways.
     ("L001 fires past the budget", "prose", W26 + ".", {"L001"}),
     ("L001 holds at the budget", "prose", W25 + ".", set()),
+    ("a middle dot ends a sentence", "prose", W25 + " · " + W25, set()),
     # L002: an abstract subject, and a concrete one that only looks abstract.
-    ("L002 fires on an abstract subject", "prose", "Stillness costs doorways.", {"L002"}),
+    ("L002 fires on an abstract subject", "prose", "Stillness costs markers.", {"L002"}),
     ("L002 spares an exempt noun", "prose", "The function returns a node.", set()),
     # L003, the aphorism shape.
     ("L003 fires on -ing is -ing", "prose", "Asking to go is asking to be taken.", {"L003"}),
-    ("L003 spares an ordinary sentence", "prose", "The camera pans while the centre stays.", set()),
+    ("L003 spares an ordinary sentence", "prose", "The camera pans while the selected node stays.", set()),
     # L004 is bounded by length, so the long form must not fire.
     ("L004 fires on a short X is not a Y", "prose", "The box is not a way back.", {"L004"}),
     ("L004 spares the long form", "prose",
-     "The box the reader ticked is not a way back to the nodes a pan already seated here.",
+     "The box the reader ticked is not a way back to the nodes a pan already placed here.",
      set()),
     # L005: the subject's own verb, unless a person is named.
     ("L005 fires on a personified subject", "prose", "The box wants a name.", {"L005"}),
     ("L005 spares a named person", "prose", "The reader wants a name.", set()),
     ("L005 spares the passive", "prose", "The box is asked for a name.", set()),
+    # L006: a retired term blocks, in prose, a heading and a table cell alike.
+    ("L006 fires on a retired term", "prose", "Click the ghost.", {"L006"}),
+    ("L006 fires in a heading", "prose", "# 0025 — When a doorway stands", {"L006"}),
+    ("L006 fires in a table cell", "prose", "| island | x |", {"L006"}),
+    ("L006 fires in a comment", "code", "// the island list", {"L006"}),
+    ("L006 spares the literal term", "prose", "Click the off-screen marker.", set()),
+    ("L006 spares a code span", "prose", "Read `islandSize` in a v2 backup.", set()),
+    ("L006 spares a [keep] word", "prose", "Chrome runs the drive scripts.", set()),
+    ("L006 spares a longer identifier", "code", "// ghostId and islands2", set()),
+    # L007: a part of the page as the actor.
+    ("L007 fires on a UI noun as the actor", "prose", "A click leaves the panel alone.", {"L007"}),
+    ("L007 fires mid-sentence", "prose", "On a click on the node, the panel keeps its values.", {"L007"}),
+    ("L007 spares code as the actor", "prose", "The click handler copies the name.", set()),
+    ("L007 spares the passive", "prose", "The panel is left alone.", set()),
+    # L008: a term with a literal sense too is a guess, and never blocks.
+    ("L008 fires on a double-sense term", "prose", "The ring is drawn.", {"L008"}),
+    ("L008 spares the literal term", "prose", "The neighbours are drawn.", set()),
+    # Front matter is trigger text: no sentence checks, but terms still count.
+    ("front matter skips the sentence checks", "prose", "---\ndescription: " + W26 + "\n---\nShort.", set()),
+    ("front matter still has its terms read", "prose", "---\ndescription: the island list\n---\n", {"L006"}),
     # What prose_lines drops.
     ("a fenced block is not prose", "prose", "```\n" + W26 + "\n```", set()),
     ("a table row is not prose", "prose", "| " + W26 + " |", set()),
-    ("a heading is not prose", "prose", "## " + W26, set()),
+    # A heading is prose: a title is read like any other sentence.
+    ("a heading is prose", "prose", "## " + W26, {"L001"}),
+    ("a heading skips the subject guesses", "prose", "## Decision", set()),
     ("a record's metadata is not prose", "prose", "**Deciders:** " + W26, set()),
     # A code span is one token however long the identifier is.
     ("a code span counts once", "prose",

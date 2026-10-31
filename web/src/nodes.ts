@@ -70,7 +70,7 @@ const state: State = {
   size: 50,
   page: 0,
   open: null,
-  trail: [],
+  cardStack: [],
   sub: [],
   subOf: null,
   reading: false,
@@ -245,10 +245,10 @@ async function toggle(node: NodeRow): Promise<void> {
 
 /** Click a neighbour. `walkTo` decides where that leaves the page. */
 async function step(node: NodeMeta): Promise<void> {
-  const wasList = state.trail.length === 0
+  const wasList = state.cardStack.length === 0
   Object.assign(state, walkTo(state, node, shown()))
   // The list is about to leave the view. Hold the place the reader had in it.
-  if (wasList && state.trail.length) park()
+  if (wasList && state.cardStack.length) park()
   // The walk stayed in the list. The row it opened can be a screen or two below the one it
   // came from. A walk the reader cannot see reads as a click that did nothing.
   else owed = "open"
@@ -257,11 +257,11 @@ async function step(node: NodeMeta): Promise<void> {
 
 /** Click a card. The first card goes back to the list, on the page that holds it. */
 async function backTo(depth: number): Promise<void> {
-  const card = state.trail[depth]
+  const card = state.cardStack[depth]
   const next = backFrom(state, depth)
   if (!card || next === state) return
-  state.trail = next.trail
-  if (!next.trail.length) {
+  state.cardStack = next.cardStack
+  if (!next.cardStack.length) {
     reveal(card)
     resume()
   }
@@ -274,14 +274,14 @@ async function backTo(depth: number): Promise<void> {
  * Rename a row from its inline edit box.
  *
  * A rename can change the node's id. Every place that holds the old id — `state.all`,
- * `state.sub`, `state.trail`, `state.subOf` — is patched to the new one.
+ * `state.sub`, `state.cardStack`, `state.subOf` — is patched to the new one.
  */
 async function rename(node: NodeMeta, next: string): Promise<void> {
   try {
     const renamed = await renameNode(node.id, next)
     state.all = state.all.map((row) => (row.id === node.id ? { ...row, ...renamed } : row))
     state.sub = state.sub.map((n) => (n.id === node.id ? { ...n, ...renamed } : n))
-    state.trail = state.trail.map((n) => (n.id === node.id ? { ...n, ...renamed } : n))
+    state.cardStack = state.cardStack.map((n) => (n.id === node.id ? { ...n, ...renamed } : n))
     if (state.subOf === node.id) state.subOf = renamed.id
     state.action = null
     cache = null
@@ -310,10 +310,10 @@ async function remove(node: NodeMeta): Promise<void> {
       state.open = null
       state.sub = []
     }
-    const at = state.trail.findIndex((n) => n.id === node.id)
+    const at = state.cardStack.findIndex((n) => n.id === node.id)
     if (at >= 0) {
-      state.trail = state.trail.slice(0, at)
-      if (!state.trail.length) state.open = null
+      state.cardStack = state.cardStack.slice(0, at)
+      if (!state.cardStack.length) state.open = null
     }
     if (state.action?.id === node.id) state.action = null
     cache = null
@@ -364,7 +364,7 @@ function turn(by: number): void {
 // --------------------------------------------------------------------- drawing
 
 function render(): void {
-  view.replaceChildren(state.trail.length ? stack() : rows())
+  view.replaceChildren(state.cardStack.length ? stack() : rows())
 
   const total = matched().length
   const counted =
@@ -439,8 +439,8 @@ function stack(): DocumentFragment {
   // No rows here, so there is nothing to bring into view.
   openItem = null
 
-  state.trail.forEach((node, depth) => {
-    const top = depth === state.trail.length - 1
+  state.cardStack.forEach((node, depth) => {
+    const top = depth === state.cardStack.length - 1
     const card = document.createElement("button")
     card.type = "button"
     card.className = `card${top ? " top" : ""}`
@@ -764,7 +764,7 @@ function wire(): void {
     state.from = null
     state.to = null
     state.order = "label"
-    state.trail = []
+    state.cardStack = []
     state.sub = []
     refilter()
   })

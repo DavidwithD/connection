@@ -12,7 +12,9 @@ import { CURVATURE } from "./projection.js"
 const ON = "on"
 
 const WALK_BY_PAN = "connection:walk-by-pan"
-const RAIL_OUT = "connection:rail-out"
+const SIDE_PANEL_KEY = "connection:side-panel-open"
+/** The key before the rename. `sidePanelOpen` reads it once and moves its value over. */
+const OLD_SIDE_PANEL_KEY = "connection:rail-out"
 const CURVATURE_KEY = "connection:curvature"
 
 /**
@@ -39,6 +41,14 @@ function keep(key: string, value: string): void {
   }
 }
 
+function forget(key: string): void {
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // The same refusal as in `keep`. The old key stays, and the new key is read first.
+  }
+}
+
 /**
  * Held rather than read each time.
  *
@@ -55,8 +65,8 @@ let walking = stored(WALK_BY_PAN) === ON
  * Whether a pan hands the centre to whatever it passes.
  *
  * Off is the rule the map is built around — the centre is named, and moving the camera is
- * looking. On gives it back to the camera, and with it the drift that costs: a seat is
- * permanent, so every node the middle crosses is placed for good.
+ * looking. On gives it back to the camera, and with it a cost: a placed node stays where it
+ * is, so every node the middle crosses is placed for good.
  */
 export const walkByPan = (): boolean => walking
 
@@ -68,23 +78,31 @@ export function setWalkByPan(on: boolean): void {
 }
 
 /**
- * Whether the island drawer is out.
+ * Whether the side panel is open.
  *
  * Not held the way `walking` is. Boot reads it once, and a click writes it without reading.
  * The markup ships shut, so a stored "" and a fresh browser agree.
  */
-export const railOut = (): boolean => stored(RAIL_OUT) === ON
+export function sidePanelOpen(): boolean {
+  const value = stored(SIDE_PANEL_KEY)
+  if (value !== null) return value === ON
+  const old = stored(OLD_SIDE_PANEL_KEY)
+  if (old === null) return false
+  keep(SIDE_PANEL_KEY, old)
+  forget(OLD_SIDE_PANEL_KEY)
+  return old === ON
+}
 
-export function setRailOut(out: boolean): void {
-  keep(RAIL_OUT, out ? ON : "")
+export function setSidePanelOpen(out: boolean): void {
+  keep(SIDE_PANEL_KEY, out ? ON : "")
 }
 
 /**
  * Read a stored curvature. A number in range comes back as itself, and the rest as the default.
  *
  * The first number this file keeps, and so the first value it can read back wrong. Never set
- * is `""`, which `Number` reads as 0. A radius of 0 puts every node past the limb, and the map
- * draws blank. A word another version wrote is `NaN`, and no comparison against `NaN` is true.
+ * is `""`, which `Number` reads as 0. A radius of 0 puts every node past the visible limit, and the
+ * map draws blank. A word another version wrote is `NaN`, and no comparison against `NaN` is true.
  * A legal number outside the range draws a picture nobody chose.
  *
  * The range and the default are projection.ts's, because that file is what the numbers mean.
@@ -97,7 +115,7 @@ function asCurvature(raw: string | null): number {
 }
 
 /**
- * Held rather than read back on each call, which is where this differs from `railOut`.
+ * Held rather than read back on each call, which is where this differs from `sidePanelOpen`.
  *
  * A refused write is the reason. The slider has to keep working in a browser with site data
  * blocked. What comes back from a re-read there is the default, not the value just set.

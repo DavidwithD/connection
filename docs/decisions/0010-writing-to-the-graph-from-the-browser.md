@@ -10,9 +10,9 @@ its reopening trigger at the arrival of a writer that is not a person there. Thi
 It also takes the last piece of [0008](0008-finding-a-node-by-name.md): creating a node
 outside the seed needs the conditional write the label reservation item allows.
 
-The search box already resolves a typed prefix to real nodes, which is what makes this safe
-to offer: a prefix returns up to twenty hits, so a *name* cannot identify a node. Every
-write is addressed by an id somebody picked.
+The search box already resolves a typed prefix to real nodes, so this is safe to offer.
+A prefix returns up to twenty hits, so a *name* cannot identify a node. Every write
+is addressed by an id somebody picked.
 
 ## Decision
 The page writes on Enter. Two routes, each one transaction, each calling what the terminal
@@ -38,7 +38,7 @@ calls.
 ## Consequences
 A mistaken edge cannot be taken back; the recovery is reseeding, which destroys the graph.
 
-Creating a node and joining it are two transactions, so a create landing before a refused
+Creating a node and joining it are two transactions. A create that lands before a refused
 join leaves a real node with no edges, findable by name and attached to nothing.
 
 The client now maintains a `degree` it used to only read. Because `missing` is degree minus

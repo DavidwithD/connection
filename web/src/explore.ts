@@ -44,10 +44,10 @@ export class Explorer {
   }
 
   /** Draw the centre's neighbourhood. Called on a settled camera. */
-  loadCentre(): void {
-    const centre = this.view.accent
-    if (!centre) return
-    if (this.world.isIncomplete(centre)) void this.expand(centre)
+  loadSelected(): void {
+    const selected = this.view.selected
+    if (!selected) return
+    if (this.world.isIncomplete(selected)) void this.expand(selected)
   }
 
   private async expand(id: string): Promise<void> {
@@ -66,8 +66,8 @@ export class Explorer {
       this.view.add(absorbed.nodes, absorbed.edges)
       // Anything the first pass could not place gets a second, tighter pass now. Waiting
       // for the next map change would leave those nodes unplaced on screen.
-      if (absorbed.unseated.length) {
-        const squeezed = this.world.seatPending(id)
+      if (absorbed.unplaced.length) {
+        const squeezed = this.world.placePending(id)
         this.view.add(squeezed.nodes, squeezed.edges)
       }
       this.failed.delete(id)

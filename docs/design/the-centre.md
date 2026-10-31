@@ -1,239 +1,255 @@
-# The centre and its neighbourhood
+# The selected node and its neighbours
 
-What the map draws around the centre, and what has to stay true while it does. The constraints
-behind it are [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md), for what is
-drawn, [ADR 0012](../decisions/0012-the-name-is-the-node.md), for the mark it is drawn as, and
-[ADR 0032](../decisions/0032-the-centre-is-named.md), for which node holds it.
+What the map draws around the selected node, and what has to stay true while it does. Three
+records set the constraints. [ADR 0004](../decisions/0004-the-centre-and-its-neighbourhood.md)
+sets what is drawn. [ADR 0012](../decisions/0012-the-name-is-the-node.md) sets the mark each
+node is drawn as. [ADR 0032](../decisions/0032-the-centre-is-named.md) sets which node is
+selected.
 
-The centre is named, never inferred. A click, a doorway, a search hit, a crossing to an island
-— each of those hands the mark over, and nothing else does. Panning and zooming are looking, so
-the middle of the screen is where the centre was put rather than what defines it. A reader who
-wants the older rule can tick **walk by pan**. The camera then names the centre again, at the
-price [ADR 0032](../decisions/0032-the-centre-is-named.md) sets out.
+A person selects the node, and the code never infers it. A click, an off-screen marker, a search
+hit and a component row each select a node. Nothing else does. A pan or a zoom
+changes only the view. The middle of the screen is where a camera move put the selected node.
+It does not define the selected node. A reader who wants the older rule can tick **walk by
+pan**. The camera then selects the node again, at the cost
+[ADR 0032](../decisions/0032-the-centre-is-named.md) sets out.
 
-A click takes no camera. It names a node **where it stands**
-([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)), so the centre sits as often at an
-edge as at the middle. The search box, an island row and a doorway do still move the camera to
-their node. The centre and its neighbours are the only nodes named at rest, and a named node is
-drawn as its name; everything else is a disc. A disc draws as its name while the pointer rests
-on it. A neighbour off screen is stood in for by a ghost in the ring, and clicking one flies to
-the node it stands for. Nothing on the map moves except a ghost in flight.
+The click handler leaves the camera where it is. It selects the node **at its current position**
+([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)). So the selected node sits at an edge
+as often as at the middle. The search box, a component row and an off-screen marker still move
+the camera to their node. At rest, only the selected node and its neighbours show their names.
+A node with a name is drawn as its name. Every other node is a disc. A disc is drawn as its name
+while the pointer rests on it. An off-screen marker near the selected node stands for each
+neighbour outside the view. A click on one moves the camera to the node it stands for. Nothing
+on the map moves except an off-screen marker during a camera move.
 
 ## What the renderer may do
 
-Only *add*. [map-view.ts](../../web/src/map-view.ts) never moves an element, never restyles
-one per frame, and never removes one, so a pan is camera work and costs nothing beyond the
-redraw. Panning triggers no read and no layout, because there is no layout.
+The renderer only *adds*. [map-view.ts](../../web/src/map-view.ts) never moves an element,
+never restyles one per frame, and never removes one. So a pan is camera work and costs only the
+redraw. A pan triggers no read and no layout, because the map has no layout step.
 
-Cytoscape's own gestures are already the convention a map wants — drag pans, wheel zooms
-toward the cursor — so none of that is reimplemented. `autoungrabify` turns a drag that
-starts on a node into a pan rather than a move, which both matches a map and protects the
-frozen positions.
+Cytoscape's own gestures already follow the map convention: drag pans, and the wheel zooms
+toward the cursor. This code reimplements none of them. `autoungrabify` turns a drag that starts
+on a node into a pan instead of a move. That matches a map, and it protects the fixed positions.
 
-Ghosts are the one exception, and it is deliberate. They are also the one thing here the
-camera decides.
+Off-screen markers are the one exception, and it is deliberate. They are also the one thing here
+the camera decides.
 
-A hover is the one restyle. It writes one flag on the node the pointer entered, and clears the
-one it left. The cost is per pointer crossing rather than per frame, and `setTiers` already
-writes more than that per read.
+A hover is the one restyle. The hover handler writes one flag on the node the pointer entered.
+It clears the flag on the node the pointer left. The cost is per pointer crossing, not per
+frame. `setTiers` already writes more than that per read.
 
 ## The names
 
-A named node draws *as* its name: a pill sized to the label, with no disc beside it. A disc
-with a label beside it is two marks carrying one fact, and a reader has to bind them before
-reading either. The pill is Cytoscape's own node box rather than drawn text, so it keeps the
-hit target, the place an edge stops, and a border the finer marks can use.
+A named node is drawn *as* its name: a label box sized to the label, with no disc beside it. A
+disc with a label beside it is two marks for one fact. A reader has to connect them before
+reading either. The label box is Cytoscape's own node box, not drawn text. So it keeps the hit
+target, the point where an edge stops, and a border the finer marks can use.
 
-Only the centre and its ring are named, so only they are pills. Everything else stays a
-disc: a field node is seen rather than read, and nothing about it has to be legible for the
-map to work.
+Only the selected node and its neighbours have names, so only they are label boxes. Every other
+node stays a disc. A reader sees an other node and does not read it. The map works with no other
+node legible.
 
-Until it is pointed at. A disc under the pointer draws as its name, in the ring's type and
-opened to every line. It goes back to a disc when the pointer leaves, so reading a field node costs no
-click. The ink is the page's own rather than the ring's, because this node is not a neighbour of
-the centre. The pill is wider than the disc it replaces, and it takes the taps inside it. A
-neighbour whose seat falls under it has to be approached from outside.
+That changes when the pointer rests on a disc. The disc is then drawn as its name, in the
+neighbours' type, with every line shown. It goes back to a disc when the pointer leaves. So a
+reader can read an other node without a click. The ink is the page's own and not the
+neighbours', because this node is not a neighbour of the selected node. The label box is wider
+than the disc it replaces, and it takes the taps inside it. To reach a neighbour placed under
+it, the pointer has to come from outside the box.
 
-A long name is cut to fit ([0048](../decisions/0048-a-long-name-is-cut-to-fit.md)). A ring
-name and a ghost's name wrap to two lines of at most 150 px and end in `…` if more is left.
-The name under the pointer opens to 260 px with every line. The centre is cut like a ring name
-at rest, in its own larger type. The pointer opens it to 300 px with every line. A slot is as wide as the widest cut name, so one long name no longer widens the ring.
+A long name is cut to fit ([0048](../decisions/0048-a-long-name-is-cut-to-fit.md)). A
+neighbour's name and an off-screen marker's name wrap to two lines of at most 150 px. Each ends
+in `…` if more text is left. The name under the pointer opens to 260 px with every line. The
+selected node's name is cut like a neighbour's name at rest, in its own larger type. The pointer
+opens it to 300 px with every line. A slot is as wide as the widest cut name. So one long name
+no longer widens the circle.
 
-Eight kinds of thing, and one of them is not a node.
+The map draws eight kinds of thing. The table also lists *new neighbour*, which is a behaviour.
+The off-screen marker is never a node.
 
 | Name | What it is | In the code |
 |---|---|---|
-| centre | The node somebody named, until somebody names another | `tier 0` |
-| ring | A neighbour of the centre, named — the name being the mark | `tier 1` |
-| arrival | A ring node that turns up *while* its parent is the centre | born at `tier 1` |
-| backdrop | Near the centre, connected to something else, dimmed | `tier 3` |
-| field | Everything else, at rest | `tier 2` |
-| pointed at | A field or backdrop node named for as long as the pointer rests on it | `hover` |
-| frontier | Has connections that were never read | `more` |
-| tether | A dashed stub standing in for an edge too long to draw | `stub` |
-| ghost | A hollow stand-in, in the ring, for a neighbour that is off screen | `ghost` |
+| selected node | The node somebody selected, until somebody selects another | `tier 0` |
+| neighbour | A neighbour of the selected node, drawn as its name | `tier 1` |
+| new neighbour | A neighbour that appears *while* its parent is selected | starts at `tier 1` |
+| dimmed node | Near the selected node, connected to something else, faded | `tier 3` |
+| other node | Every other node, at rest | `tier 2` |
+| node under the pointer | An other or dimmed node, named while the pointer rests on it | `hover` |
+| node with unread edges | Has edges the map never read | `more` |
+| stub | A dashed short mark that stands for an edge too long to draw | `stub` |
+| off-screen marker | A hollow label box that stands for a neighbour off screen | `marker` |
 
-*Arrival* is a word for describing behaviour, not a state. Every ring node carries the same
-surface-coloured outline, so one arriving over a dimmed node reads as being on top of it
-without anything having to remember that it arrived.
+*New neighbour* describes behaviour. No state records it. Every neighbour carries the same
+label outline in the surface colour. So a new neighbour drawn over a dimmed node reads as on top
+of it. No code has to remember that the neighbour is new.
 
 ## Where two names meet
 
-A pill is as wide as its name, and seats were spaced for discs, so two ring pills can
-overlap where a ring runs horizontally. They stack rather than interleave: the
-better-connected name draws whole, over the other. `setTiers` ranks the ring into a band of
-`z-index` values for that, and `RING_Z` ([map-view.ts](../../web/src/map-view.ts)) carries
-the reason degree settles it and distance cannot.
+A label box is as wide as its name, and the free spots were spaced for discs. So two neighbours'
+label boxes can overlap where a circle runs horizontally. The renderer stacks them, and the two
+names never interleave. The name with more edges draws whole, over the other. `setTiers` ranks
+the neighbours into a range of `z-index` values for that.
+`NEIGHBOUR_Z` ([map-view.ts](../../web/src/map-view.ts)) carries the reason degree decides the
+order and distance cannot.
 
 ## Tiers
 
-Tier is recomputed in `setTiers` ([map-view.ts](../../web/src/map-view.ts)) — when the
-centre changes, and again when a reply lands on the current centre. The second is not
-optional: a node already seated when that reply arrives was tiered for a neighbourhood it
-was not yet known to be in, and nothing else would promote it until the centre moved on.
-Never per frame, though — four data writes over two neighbourhoods on a centre change, and
-`O(degree + backdrop)` once per reply, so it stays affordable during a pan.
+`setTiers` ([map-view.ts](../../web/src/map-view.ts)) recomputes the tiers in two cases. It runs
+when the selected node changes. It runs again when a reply arrives for the current selected
+node. The second run is required. A node placed before that reply was tiered for a neighbourhood
+it was not yet known to be in. Nothing else would promote it until another node was selected.
+`setTiers` never runs per frame. A change of selected node costs four data writes over two
+neighbourhoods. A reply costs `O(degree + dimmed)` once. So the cost stays affordable during a
+pan.
 
-Backdrop membership is a distance test, not a corridor test: everything within the centre's
-own ring reach that is not one of its neighbours. `ringReach` measures that from the neighbours
-joined by a drawn line, so the radius answers to the world and not to the camera — one that
-moved with the zoom would dim a different set at every step, and each settle would become a
-restyle over everything near the centre. What the backdrop asks is what this centre *crowds*,
-and crowding is a fact about where the seats are.
+The dimmed-node test measures distance, and it uses no corridor. A dimmed node is any node
+within the selected node's neighbour reach that is not one of its neighbours. `neighbourReach`
+measures that reach from the neighbours joined by a drawn line. So the radius is in world
+coordinates and ignores the camera. A radius that changed with the zoom would dim a different
+set at every step. Each idle camera would then restyle everything near the selected node. The
+test finds the nodes this selected node *crowds*. Crowding depends on where the nodes are
+placed.
 
-Nodes arriving mid-flight are born into the right tier rather than waiting for the next
-centre change, which is why `add` reads the current centre before it builds an element.
+A node added during a camera move starts in the right tier. It does not wait for the next change
+of selected node. For that, `add` reads the current selected node before it builds an element.
 
-## Ghosts
+## Off-screen markers
 
-Every neighbour of the centre is either legible at its own seat or stood in for by a ghost.
-Never both, never neither. That is the whole rule, and it is the camera that decides which:
-a ghost stands while its neighbour's drawn box is off screen. So zooming out dissolves the
-doorways into the nodes they stood for, zooming in raises them for the neighbourhood you zoomed
-past, and panning away raises them for the one you left behind — a doorway being the only mark
-on the map the camera still has any say over.
+Each neighbour of the selected node is either legible at its own place, or an off-screen marker
+stands for it. Exactly one of the two holds. That is the whole rule, and the camera decides
+which one holds. An off-screen marker stands while its neighbour's drawn box is off screen. So
+a zoom out removes the markers, and the nodes they stood for show instead. A zoom in raises
+markers for the neighbours the zoom pushed off screen. A pan away raises them for the
+neighbours left behind. The off-screen marker is the only mark on the map the camera still
+controls.
 
-Which means the doorways can leave the screen themselves. They stand in the centre's own rings,
-so a pan that carries the centre off the edge takes them along, and what is left is a
-neighbourhood standing in for neighbours where neither can be seen. Nothing is lost by it:
-**Recentre** brings the whole picture back, and clicking anything still on screen names a
-centre where you are instead.
+So the off-screen markers can leave the screen too. They stand on the circles around the
+selected node. A pan that moves the selected node off the edge takes them along. Then neither
+the markers nor the neighbours they stand for are visible. Nothing is lost.
+**Go to selected** brings the whole picture back. A click on any node still on screen selects
+that node instead.
 
-The camera decides it because nothing else can. How far a neighbour sits from the centre is
-fixed when it is seated and never changes; whether the reader can see it changes with every
-zoom and every pan. Only the camera knows the second.
+The camera decides because nothing else can. A neighbour's distance from the selected node is
+fixed when the neighbour is placed. Whether the reader can see it changes with every zoom and
+every pan. Only the camera knows the second fact.
 
-The rule reads the canvas, which is not quite what the reader sees. The island drawer floats
-over it while it is out, and the guide does while it is open
-([0041](../decisions/0041-the-chrome-comes-off-the-map.md)). A neighbour parked under either
-counts as on screen and gets no ghost, while being as hidden as one that left.
+The rule reads the canvas, and the canvas differs a little from what the reader sees. The side
+panel covers part of it while it is open. The guide covers part of it while it is open
+([0041](../decisions/0041-the-controls-come-off-the-map.md)). A neighbour under either counts as
+on screen and gets no off-screen marker. It is as hidden as one that left the screen.
 
-The box and not the seat, because a ring node draws as its name: a seat just past the edge
-still has half its label readable, and a ghost raised for it would be the same name twice.
-Coming down needs only that some part of the neighbour shows; going up needs it clear of the
-edge by a margin. Those two are not each other's negation, which is what gives the dead band
-that stops a nudge and the nudge back from raising and lowering anything.
+The rule tests the drawn box and ignores the placed position, because a neighbour is drawn as
+its name. A neighbour placed just past the edge still shows half its label. An off-screen marker
+for it would show the same name twice. The marker comes down as soon as any part of the
+neighbour shows. It goes up only once the neighbour is clear of the edge by a margin. The gap
+between the two tests is a hysteresis margin. With it, a small pan and the pan back raise and
+lower nothing.
 
-A ghost exists only in the renderer. It is never in `World`, never in `Occupancy`, and holds
-no ground — which is what stops `nearestTo` from returning one and making a ghost the centre.
-Its slot comes from `slotsAround` ([world.ts](../../web/src/world.ts)): gaps first, and a ring
-position regardless if there are none, since a full region is exactly where a doorway is worth
-most. The slots are cut once per visit and held for it, because `seat` spreads what it is given
-evenly — asking again for a different number moves the ghosts already standing, and nothing on
-this map moves except a ghost in flight.
+An off-screen marker exists only in the renderer. It is never in `World` or in `Occupancy`, and
+it takes up no space there. That keeps `nearestTo` from returning one and making a marker the
+selected node. Its slot comes from `slotsAround` ([world.ts](../../web/src/world.ts)). That
+function offers gaps first. With no gap, it offers a position on the circle anyway. A full
+region is where an off-screen marker is most useful. The slots are computed once per visit and
+kept for that visit. `freeSpots` spreads what it is given evenly. A second call for a different
+number would move the markers already standing. Nothing on this map moves except an off-screen
+marker during a camera move.
 
-A slot is claimed only by a neighbour that needs one at the time, and never given back — which is
-what lets the claim answer to the camera while the position does not. `slotsFor`
-([map-view.ts](../../web/src/map-view.ts)) carries the reason a claim that is never revoked can
-be made on what the reader can see without disturbing a doorway already standing.
+A neighbour claims a slot only when it needs one at the time, and never gives it back. So the
+claim follows the camera, and the position stays fixed. `slotsFor`
+([map-view.ts](../../web/src/map-view.ts)) explains in a comment how a permanent claim can follow
+what the reader sees. The claim moves no off-screen marker already standing.
 
-Where the centre's end of a long edge is a tether, the ghost replaces it. The tether at the far
-end stays; it belongs to the other node. Where the edge is short enough to be drawn, the line
-stays too, running off the edge of the screen — it says which way the neighbour lies, which is
-the one thing a stand-in in the ring cannot, so the ghost's own edge is dashed to keep the two
-marks apart. Raised and lowered on a settled camera, never per frame, and once at boot for a
-window too small to hold the root's ring.
+A long edge has a stub at the selected node's end. The off-screen marker replaces that stub. The
+stub at the far end stays, because it belongs to the other node. An edge short enough to draw
+also stays, and its line runs off the edge of the screen. The line shows which way the neighbour
+lies. An off-screen marker cannot show that. So the marker's own edge is dashed, to keep the two
+marks apart. The renderer raises and lowers markers when the camera is idle, never per frame. It
+also does so once at boot, for a window too small to hold the root's neighbours.
 
-How many can stand is what the rings have room for, not a number written down:
-`pillsAround` ([placement.ts](../../web/src/placement.ts)) divides a ring's circumference by the
-widest name in the plan, and a neighbourhood wider than one ring uses the next one out. How far
-out is half the viewport's smaller span — measured once, when the visit began, and measured
-*from the centre* rather than from the frame. The two agree while the centre sits at the middle,
-which is the arrangement the bound was cut for: a doorway off screen opens for nobody. They part
-company when a click names a node where it stands
-([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)). A centre near an edge then plans
-doorways that fall outside the frame. **Recentre** brings them back within reach on the next
-visit, not this one. `slotsFor` rebuilds the plan when the centre changes, not when the camera
-moves. Two slots that would touch are refused — a name half under a sibling is still readable,
-a doorway half under one has lost its click.
+The number of markers that can stand is what the circles have room for. No constant sets it.
+`boxesAround` ([placement.ts](../../web/src/placement.ts)) divides a circle's circumference by
+the widest name in the plan. A neighbourhood wider than one circle uses the next one out. The
+outer limit is half the viewport's smaller span. It is measured once, when the visit began, and
+*from the selected node* instead of from the frame. The two agree while the selected node is at
+the middle of the screen. The limit was set for that case, because nobody can click an
+off-screen marker that is itself off screen. The two differ when a click selects a node at its
+current position ([ADR 0033](../decisions/0033-a-click-takes-no-camera.md)). A selected node
+near an edge then plans off-screen markers outside the frame. **Go to selected** brings them
+within reach on the next visit only. `slotsFor` rebuilds the plan when the selected node
+changes. A camera move leaves the plan as it is. The plan holds no two slots that `touches`
+reports as touching. A name half under another name is still readable. An off-screen marker
+half under another one can no longer be clicked.
 
-A constant could not stay true. Every input to that division moves — the type, the plan, the
-viewport — so a number fixed against one ring stops matching the next, and nothing reports the
-gap: doorways simply stop appearing.
-[ADR 0027](../decisions/0027-a-ring-holds-what-it-holds.md) is why this is measured rather than
-declared.
+A constant could not stay true. Every input to that division changes: the type, the plan and the
+viewport. A number fixed for one circle stops matching the next, and nothing reports the gap.
+Off-screen markers just stop appearing.
+[ADR 0027](../decisions/0027-a-ring-holds-what-it-holds.md) records why the code measures this
+number and declares no constant.
 
-The rings still run out on a hub at close zoom, so the order they are offered in decides who
-gets one. Ranked unlined first — a neighbour reached by two tethers has almost nothing pointing
-at it, while one with a drawn line at least has a direction — then nearest first, which puts
-the doors on the neighbours close enough to be worth walking to.
+On a hub at close zoom, the circles still run out of slots. So the order of the offer decides
+which neighbours get one. Neighbours with no drawn line come first. A neighbour reached by two
+stubs has almost nothing pointing at it. One with a drawn line at least shows a direction. Then
+the nearest come first. That puts the markers on neighbours close enough to be worth walking to.
 
-## The flight
+## The camera move
 
-Clicking a ghost runs `flyTo` ([map-view.ts](../../web/src/map-view.ts)):
+A click on an off-screen marker runs `moveToMarker` ([map-view.ts](../../web/src/map-view.ts)):
 
 1. The read for the destination starts at once, before anything moves.
-2. The centre is pinned. Nothing may take it while a ghost is in the air.
-3. Camera and ghost travel together, for a duration set by how far the move looks on screen.
-4. On landing, the destination becomes the centre and the ghost dissolves into it.
+2. The selected node is pinned. No other node can become selected while a marker is moving.
+3. The camera and the marker move together. The duration depends on how far the move looks on
+   screen.
+4. When the move ends, the destination becomes the selected node, and the node replaces the
+   marker.
 
-Steps 2 and 4 are the ones that break if touched. A ghost torn down when its centre stops
-being the centre leaves nothing under the cursor by the second frame; a destination promoted
-before the landing shows you arriving at a place you have not reached.
+Steps 2 and 4 break if changed. Suppose a marker is removed when its node stops being selected.
+Then nothing is under the cursor by the second frame. Suppose the destination is selected before
+the move ends. Then the map shows you at a place you have not reached.
 
-A flight out and a flight back are symmetric in everything geometric and asymmetric in
-everything they know. The motion mirrors: whichever ghost was clicked is the one that travels,
-the way back covers the distance the way out did, and the centre being left demotes and stands
-a ghost of itself in the new ring. What differs is what you land on. Flying out, the
-destination is an unlabelled dot whose neighbours may not be seated, so its ring has to be
-read; flying back, every seat exists and nothing is read at all. Step 1 is what that asymmetry
-pays for — the outbound flight is otherwise idle time, and the return needs none of it.
+A camera move out and a move back have the same geometry. They differ in what is known. The
+motion is mirrored. The clicked marker is the one that moves. The way back covers the same
+distance as the way out. The node being left loses its tier, and an off-screen marker for it
+stands near the new selected node. The difference is the destination. On the way out, it is an
+unlabelled disc whose neighbours may not be placed. So its neighbours have to be read. On the
+way back, every node is placed and nothing is read. Step 1 exists for that difference. It uses
+the move out, which is otherwise idle time. The move back needs no read.
 
 ## Invariants
 
-**Nothing moves except a ghost, and only while flying.** `autolock` is off for exactly that
-long. Frozen seating rests on `World` exposing no method that moves a node — see the
-invariants in [architecture.md](architecture.md).
+**Nothing moves except an off-screen marker, and only during a camera move.** `autolock` is off
+for exactly that long. Fixed positions rely on `World` having no method that moves a node. See
+the invariants in [architecture.md](architecture.md).
 
-**A neighbour is never discarded for want of room.** One that finds no seat is kept and
-retried at a tighter separation, so "no room" is a fact about now rather than a loss. Room is
-the only reason a neighbour is not drawn, and it is temporary.
+**A neighbour is never dropped for lack of room.** A neighbour with no free spot is kept and
+retried at a tighter separation. So "no room" describes the present and loses nothing. Lack of
+room is the only reason a neighbour is not drawn, and it is temporary.
 
-**A ghost is never a node.** Hollow, dashed, unseated, gone when the centre moves on — and
-never on screen at the same time as the node it stands for.
+**An off-screen marker is never a node.** It is hollow, dashed and never placed. It goes when
+another node is selected. It is never on screen at the same time as the node it stands for.
 
 ## Where the numbers are
 
-Beside the code that reads them, once: separations, ring geometry and the long-edge threshold in
-[placement.ts](../../web/src/placement.ts), flight speed and its clamps, the margin a seat must
-clear the screen by, the pill's inset and type, and the paint bands for the ring, the doorways
-and the node under the pointer in [map-view.ts](../../web/src/map-view.ts), and the settle
-delays, the keyboard pan step and the accent hysteresis in [main.ts](../../web/src/main.ts).
-Each carries the reason for its value in a comment. Copying one here would make this the stale
-copy. The one stored key is in [settings.ts](../../web/src/settings.ts), beside the guard that
-reads it.
+Each number is written once, beside the code that reads it.
+[placement.ts](../../web/src/placement.ts) holds the separations, the circle geometry and the
+long-edge threshold. [map-view.ts](../../web/src/map-view.ts) holds the camera move speed and
+its clamps, and the margin a neighbour must clear the screen by. It also holds the label box
+inset and type. It holds the `z-index` ranges for neighbours, off-screen markers and the node
+under the pointer. [main.ts](../../web/src/main.ts) holds the idle delays, the keyboard pan step
+and the walk-by-pan hysteresis margin. Each one carries the reason for its value in a comment.
+A copy here would be the copy that goes stale. The one stored key is in
+[settings.ts](../../web/src/settings.ts), beside the guard that reads it.
 
 ## Records behind it
 
-| Record | What it settled |
+| Record | What it decided |
 |---|---|
-| [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | That the centre shows every neighbour it has, and what a ghost is |
-| [0012](../decisions/0012-the-name-is-the-node.md) | The pill, and which nodes get one rather than a disc |
-| [0025](../decisions/0025-when-a-ghost-stands.md) | The camera rather than the seat as what raises a ghost |
-| [0027](../decisions/0027-a-ring-holds-what-it-holds.md) | How many doorways a ring offers, and that the number is measured |
+| [0004](../decisions/0004-the-centre-and-its-neighbourhood.md) | That the selected node shows every neighbour, and what an off-screen marker is |
+| [0012](../decisions/0012-the-name-is-the-node.md) | The label box, and which nodes get one instead of a disc |
+| [0025](../decisions/0025-when-an-off-screen-marker-stands.md) | The camera, and not the placed position, as what raises an off-screen marker |
+| [0027](../decisions/0027-a-ring-holds-what-it-holds.md) | How many off-screen markers a circle offers, and that the number is measured |
 | [0048](../decisions/0048-a-long-name-is-cut-to-fit.md) | How a long name is cut, and what opens it |
 | [0043](../decisions/0043-off-screen-becomes-an-angle.md) | Off screen as an angle from the middle, once the map draws on a sphere |
-| [0006](../decisions/0006-only-the-centre-reads.md) | That drawing is the centre's neighbourhood, and reading runs a hop past it |
-| [0032](../decisions/0032-the-centre-is-named.md) | What moves the mark, and what it costs to let the camera move it |
-| [0033](../decisions/0033-a-click-takes-no-camera.md) | That a click names a node where it stands, and what that costs the doorways |
-| [0003](../decisions/0003-graph-exploration-demo-stack.md) | One frozen position per node, and a camera panned over it |
+| [0006](../decisions/0006-only-the-centre-reads.md) | That the map draws the selected node's neighbours, and reads a hop past them |
+| [0032](../decisions/0032-the-centre-is-named.md) | What changes the selected node, and what it costs to let the camera change it |
+| [0033](../decisions/0033-a-click-takes-no-camera.md) | That a click selects a node in place, and what that costs the off-screen markers |
+| [0003](../decisions/0003-graph-exploration-demo-stack.md) | One fixed position per node, and a camera panned over it |

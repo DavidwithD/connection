@@ -8,7 +8,7 @@
 const TAU = Math.PI * 2
 
 /** Node diameters. A node draws at one of these, by its distance from the accent. */
-export const NODE_SIZE = { accent: 50, neighbour: 34, resting: 24 } as const
+export const NODE_SIZE = { selected: 50, neighbour: 34, resting: 24 } as const
 
 /**
  * Minimum centre-to-centre distance between two placed nodes.
@@ -17,7 +17,7 @@ export const NODE_SIZE = { accent: 50, neighbour: 34, resting: 24 } as const
  * it becomes the accent. Spacing to the resting size would let it grow over its neighbours
  * as the reader pans past.
  */
-export const SEAT_SEP = NODE_SIZE.accent + 16
+export const NODE_SEP = NODE_SIZE.selected + 16
 
 /**
  * The separation used on the second pass, for neighbours the first pass could not fit.
@@ -30,10 +30,10 @@ export const SEAT_SEP = NODE_SIZE.accent + 16
 export const SQUEEZE_SEP = NODE_SIZE.neighbour + 12
 
 /** The radius of the first ring. The step outward comes from the separation in use. */
-const FIRST_RING = 104
+const FIRST_CIRCLE = 104
 
 /** Stop after this many rings. */
-const MAX_RINGS = 14
+const MAX_CIRCLES = 14
 
 /** An edge longer than this is drawn as two stubs instead of one line. */
 export const LONG_EDGE = 340
@@ -60,7 +60,7 @@ export interface Slot {
 export class Occupancy {
   private readonly cells = new Map<string, Placed[]>()
 
-  constructor(private readonly cell: number = SEAT_SEP) {}
+  constructor(private readonly cell: number = NODE_SEP) {}
 
   private static key(cx: number, cy: number): string {
     return `${cx},${cy}`
@@ -109,7 +109,7 @@ export class Occupancy {
     return found
   }
 
-  isClear(x: number, y: number, separation: number = SEAT_SEP): boolean {
+  isClear(x: number, y: number, separation: number = NODE_SEP): boolean {
     return !this.near(x, y, separation).some(
       (p) => (p.x - x) ** 2 + (p.y - y) ** 2 < separation ** 2,
     )
@@ -161,12 +161,12 @@ export function rotationFor(id: string): number {
  * twelve-slot ring then surround the parent instead of bunching on one side. Anything that
  * does not fit on a ring falls through to the next ring out.
  */
-export function seat(
+export function freeSpots(
   parent: Point,
   count: number,
   occupancy: Occupancy,
   seed: string,
-  separation: number = SEAT_SEP,
+  separation: number = NODE_SEP,
 ): Point[] {
   if (count <= 0) return []
 
@@ -183,8 +183,8 @@ export function seat(
     occupancy.isClear(x, y, separation) &&
     !chosen.some((p) => (p.x - x) ** 2 + (p.y - y) ** 2 < separation ** 2)
 
-  for (let ring = 0; ring < MAX_RINGS && chosen.length < count; ring++) {
-    const radius = FIRST_RING + ring * step
+  for (let circle = 0; circle < MAX_CIRCLES && chosen.length < count; circle++) {
+    const radius = FIRST_CIRCLE + circle * step
     const slots = Math.max(1, Math.floor((TAU * radius) / separation))
     const wanted = Math.max(1, Math.min(slots, count - chosen.length))
 
@@ -204,7 +204,7 @@ export function seat(
       if (!taken.has(index)) order.push(index)
     }
 
-    const stagger = (ring % 2) * (TAU / (slots * 2))
+    const stagger = (circle % 2) * (TAU / (slots * 2))
     for (const index of order) {
       if (chosen.length >= count) break
       const angle = rotation + (TAU * index) / slots + stagger
@@ -223,14 +223,14 @@ export function seat(
  * This was a literal before: the same sum done by hand once, for the first ring and an
  * average name. Computing it stays correct for a long name and for a ring further out.
  */
-export const pillsAround = (radius: number, slotWidth: number): number =>
+export const boxesAround = (radius: number, slotWidth: number): number =>
   Math.max(1, Math.floor((TAU * radius) / slotWidth))
 
 /**
  * Whether two boxes of this size, centred on these points, would touch.
  *
  * One definition for every slot that gets handed out, wherever it came from. A slot is a box
- * because the thing standing in it draws as a name, and the separations `seat` works in are
+ * because the thing standing in it draws as a name, and the separations `freeSpots` works in are
  * scalars sized for discs — so anything spaced by one of those still has to be asked this.
  */
 export const touches = (a: Point, b: Point, slot: Slot): boolean =>
@@ -239,33 +239,33 @@ export const touches = (a: Point, b: Point, slot: Slot): boolean =>
 /**
  * Positions on rings around the parent, taking no account of what is already there.
  *
- * `seat` returns nothing when there is no room, which is correct for a node: a node keeps
- * its spot for the rest of the session. A ghost keeps nothing and exists only while the
- * reader is looking at it. A crowded area is also exactly where far neighbours appear, so
- * a ghost has to be placeable in a full region. The dimmed backdrop and the ghost's halo
- * keep the overlap readable.
+ * `freeSpots` returns nothing when there is no room, which is correct for a node: a node keeps
+ * its spot for the rest of the session. An off-screen marker keeps nothing and exists only while
+ * the reader is looking at it. A crowded area is also exactly where far neighbours appear, so
+ * an off-screen marker has to be placeable in a full region. The dimmed nodes and the off-screen
+ * marker's label outline keep the overlap readable.
  *
- * `pillsAround` sets how many slots a ring offers, so a wide neighbourhood steps outward
+ * `boxesAround` sets how many slots a ring offers, so a wide neighbourhood steps outward
  * instead of crowding one circle. `maxRadius` stops that: a slot the reader cannot see
  * cannot be clicked. The first ring is always offered. A viewport too small for it is one
  * where every neighbour is off screen anyway, and no slot at all is worse.
  *
  * A slot must also clear the slots already handed out, which is a different test from
- * `pillsAround`. The rings step by `seat`'s stride, a little more than a pill's height,
+ * `boxesAround`. The rings step by `freeSpots`'s stride, a little more than a label box's height,
  * while a name box is about three times as wide as it is tall. Two slots one ring apart on
  * the same bearing therefore clear each other where the ring runs vertically and collide
  * where it runs horizontally. Rejecting those collisions keeps every slot clickable.
  *
  * `avoid` is tested for that too, not merely scored against. It carries slots already promised
- * to the same plan, so one of these landing on one of those buries a doorway just as thoroughly
- * as two of these colliding would — and being someone else's does not make it smaller.
+ * to the same plan, so one of these landing on one of those buries an off-screen marker just as
+ * thoroughly as two of these colliding would — and being someone else's does not make it smaller.
  *
  * Within a ring, candidates are scored by how far they sit from everything already taken and
- * picked greedily, so a handful of ghosts spread around the parent instead of stacking along
- * one side. The step outward and the odd-ring stagger are `seat`'s, at the separation
+ * picked greedily, so a handful of off-screen markers spread around the parent instead of stacking
+ * along one side. The step outward and the odd-ring stagger are `freeSpots`'s, at the separation
  * `slotsAround` asks it for, so gap slots and these interleave rather than collide.
  */
-export function ringSlots(
+export function circleSlots(
   parent: Point,
   count: number,
   seed: string,
@@ -281,12 +281,12 @@ export function ringSlots(
 
   const clears = (point: Point): boolean => !taken.some((other) => touches(point, other, slot))
 
-  for (let ring = 0; ring < MAX_RINGS && chosen.length < count; ring++) {
-    const radius = FIRST_RING + ring * step
-    if (ring > 0 && radius > maxRadius) break
+  for (let circle = 0; circle < MAX_CIRCLES && chosen.length < count; circle++) {
+    const radius = FIRST_CIRCLE + circle * step
+    if (circle > 0 && radius > maxRadius) break
 
-    const slots = pillsAround(radius, slot.w)
-    const stagger = (ring % 2) * (TAU / (slots * 2))
+    const slots = boxesAround(radius, slot.w)
+    const stagger = (circle % 2) * (TAU / (slots * 2))
     const candidates: Point[] = []
     for (let i = 0; i < slots; i++) {
       const angle = rotation + (TAU * i) / slots + stagger

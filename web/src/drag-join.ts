@@ -55,21 +55,24 @@ export interface DragJoinHooks {
   /**
    * The node an element stands for, or null for an element that stands for none.
    *
-   * A ghost names a node off screen, so a drag can start or end on one. An edge and a stub
-   * name nothing.
+   * An off-screen marker names a node off screen, so a drag can start or end on one. An edge and a
+   * stub name nothing.
    */
   ended: (elementId: string) => WorldNode | null
   /** A pair, named by a release on a second node. The only thing here that leads to a write. */
   join: (a: WorldNode, b: WorldNode) => void
   /** Mark the node a release would take, or clear the mark. */
-  aim: (id: string | null) => void
+  markDropTarget: (id: string | null) => void
   /** The drag has started. Whatever the page is holding open over the map should close. */
   onStart: () => void
 }
 
 /** A drag in flight. */
 interface Armed {
-  /** The element under the press. The arrow's tail follows it, so a ghost keeps its own place. */
+  /**
+   * The element under the press. The arrow's tail follows it, so an off-screen marker keeps its own
+   * place.
+   */
   from: string
   /** The node that element stands for, which is what a release joins. */
   a: WorldNode
@@ -91,7 +94,7 @@ export class DragJoin {
     this.view.on("pressEnd", (id) => this.end(id))
     this.view.on("pressOver", (id) => this.over(id))
     this.view.on("pressOut", () => {
-      if (this.armed) this.hooks.aim(null)
+      if (this.armed) this.hooks.markDropTarget(null)
     })
 
     // The backstop. A release the map never hears about would leave panning switched off, and
@@ -129,7 +132,7 @@ export class DragJoin {
     if (!armed) return
     // The element the drag started from is not a target, so it takes no mark.
     if (id === armed.from) return
-    this.hooks.aim(this.hooks.ended(id) ? id : null)
+    this.hooks.markDropTarget(this.hooks.ended(id) ? id : null)
   }
 
   private end(id: string | null): void {
@@ -161,7 +164,7 @@ export class DragJoin {
    * the gradient over it has no seam to show.
    *
    * A drag too short for a shaft draws the head alone. That lands on top of the node it started
-   * from. It reads there as a mark on the pill rather than as an arrow going nowhere.
+   * from. It reads there as a mark on the label box rather than as an arrow going nowhere.
    */
   private draw(x: number, y: number): void {
     const armed = this.armed
@@ -207,7 +210,7 @@ export class DragJoin {
     if (!this.armed) return
     this.armed = null
     this.view.panning(true)
-    this.hooks.aim(null)
+    this.hooks.markDropTarget(null)
     document.body.classList.remove("joining")
   }
 }
